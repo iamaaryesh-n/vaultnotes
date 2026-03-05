@@ -4,12 +4,15 @@ import { supabase } from "./lib/supabase"
 
 import Dashboard from "./pages/Dashboard"
 import WorkspaceDetail from "./pages/WorkspaceDetail"
+import MemoryEditor from "./pages/MemoryEditor"
 import Login from "./pages/Login"
 
 export default function App() {
+
   const [session, setSession] = useState(null)
 
   useEffect(() => {
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
     })
@@ -21,6 +24,7 @@ export default function App() {
     )
 
     return () => listener.subscription.unsubscribe()
+
   }, [])
 
   if (!session) {
@@ -28,12 +32,26 @@ export default function App() {
   }
 
   return (
+
     <Routes>
-      <Route path="/" element={<Dashboard session={session} />} />
+
+      <Route
+        path="/"
+        element={<Dashboard session={session} />}
+      />
+
       <Route
         path="/workspace/:id"
         element={<WorkspaceDetail />}
       />
+
+      <Route
+        path="/workspace/:id/new"
+        element={<MemoryEditor />}
+      />
+
     </Routes>
+
   )
+
 }
