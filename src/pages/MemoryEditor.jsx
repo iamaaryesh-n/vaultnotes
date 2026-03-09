@@ -1,36 +1,104 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { supabase } from "../lib/supabase"
-import { encrypt } from "../utils/encryption"
+import { encrypt, decrypt, importKey } from "../utils/encryption"
 
-export default function MemoryEditor({ workspaceKey }) {
+export default function MemoryEditor() {
 
   const navigate = useNavigate()
-  const { id } = useParams()
+  const { id, memoryId } = useParams()
 
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    if (memoryId) {
+      loadMemory()
+    }
+  }, [memoryId])
+
+  const loadMemory = async () => {
+    
+    setLoading(true)
+
+    const storedKey = localStorage.getItem(`workspace_key_${id}`)
+    if (!storedKey) {
+      alert("Encryption key not found.")
+      navigate(`/workspace/${id}`)
+      return
+    }
+
+    const { data: memory, error } = await supabase
+      .from("memories")
+      .select("*")
+      .eq("id", memoryId)
+      .single()
+
+    if (error || !memory) {
+      console.error("Failed to load memory:", error)
+      setLoading(false)
+      return
+    }
+
+    try {
+      const cryptoKey = await importKey(storedKey)
+      const decryptedText = await decrypt(memory.encrypted_content, memory.iv, cryptoKey)
+      
+      setTitle(memory.title)
+      setContent(decryptedText)
+    } catch (err) {
+      console.error("Decryption failed:", err)
+      alert("Could not decrypt this memory.")
+    }
+
+    setLoading(false)
+  }
+
   const saveMemory = async () => {
 
     if (!content.trim()) return
 
+    const storedKey = localStorage.getItem(`workspace_key_${id}`)
+
+    if (!storedKey) {
+      alert("Encryption key not found. Please go back and reopen the workspace.")
+      return
+    }
+
     setLoading(true)
 
-    const { ciphertext, iv } = await encrypt(content, workspaceKey)
+    const cryptoKey = await importKey(storedKey)
+    const { ciphertext, iv } = await encrypt(content, cryptoKey)
 
     const {
       data: { user }
     } = await supabase.auth.getUser()
 
-    const { error } = await supabase.from("memories").insert({
+    const payload = {
       workspace_id: id,
       title: title || "Untitled",
       encrypted_content: ciphertext,
       iv: iv,
       created_by: user.id
-    })
+    }
+
+    let error
+
+    if (memoryId) {
+      // Edit existing memory
+      const { error: updateError } = await supabase
+        .from("memories")
+        .update(payload)
+        .eq("id", memoryId)
+      error = updateError
+    } else {
+      // Create new memory
+      const { error: insertError } = await supabase
+        .from("memories")
+        .insert(payload)
+      error = insertError
+    }
 
     setLoading(false)
 

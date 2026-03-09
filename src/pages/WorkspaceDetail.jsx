@@ -1,4 +1,5 @@
 import { encrypt, decrypt, importKey } from "../utils/encryption"
+import MemoryGrid from "../components/MemoryGrid"
 import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
@@ -138,6 +139,26 @@ export default function WorkspaceDetail() {
 
   }
 
+  const handleDelete = async (memoryId) => {
+    
+    console.log("Deleting memory:", memoryId)
+
+    const { error } = await supabase
+      .from("memories")
+      .delete()
+      .eq("id", memoryId)
+
+    if (error) {
+      console.error("Delete error:", error)
+      return
+    }
+
+    setMemories(prev => {
+      console.log("Current memories:", prev)
+      return prev.filter(m => m.id !== memoryId)
+    })
+  }
+
   if (loading) {
 
     return (
@@ -170,20 +191,10 @@ export default function WorkspaceDetail() {
         Add Memory
       </button>
 
-      <ul className="space-y-4">
-
-        {memories.map((memory) => (
-
-          <li
-            key={memory.id}
-            className="bg-gray-800 p-4 rounded"
-          >
-            {memory.content}
-          </li>
-
-        ))}
-
-      </ul>
+      <MemoryGrid 
+        memories={memories} 
+        onDelete={handleDelete} 
+      />
 
     </div>
 

@@ -50,6 +50,11 @@ export default function App() {
         element={<MemoryEditor />}
       />
 
+      <Route
+        path="/workspace/:id/memory/:memoryId"
+        element={<MemoryEditor />}
+      />
+
     </Routes>
 
   )

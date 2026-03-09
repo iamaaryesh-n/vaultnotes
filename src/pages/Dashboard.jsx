@@ -67,27 +67,23 @@ export default function Dashboard({ session }) {
         return
       }
 
-      // 3️⃣ Save key in workspace_keys table (for collaboration)
-      const { error: keyError } = await supabase
+      // 3️⃣ Store locally BEFORE updating UI (prevents race condition)
+      localStorage.setItem(`workspace_key_${workspace.id}`, exportedKey)
+
+      // 4️⃣ Update UI immediately
+      setWorkspaces(prev => [workspace, ...prev])
+
+      // 5️⃣ Save key in workspace_keys table (fire and forget)
+      supabase
         .from("workspace_keys")
         .insert({
           workspace_id: workspace.id,
           user_id: user.id,
           encrypted_key: exportedKey
         })
-
-      if (keyError) {
-        console.error("Key storage error:", keyError)
-        return
-      }
-
-      // 4️⃣ Store locally for fast access
-      localStorage.setItem(
-        `workspace_key_${workspace.id}`,
-        exportedKey
-      )
-
-      fetchWorkspaces()
+        .then(({ error }) => {
+          if (error) console.error("Key storage error:", error)
+        })
 
     } catch (err) {
 
