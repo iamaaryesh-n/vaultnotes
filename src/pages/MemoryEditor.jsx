@@ -128,7 +128,7 @@ export default function MemoryEditor() {
       <input
         type="text"
         placeholder="Title"
-        className="w-full bg-gray-800 p-3 rounded mb-4"
+        className="w-full bg-gray-800 p-3 rounded mb-4 focus:outline-none focus:border-yellow-400 border border-transparent transition-colors"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
       />

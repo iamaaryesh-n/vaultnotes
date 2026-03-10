@@ -13,6 +13,7 @@ export default function WorkspaceDetail() {
   const [memories, setMemories] = useState([])
   const [loading, setLoading] = useState(true)
   const [workspaceKey, setWorkspaceKey] = useState(null)
+  const [searchTerm, setSearchTerm] = useState("")
 
   useEffect(() => {
     initialize()
@@ -159,6 +160,16 @@ export default function WorkspaceDetail() {
     })
   }
 
+  const filteredMemories = memories.filter((memory) => {
+    const term = searchTerm.toLowerCase()
+    
+    const matchTitle = memory.title?.toLowerCase().includes(term)
+    const matchContent = memory.content?.toLowerCase().includes(term)
+    const matchTags = memory.tags?.some(tag => tag.toLowerCase().includes(term))
+    
+    return matchTitle || matchContent || matchTags
+  })
+
   if (loading) {
 
     return (
@@ -191,9 +202,18 @@ export default function WorkspaceDetail() {
         Add Memory
       </button>
 
+      <input
+        type="text"
+        placeholder="Search by title or content..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="w-full p-3 mb-6 bg-zinc-900 border border-zinc-700 rounded text-white focus:outline-none focus:border-yellow-400 transition-colors"
+      />
+
       <MemoryGrid 
-        memories={memories} 
+        memories={filteredMemories} 
         onDelete={handleDelete} 
+        emptyMessage={searchTerm ? "No memories match your search." : "No memories yet. Create one!"}
       />
 
     </div>

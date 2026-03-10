@@ -31,20 +31,6 @@ export default function MemoryCard({ memory, onDelete }) {
         {memory.content || "No content available."}
       </p>
 
-      {/* Tags */}
-      {memory.tags && memory.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {memory.tags.map((tag, index) => (
-            <span
-              key={index}
-              className="text-xs bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 px-2 py-0.5 rounded-full"
-            >
-              #{tag}
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* Footer: Date and Delete button */}
       <div className="flex justify-between items-center mt-auto pt-2 border-t border-gray-800">
         <p className="text-xs text-gray-500">

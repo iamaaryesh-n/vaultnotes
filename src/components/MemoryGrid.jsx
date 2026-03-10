@@ -1,11 +1,11 @@
 import MemoryCard from "./MemoryCard"
 
-export default function MemoryGrid({ memories, onDelete }) {
+export default function MemoryGrid({ memories, onDelete, emptyMessage = "No memories yet. Create one!" }) {
 
   if (!memories || memories.length === 0) {
     return (
       <p className="text-gray-500 text-sm text-center py-10">
-        No memories yet. Create one!
+        {emptyMessage}
       </p>
     )
   }
