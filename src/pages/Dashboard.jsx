@@ -20,11 +20,11 @@ export default function Dashboard({ session }) {
 
     const { data, error } = await supabase
       .from("workspaces")
-      .select("*")
+      .select("id, name, created_at, user_id")
       .order("created_at", { ascending: false })
 
     if (error) {
-      console.error("Fetch error:", error)
+      console.error(JSON.stringify(error, null, 2))
     } else {
       setWorkspaces(data)
     }

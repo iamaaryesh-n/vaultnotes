@@ -4,6 +4,7 @@ import { supabase } from "./lib/supabase"
 
 import Dashboard from "./pages/Dashboard"
 import WorkspaceDetail from "./pages/WorkspaceDetail"
+import MemoryView from "./pages/MemoryView"
 import MemoryEditor from "./pages/MemoryEditor"
 import Login from "./pages/Login"
 
@@ -52,6 +53,11 @@ export default function App() {
 
       <Route
         path="/workspace/:id/memory/:memoryId"
+        element={<MemoryView />}
+      />
+
+      <Route
+        path="/workspace/:id/memory/:memoryId/edit"
         element={<MemoryEditor />}
       />
 

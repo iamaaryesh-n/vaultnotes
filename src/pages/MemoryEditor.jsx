@@ -31,7 +31,17 @@ export default function MemoryEditor() {
 
     const { data: memory, error } = await supabase
       .from("memories")
-      .select("*")
+      .select(`
+        id,
+        title,
+        encrypted_content,
+        iv,
+        created_at,
+        updated_at,
+        workspace_id,
+        tags,
+        is_favorite
+      `)
       .eq("id", memoryId)
       .single()
 
@@ -87,11 +97,20 @@ export default function MemoryEditor() {
 
     if (memoryId) {
       // Edit existing memory
-      const { error: updateError } = await supabase
+      const { data: updatedData, error: updateError } = await supabase
         .from("memories")
         .update(payload)
         .eq("id", memoryId)
+        .select()
+        .single()
+        
       error = updateError
+      if (!error && updatedData) {
+        sessionStorage.setItem(`memory_${memoryId}`, JSON.stringify({
+          ...updatedData, 
+          content: content
+        }))
+      }
     } else {
       // Create new memory
       const { error: insertError } = await supabase

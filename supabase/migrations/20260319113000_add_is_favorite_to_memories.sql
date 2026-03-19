@@ -1,0 +1,2 @@
+ALTER TABLE memories
+ADD COLUMN is_favorite BOOLEAN DEFAULT false NOT NULL;
