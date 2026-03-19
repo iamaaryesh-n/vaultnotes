@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { decrypt, importKey } from "../utils/encryption"
+import DOMPurify from 'dompurify'
 
 export default function MemoryView() {
 
@@ -199,8 +200,20 @@ export default function MemoryView() {
         )}
 
         {/* Content */}
+        <style>{`
+          .tiptap-content ul { list-style-type: disc; margin-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+          .tiptap-content p { margin-bottom: 0.5rem; }
+          .tiptap-content pre { background: #111; padding: 1rem; border-radius: 0.5rem; font-family: monospace; overflow-x: auto; }
+          .tiptap-content code { background: #333; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.875em; }
+          .tiptap-content pre code { background: transparent; padding: 0; }
+        `}</style>
+
         <div className="text-gray-300 leading-relaxed whitespace-pre-wrap">
-          {content || <span className="italic text-gray-500">No content</span>}
+          {content ? (
+            <div className="tiptap-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }} />
+          ) : (
+            <span className="italic text-gray-500">No content</span>
+          )}
         </div>
 
       </div>

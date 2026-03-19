@@ -2,6 +2,8 @@ import { useState, useEffect } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { encrypt, decrypt, importKey } from "../utils/encryption"
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
 
 export default function MemoryEditor() {
 
@@ -11,6 +13,27 @@ export default function MemoryEditor() {
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [loading, setLoading] = useState(false)
+  const [dataLoaded, setDataLoaded] = useState(false)
+
+  const editor = useEditor({
+    extensions: [StarterKit.configure({ heading: false })],
+    content: "",
+    onUpdate: ({ editor }) => {
+      setContent(editor.getHTML())
+    },
+    editorProps: {
+      attributes: {
+        class: 'w-full bg-gray-800 p-4 rounded min-h-[15rem] text-gray-300 focus:outline-none focus:ring-1 focus:ring-yellow-400',
+      },
+    },
+  })
+
+  useEffect(() => {
+    if (editor && dataLoaded) {
+      editor.commands.setContent(content)
+      setDataLoaded(false)
+    }
+  }, [editor, dataLoaded, content])
 
   useEffect(() => {
     if (memoryId) {
@@ -57,6 +80,7 @@ export default function MemoryEditor() {
       
       setTitle(memory.title)
       setContent(decryptedText)
+      setDataLoaded(true)
     } catch (err) {
       console.error("Decryption failed:", err)
       alert("Could not decrypt this memory.")
@@ -152,12 +176,46 @@ export default function MemoryEditor() {
         onChange={(e) => setTitle(e.target.value)}
       />
 
-      <textarea
-        placeholder="Write your thoughts..."
-        className="w-full bg-gray-800 p-3 rounded h-60"
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-      />
+      <style>{`
+        .ProseMirror ul { list-style-type: disc; margin-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .ProseMirror p { margin-bottom: 0.5rem; }
+        .ProseMirror pre { background: #111; padding: 1rem; border-radius: 0.5rem; font-family: monospace; overflow-x: auto; }
+        .ProseMirror code { background: #333; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.875em; }
+        .ProseMirror pre code { background: transparent; padding: 0; }
+      `}</style>
+
+      {editor && (
+        <div className="flex gap-2 mb-3 bg-gray-900 p-2 rounded border border-gray-700">
+          <button
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            disabled={!editor.can().chain().focus().toggleBold().run()}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition ${editor.isActive('bold') ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+          >
+            Bold
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            disabled={!editor.can().chain().focus().toggleItalic().run()}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition ${editor.isActive('italic') ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+          >
+            Italic
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleBulletList().run()}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition ${editor.isActive('bulletList') ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+          >
+            Bullet List
+          </button>
+          <button
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition ${editor.isActive('codeBlock') ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}`}
+          >
+            Code Block
+          </button>
+        </div>
+      )}
+
+      <EditorContent editor={editor} />
 
       <button
         onClick={saveMemory}

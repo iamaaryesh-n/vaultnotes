@@ -69,7 +69,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
 
       {/* Content Preview */}
       <p className="text-gray-300 text-sm leading-relaxed flex-1 line-clamp-3">
-        {memory.content || "No content available."}
+        {memory.content ? memory.content.replace(/<[^>]+>/g, '') : "No content available."}
       </p>
 
       {/* Footer: Date and Delete button */}

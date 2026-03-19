@@ -20,7 +20,7 @@ export default function Dashboard({ session }) {
 
     const { data, error } = await supabase
       .from("workspaces")
-      .select("id, name, created_at, user_id")
+      .select("id, name, created_at, created_by")
       .order("created_at", { ascending: false })
 
     if (error) {

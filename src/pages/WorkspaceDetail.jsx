@@ -41,7 +41,7 @@ export default function WorkspaceDetail() {
   const fetchWorkspace = async () => {
     const { data, error } = await supabase
       .from("workspaces")
-      .select("id, name, created_at, user_id")
+      .select("id, name, created_at, created_by")
       .eq("id", id)
       .single()
 
