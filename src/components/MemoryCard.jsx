@@ -1,38 +1,57 @@
 import { useNavigate } from "react-router-dom"
 
-export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick }) {
+export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "" }) {
 
   const navigate = useNavigate()
 
-  const formattedDate = memory.created_at
-    ? new Date(memory.created_at).toLocaleDateString("en-US", {
+  const formattedDate = (memory.updated_at || memory.created_at)
+    ? new Date(memory.updated_at || memory.created_at).toLocaleDateString("en-US", {
         year: "numeric",
         month: "short",
         day: "numeric",
       })
     : "Unknown date"
 
+  // Strip HTML tags from TipTap content for plain-text preview
+  const plainContent = memory.content ? memory.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ""
+
+  // Highlight matching substring — returns array of {text, isMatch} segments
+  const highlight = (text, term) => {
+    if (!term || !text) return [{ text, isMatch: false }]
+    const cleanTerm = term.startsWith('#') ? term.slice(1) : term
+    if (!cleanTerm) return [{ text, isMatch: false }]
+    const regex = new RegExp(`(${cleanTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+    return text.split(regex).map(seg => ({ text: seg, isMatch: regex.test(seg) }))
+  }
+
 
 
   return (
 
     <div
-      className="bg-gray-900 border border-gray-700 rounded-xl shadow-md p-5 flex flex-col gap-3 hover:shadow-yellow-500/20 hover:border-yellow-500/40 hover:scale-[1.02] transition-all duration-200 cursor-pointer"
+      className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 flex flex-col gap-3 hover:shadow-md hover:border-yellow-400/50 hover:scale-[1.02] transition-all duration-200 ease-in-out cursor-pointer"
       onClick={() => navigate(`/workspace/${memory.workspace_id}/memory/${memory.id}`)}
     >
 
       {/* Title & Star */}
       <div className="flex justify-between items-start">
-        <h2 className="text-lg font-semibold text-yellow-400 truncate pr-2">
-          {memory.title || "Untitled"}
+        <h2 className="text-lg font-semibold text-yellow-600 truncate pr-2">
+          {searchTerm && !searchTerm.startsWith('#')
+            ? highlight(memory.title || "Untitled", searchTerm).map((seg, i) =>
+                seg.isMatch
+                  ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{seg.text}</mark>
+                  : <span key={i}>{seg.text}</span>
+              )
+            : (memory.title || "Untitled")
+          }
         </h2>
         <button
           onClick={(e) => {
             e.stopPropagation()
             if (onFavoriteToggle) onFavoriteToggle(memory.id, memory.is_favorite)
           }}
-          className={`p-1 -mr-1 -mt-1 rounded-full hover:bg-gray-800 transition-colors ${
-            memory.is_favorite ? "text-yellow-500" : "text-gray-600 hover:text-yellow-500"
+          className={`p-1 -mr-1 -mt-1 rounded-full hover:bg-gray-100 hover:scale-120 transition-all duration-200 ${
+            memory.is_favorite ? "text-yellow-500" : "text-gray-400 hover:text-yellow-500"
           }`}
         >
           {memory.is_favorite ? (
@@ -59,7 +78,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
                   onTagClick(tag)
                 }
               }}
-              className="text-xs bg-yellow-500/10 text-yellow-300 border border-yellow-500/20 px-2 py-0.5 rounded-full hover:bg-yellow-500/20 z-10 transition-colors"
+              className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full hover:bg-yellow-100 hover:scale-105 z-10 transition-all duration-200 cursor-pointer"
             >
               #{tag}
             </span>
@@ -68,12 +87,22 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
       )}
 
       {/* Content Preview */}
-      <p className="text-gray-300 text-sm leading-relaxed flex-1 line-clamp-3">
-        {memory.content || "No content available."}
+      <p className="text-gray-700 text-sm leading-relaxed flex-1 line-clamp-3">
+        {plainContent
+          ? (searchTerm && !searchTerm.startsWith('#')
+              ? highlight(plainContent, searchTerm).map((seg, i) =>
+                  seg.isMatch
+                    ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{seg.text}</mark>
+                    : <span key={i}>{seg.text}</span>
+                )
+              : plainContent
+            )
+          : <span className="italic text-gray-400">No content.</span>
+        }
       </p>
 
       {/* Footer: Date and Delete button */}
-      <div className="flex justify-between items-center mt-auto pt-2 border-t border-gray-800">
+      <div className="flex justify-between items-center mt-auto pt-2 border-t border-gray-200">
         <p className="text-xs text-gray-500">
           {formattedDate}
         </p>
@@ -84,7 +113,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
               if (onDelete) onDelete(memory.id)
             }
           }}
-          className="text-xs text-red-400 hover:text-red-300 transition-colors"
+          className="text-xs text-red-500 hover:text-red-600 hover:scale-110 transition-all duration-200"
         >
           Delete
         </button>

@@ -29,14 +29,14 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black text-white">
-      <form onSubmit={handleSignup} className="flex flex-col gap-4 w-80">
-        <h1 className="text-3xl font-bold text-yellow-400">Create Account</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 fade-in">
+      <form onSubmit={handleSignup} className="flex flex-col gap-4 w-80 bg-white p-8 rounded-xl shadow-sm border border-gray-200">
+        <h1 className="text-3xl font-bold text-yellow-500 mb-2">Create Account</h1>
 
         <input
           type="email"
           placeholder="Email"
-          className="p-2 rounded bg-gray-800"
+          className="p-3 rounded-lg bg-gray-50 text-gray-900 border border-gray-200 placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -45,7 +45,7 @@ export default function Signup() {
         <input
           type="password"
           placeholder="Password"
-          className="p-2 rounded bg-gray-800"
+          className="p-3 rounded-lg bg-gray-50 text-gray-900 border border-gray-200 placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
@@ -53,7 +53,7 @@ export default function Signup() {
 
         <button
           type="submit"
-          className="bg-yellow-500 text-black p-2 rounded font-bold"
+          className="bg-yellow-500 hover:bg-yellow-400 hover:scale-105 active:scale-95 text-gray-900 p-3 rounded-lg font-bold transition-all duration-200 shadow-sm hover:shadow-md"
           disabled={loading}
         >
           {loading ? "Creating..." : "Sign Up"}
