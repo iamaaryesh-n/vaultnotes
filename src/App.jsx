@@ -28,40 +28,57 @@ export default function App() {
 
   }, [])
 
+  const handleLogout = async () => {
+    // Clear all cached encryption keys and decrypted memory data
+    localStorage.clear()
+    sessionStorage.clear()
+    await supabase.auth.signOut()
+  }
+
   if (!session) {
     return <Login />
   }
 
   return (
 
-    <Routes>
+    <div className="min-h-screen bg-gray-50">
+      <div className="flex justify-end px-6 py-3 border-b border-gray-200">
+        <button
+          onClick={handleLogout}
+          className="text-sm text-gray-500 hover:text-red-500 transition-colors duration-200"
+        >
+          Logout
+        </button>
+      </div>
+      <Routes>
 
-      <Route
-        path="/"
-        element={<Dashboard session={session} />}
-      />
+        <Route
+          path="/"
+          element={<Dashboard session={session} />}
+        />
 
-      <Route
-        path="/workspace/:id"
-        element={<WorkspaceDetail />}
-      />
+        <Route
+          path="/workspace/:id"
+          element={<WorkspaceDetail />}
+        />
 
-      <Route
-        path="/workspace/:id/new"
-        element={<MemoryEditor />}
-      />
+        <Route
+          path="/workspace/:id/new"
+          element={<MemoryEditor />}
+        />
 
-      <Route
-        path="/workspace/:id/memory/:memoryId"
-        element={<MemoryView />}
-      />
+        <Route
+          path="/workspace/:id/memory/:memoryId"
+          element={<MemoryView />}
+        />
 
-      <Route
-        path="/workspace/:id/memory/:memoryId/edit"
-        element={<MemoryEditor />}
-      />
+        <Route
+          path="/workspace/:id/memory/:memoryId/edit"
+          element={<MemoryEditor />}
+        />
 
-    </Routes>
+      </Routes>
+    </div>
 
   )
 
