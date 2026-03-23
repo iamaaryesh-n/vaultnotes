@@ -1,13 +1,19 @@
 import { encrypt, decrypt, importKey } from "../utils/encryption"
 import MemoryGrid from "../components/MemoryGrid"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
+import { handleNavigationClick } from "../utils/navigation"
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
+import { useToast } from "../hooks/useToast"
+import { MemoryGridSkeleton } from "../components/SkeletonLoader"
 
 export default function WorkspaceDetail() {
 
   const { id } = useParams()
   const navigate = useNavigate()
+  const { success, error: showError } = useToast()
+  const searchInputRef = useRef(null)
 
   const [workspace, setWorkspace] = useState(null)
   const [memories, setMemories] = useState([])
@@ -15,6 +21,21 @@ export default function WorkspaceDetail() {
   const [workspaceKey, setWorkspaceKey] = useState(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [sortOrder, setSortOrder] = useState("newest")
+  const [deletingId, setDeletingId] = useState(null)
+
+  // Set up keyboard shortcuts (N for new memory, / for search, Esc to clear search)
+  useKeyboardShortcuts({
+    onSearchFocus: () => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    },
+    onEscape: () => {
+      if (searchTerm) {
+        setSearchTerm("")
+      }
+    },
+  })
 
   useEffect(() => {
     initialize()
@@ -36,6 +57,7 @@ export default function WorkspaceDetail() {
     await validateSchema()
     await fetchWorkspace()
     await loadWorkspaceKey()
+    // Sort preference is now loaded via useEffect for proper dependency handling
   }
 
   const fetchWorkspace = async () => {
@@ -90,6 +112,136 @@ export default function WorkspaceDetail() {
 
     await fetchMemories(key)
 
+  }
+
+  const loadSortPreference = async () => {
+    try {
+      // Verify workspace ID
+      console.log("[loadSortPreference] Starting. Workspace ID:", id)
+      
+      if (!id) {
+        console.log("[loadSortPreference] No workspace ID, skipping")
+        return
+      }
+
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        console.log("[loadSortPreference] No user or auth error:", userError)
+        return
+      }
+
+      console.log("[loadSortPreference] Fetching preference. User:", user.id, "Workspace:", id)
+
+      const { data, error } = await supabase
+        .from("user_workspace_preferences")
+        .select("sort_order")
+        .eq("user_id", user.id)
+        .eq("workspace_id", id)
+        .single()
+
+      console.log("[loadSortPreference] Query result:", { 
+        dataExists: !!data, 
+        sort_order: data?.sort_order, 
+        errorCode: error?.code,
+        errorMessage: error?.message,
+        errorStatus: error?.status,
+        fullError: error
+      })
+
+      if (error) {
+        // PGRST116 = no rows found, which is normal for first time
+        if (error.code === "PGRST116") {
+          console.log("[loadSortPreference] No preference row exists yet, using default 'newest'")
+        } else if (error.code === "PGRST204" || error.status === 404) {
+          console.error("[loadSortPreference] TABLE NOT FOUND (404). Table 'user_workspace_preferences' may not exist in Supabase.")
+          console.error("[loadSortPreference] Full error:", error)
+        } else {
+          console.error("[loadSortPreference] Unexpected error:", error)
+        }
+        return
+      }
+
+      // Only update state if data exists AND has sort_order
+      if (data && data.sort_order) {
+        console.log("[loadSortPreference] Setting sort order to:", data.sort_order)
+        setSortOrder(data.sort_order)
+      } else {
+        console.log("[loadSortPreference] No sort_order in fetched data, keeping default")
+      }
+    } catch (err) {
+      console.error("[loadSortPreference] Exception:", err)
+      // Silently fail - UI already has default "newest"
+    }
+  }
+
+  // Load sort preference when workspace ID changes
+  // This ensures preferences are loaded for each new workspace
+  useEffect(() => {
+    if (id) {
+      console.log("[useEffect] Workspace changed, loading preferences for:", id)
+      loadSortPreference()
+    }
+  }, [id])
+
+  // Log whenever sortOrder state changes (for verification)
+  useEffect(() => {
+    console.log("[sortOrder changed] New value:", sortOrder)
+  }, [sortOrder])
+
+  const saveSortPreference = async (newSortOrder) => {
+    try {
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        console.error("[saveSortPreference] Auth error or no user:", userError)
+        return
+      }
+
+      if (!id) {
+        console.error("[saveSortPreference] No workspace ID")
+        return
+      }
+
+      console.log("[saveSortPreference] Saving. SortOrder:", newSortOrder, "Workspace:", id, "User:", user.id)
+
+      // Upsert the preference (insert if new, update if exists)
+      const { error } = await supabase
+        .from("user_workspace_preferences")
+        .upsert(
+          {
+            user_id: user.id,
+            workspace_id: id,
+            sort_order: newSortOrder,
+            updated_at: new Date().toISOString()
+          },
+          {
+            onConflict: "user_id,workspace_id"
+          }
+        )
+
+      if (error) {
+        if (error.code === "PGRST204" || error.status === 404) {
+          console.error("[saveSortPreference] TABLE NOT FOUND (404). Table 'user_workspace_preferences' may not exist in Supabase.")
+        }
+        console.error("[saveSortPreference] Save failed:", {
+          code: error.code,
+          message: error.message,
+          status: error.status,
+          fullError: error
+        })
+      } else {
+        console.log("[saveSortPreference] Saved successfully")
+      }
+    } catch (err) {
+      console.error("[saveSortPreference] Exception:", err)
+    }
   }
 
   const fetchMemories = async (key) => {
@@ -169,23 +321,35 @@ export default function WorkspaceDetail() {
   }
 
   const handleDelete = async (memoryId) => {
-    
-    console.log("Deleting memory:", memoryId)
+    // Optimistic delete: remove from UI immediately
+    const originalMemories = memories
+    setMemories(prev => prev.filter(m => m.id !== memoryId))
+    setDeletingId(memoryId)
 
-    const { error } = await supabase
-      .from("memories")
-      .delete()
-      .eq("id", memoryId)
+    try {
+      const { error } = await supabase
+        .from("memories")
+        .delete()
+        .eq("id", memoryId)
 
-    if (error) {
-      console.error("Delete error:", error)
-      return
+      if (error) {
+        console.error("Delete error:", error)
+        // Rollback on error
+        setMemories(originalMemories)
+        showError("Failed to delete memory")
+        setDeletingId(null)
+        return
+      }
+
+      success("Deleted successfully")
+      setDeletingId(null)
+    } catch (err) {
+      console.error("Delete failed:", err)
+      // Rollback on error
+      setMemories(originalMemories)
+      showError("Something went wrong")
+      setDeletingId(null)
     }
-
-    setMemories(prev => {
-      console.log("Current memories:", prev)
-      return prev.filter(m => m.id !== memoryId)
-    })
   }
 
   const handleFavoriteToggle = async (memoryId, currentStatus) => {
@@ -226,53 +390,70 @@ export default function WorkspaceDetail() {
       const matchTags = memory.tags?.some(tag => tag.toLowerCase().includes(term))
       return matchTitle || matchContent || matchTags
     })
-    // Client-side sort: favorites on top, then by updated_at desc
+    // Client-side sort: favorites on top, then by created_at based on sortOrder
     .sort((a, b) => {
       if (a.is_favorite === b.is_favorite) {
-        return new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
+        const dateA = new Date(a.created_at)
+        const dateB = new Date(b.created_at)
+        return sortOrder === "newest" ? dateB - dateA : dateA - dateB
       }
       return a.is_favorite ? -1 : 1
     })
 
   if (loading) {
-
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-900 fade-in">
-        Loading workspace...
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
+        <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
+          <div className="h-8 bg-slate-200 rounded mb-6 w-1/3 animate-pulse"></div>
+          <div className="h-4 bg-slate-200 rounded mb-8 w-1/2 animate-pulse"></div>
+          <MemoryGridSkeleton />
+        </div>
       </div>
     )
-
   }
 
   return (
 
-    <div className="min-h-screen bg-gray-50 text-gray-900 fade-in">
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-16 py-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
+      <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
 
         <button
-          onClick={() => navigate("/")}
-          className="mb-6 text-yellow-500 hover:text-yellow-400 transition-colors"
+          onClick={(e) => handleNavigationClick(e, () => navigate("/"))}
+          className="mb-6 text-yellow-500 hover:text-yellow-400 transition-colors font-medium"
         >
-          ← Back
+          ← Back to Workspaces
         </button>
 
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-yellow-500">
-            {workspace?.name}
-          </h1>
-          <div className="flex items-center gap-4">
-            
+        <div className="flex flex-col gap-3 mb-8">
+          {/* Row 1: Title and Add Memory Button */}
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900">
+                {workspace?.name}
+              </h1>
+              <p className="text-slate-500 text-sm mt-1">Encrypted memory vault</p>
+            </div>
+            <button
+              onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
+              className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 px-5 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+            >
+              + Add Memory
+            </button>
+          </div>
+
+          {/* Row 2: Filter and Sort Controls */}
+          <div className="flex justify-between items-center">
             {/* Favorites Filter Toggle */}
-            <div className="flex bg-white border border-gray-200 rounded-lg p-1 shadow-sm">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowFavoritesOnly(false)}
-                className={`px-4 py-1.5 rounded text-sm font-medium transition-all duration-200 ${!showFavoritesOnly ? 'bg-yellow-400 text-gray-900' : 'text-gray-500 hover:text-gray-900'}`}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${!showFavoritesOnly ? 'bg-yellow-400 text-gray-900 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
               >
                 All
               </button>
               <button
                 onClick={() => setShowFavoritesOnly(true)}
-                className={`px-4 py-1.5 rounded text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${showFavoritesOnly ? 'bg-yellow-400 text-gray-900' : 'text-gray-500 hover:text-yellow-500'}`}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${showFavoritesOnly ? 'bg-yellow-400 text-gray-900 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
                   <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
@@ -281,21 +462,38 @@ export default function WorkspaceDetail() {
               </button>
             </div>
 
-            <button
-              onClick={() => navigate(`/workspace/${id}/new`)}
-              className="bg-yellow-500 hover:bg-yellow-400 hover:scale-105 active:scale-95 text-gray-900 px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              Add Memory
-            </button>
+            {/* Sort Control */}
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-slate-500 font-medium">Sort:</span>
+              <button
+                onClick={() => {
+                  setSortOrder("newest")
+                  saveSortPreference("newest")
+                }}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${sortOrder === "newest" ? 'bg-slate-200 text-gray-900 shadow-sm border border-slate-300' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+              >
+                Newest
+              </button>
+              <button
+                onClick={() => {
+                  setSortOrder("oldest")
+                  saveSortPreference("oldest")
+                }}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${sortOrder === "oldest" ? 'bg-slate-200 text-gray-900 shadow-sm border border-slate-300' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+              >
+                Oldest
+              </button>
+            </div>
           </div>
         </div>
 
         <input
+          ref={searchInputRef}
           type="text"
-          placeholder="Search memories or #tags..."
+          placeholder="Search memories or #tags... (Press / to focus)"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full p-3 mb-6 bg-white border border-gray-200 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200 shadow-sm"
+          className="w-full p-3 mb-8 bg-white border border-slate-200 rounded-lg text-gray-900 placeholder-slate-400 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200"
         />
 
         <MemoryGrid 
@@ -303,11 +501,13 @@ export default function WorkspaceDetail() {
           onDelete={handleDelete} 
           onFavoriteToggle={handleFavoriteToggle}
           onTagClick={(tag) => setSearchTerm(`#${tag}`)}
+          onCreateMemory={() => navigate(`/workspace/${id}/new`)}
           searchTerm={searchTerm}
+          deletingId={deletingId}
           emptyMessage={
             showFavoritesOnly 
-              ? "No favorite memories yet. Star a memory to pin it here."
-              : (searchTerm ? "No results found." : "No memories yet. Create your first one.")
+              ? "No favorite memories yet ⭐\nStar a memory to pin it here"
+              : (searchTerm ? "No results found 🔍" : "No memories yet ✨\nStart capturing your thoughts")
           }
         />
 
