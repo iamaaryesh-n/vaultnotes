@@ -3,15 +3,19 @@ import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { decrypt, importKey } from "../utils/encryption"
 import DOMPurify from 'dompurify'
+import { handleNavigationClick } from "../utils/navigation"
+import { useToast } from "../hooks/useToast"
 
 export default function MemoryView() {
 
   const { id, memoryId } = useParams()
   const navigate = useNavigate()
+  const { success, error: showError } = useToast()
 
   const [memory, setMemory] = useState(null)
   const [content, setContent] = useState("")
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     loadMemory()
@@ -98,23 +102,34 @@ export default function MemoryView() {
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this memory?")) return
 
-    const { error } = await supabase
-      .from("memories")
-      .delete()
-      .eq("id", memoryId)
+    setDeleting(true)
 
-    if (error) {
-      console.error("Delete failed:", error)
-      alert("Failed to delete memory.")
-      return
+    try {
+      const { error } = await supabase
+        .from("memories")
+        .delete()
+        .eq("id", memoryId)
+
+      if (error) {
+        console.error("Delete failed:", error)
+        showError("Failed to delete memory")
+        setDeleting(false)
+        return
+      }
+
+      success("Deleted successfully")
+      setDeleting(false)
+      navigate(`/workspace/${id}`)
+    } catch (err) {
+      console.error("Delete error:", err)
+      showError("Something went wrong")
+      setDeleting(false)
     }
-
-    navigate(`/workspace/${id}`)
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 text-gray-900 p-10">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 p-10">
         <button
           onClick={() => navigate(`/workspace/${id}`)}
           className="mb-6 text-yellow-500 opacity-50 cursor-default"
@@ -122,19 +137,19 @@ export default function MemoryView() {
           ← Back to Workspace
         </button>
 
-        <div className="max-w-3xl mx-auto bg-white border border-gray-200 rounded-xl p-8 shadow-sm animate-pulse">
-          <div className="flex justify-between items-start mb-6 border-b border-gray-200 pb-6">
+        <div style={{ maxWidth: '800px' }} className="mx-auto card p-8 animate-pulse">
+          <div className="flex justify-between items-start mb-6 border-b border-slate-200 pb-6">
             <div className="w-full">
-              <div className="h-8 bg-gray-100 rounded w-1/3 mb-4"></div>
-              <div className="h-4 bg-gray-100 rounded w-1/4"></div>
+              <div className="h-8 bg-slate-200 rounded w-1/3 mb-4"></div>
+              <div className="h-4 bg-slate-200 rounded w-1/4"></div>
             </div>
           </div>
           <div className="space-y-4">
-            <div className="h-4 bg-gray-100 rounded w-full"></div>
-            <div className="h-4 bg-gray-100 rounded w-5/6"></div>
-            <div className="h-4 bg-gray-100 rounded w-4/6"></div>
-            <div className="h-4 bg-gray-100 rounded w-full"></div>
-            <div className="h-4 bg-gray-100 rounded w-3/4"></div>
+            <div className="h-4 bg-slate-200 rounded w-full"></div>
+            <div className="h-4 bg-slate-200 rounded w-5/6"></div>
+            <div className="h-4 bg-slate-200 rounded w-4/6"></div>
+            <div className="h-4 bg-slate-200 rounded w-full"></div>
+            <div className="h-4 bg-slate-200 rounded w-3/4"></div>
           </div>
         </div>
       </div>
@@ -152,40 +167,41 @@ export default function MemoryView() {
     : "Unknown date"
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 fade-in">
-      <div className="max-w-4xl mx-auto px-4 sm:px-8 lg:px-16 py-10">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
+      <div style={{ maxWidth: '800px' }} className="mx-auto px-6 py-12">
 
         <button
-          onClick={() => navigate(`/workspace/${id}`)}
-          className="mb-6 text-yellow-500 hover:text-yellow-400 transition-colors"
+          onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}`))}
+          className="mb-8 text-yellow-500 hover:text-yellow-400 transition-colors font-medium"
         >
           ← Back to Workspace
         </button>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-8 shadow-sm">
+        <div className="card p-8">
           
-          <div className="flex justify-between items-start mb-6 border-b border-gray-200 pb-6">
+          <div className="flex justify-between items-start mb-8 border-b border-slate-200 pb-6">
             <div>
-              <h1 className="text-3xl font-bold text-yellow-500 mb-2">
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">
                 {memory?.title || "Untitled"}
               </h1>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-slate-500">
                 {formattedDate}
               </p>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button
-                onClick={() => navigate(`/workspace/${id}/memory/${memoryId}/edit`)}
-                className="bg-gray-100 text-gray-900 hover:text-yellow-500 hover:scale-105 active:scale-95 px-4 py-2 rounded-lg border border-gray-200 hover:bg-yellow-50 transition-all duration-200 shadow-sm hover:shadow-md"
+                onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/memory/${memoryId}/edit`))}
+                className="bg-slate-100 text-gray-900 hover:text-yellow-500 active:scale-95 px-4 py-2 rounded-lg border border-slate-200 hover:bg-yellow-50 hover:border-yellow-300 transition-all duration-200"
               >
                 Edit
               </button>
               <button
                 onClick={handleDelete}
-                className="bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105 active:scale-95 px-4 py-2 rounded-lg border border-red-200 hover:border-red-300 transition-all duration-200 shadow-sm hover:shadow-md"
+                disabled={deleting}
+                className="bg-red-50 text-red-600 hover:bg-red-100 active:scale-95 px-4 py-2 rounded-lg border border-red-200 hover:border-red-300 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-red-50"
               >
-                Delete
+                {deleting ? '⏳ Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
@@ -205,8 +221,8 @@ export default function MemoryView() {
           <style>{`
             .tiptap-content ul { list-style-type: disc; margin-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
             .tiptap-content p { margin-bottom: 0.5rem; }
-            .tiptap-content pre { background: #f9fafb; border: 1px solid #e5e7eb; padding: 1rem; border-radius: 0.5rem; font-family: monospace; overflow-x: auto; color: #111827; }
-            .tiptap-content code { background: #f3f4f6; color: #92400e; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.875em; }
+            .tiptap-content pre { background: #f8fafc; border: 1px solid #e2e8f0; padding: 1rem; border-radius: 0.5rem; font-family: monospace; overflow-x: auto; color: #111827; }
+            .tiptap-content code { background: #f1f5f9; color: #92400e; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.875em; }
             .tiptap-content pre code { background: transparent; padding: 0; color: #1f2937; }
           `}</style>
 
@@ -214,7 +230,7 @@ export default function MemoryView() {
             {content ? (
               <div className="tiptap-content" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }} />
             ) : (
-              <span className="italic text-gray-400">No content</span>
+              <span className="italic text-slate-400">No content</span>
             )}
           </div>
 

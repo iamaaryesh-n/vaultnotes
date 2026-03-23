@@ -1,19 +1,44 @@
 import { useNavigate } from "react-router-dom"
+import { handleNavigationClick } from "../utils/navigation"
 
-export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "" }) {
+export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "", isDeleting = false }) {
 
   const navigate = useNavigate()
 
-  const formattedDate = (memory.updated_at || memory.created_at)
-    ? new Date(memory.updated_at || memory.created_at).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
-    : "Unknown date"
+  // Calculate relative time (e.g., "2 hours ago")
+  const getRelativeTime = (dateString) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now - date
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return "just now"
+    if (diffMins < 60) return `${diffMins} min ago`
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+    
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  }
+
+  // Determine if memory was edited (has different updated_at and created_at)
+  const wasEdited = memory.updated_at && memory.created_at && 
+    new Date(memory.updated_at).getTime() !== new Date(memory.created_at).getTime()
+  const relevantDate = wasEdited ? memory.updated_at : memory.created_at
+  const timeLabel = wasEdited ? "Edited" : "Created"
+  const relativeTime = getRelativeTime(relevantDate)
 
   // Strip HTML tags from TipTap content for plain-text preview
   const plainContent = memory.content ? memory.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ""
+  
+  // Get first meaningful preview (skip empty lines)
+  const getPreview = (text) => {
+    if (!text) return "No content"
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+    return lines[0] || "No content"
+  }
 
   // Highlight matching substring — returns array of {text, isMatch} segments
   const highlight = (text, term) => {
@@ -24,25 +49,28 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
     return text.split(regex).map(seg => ({ text: seg, isMatch: regex.test(seg) }))
   }
 
-
+  // Check if recently updated (within 24 hours)
+  const isRecent = relevantDate && (new Date() - new Date(relevantDate)) < 86400000
 
   return (
 
     <div
-      className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 flex flex-col gap-3 hover:shadow-md hover:border-yellow-400/50 hover:scale-[1.02] transition-all duration-200 ease-in-out cursor-pointer"
-      onClick={() => navigate(`/workspace/${memory.workspace_id}/memory/${memory.id}`)}
+      className={`card p-4 flex flex-col gap-3 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-in-out cursor-pointer ${
+        isRecent ? 'border border-yellow-200 bg-yellow-50/30' : ''
+      }`}
+      onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${memory.workspace_id}/memory/${memory.id}`))}
     >
 
       {/* Title & Star */}
-      <div className="flex justify-between items-start">
-        <h2 className="text-lg font-semibold text-yellow-600 truncate pr-2">
+      <div className="flex justify-between items-start gap-2">
+        <h2 className="text-lg font-bold text-gray-900 flex-1 leading-snug">
           {searchTerm && !searchTerm.startsWith('#')
-            ? highlight(memory.title || "Untitled", searchTerm).map((seg, i) =>
+            ? highlight(memory.title || "Untitled memory", searchTerm).map((seg, i) =>
                 seg.isMatch
                   ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{seg.text}</mark>
                   : <span key={i}>{seg.text}</span>
               )
-            : (memory.title || "Untitled")
+            : (memory.title || "Untitled memory")
           }
         </h2>
         <button
@@ -50,8 +78,8 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
             e.stopPropagation()
             if (onFavoriteToggle) onFavoriteToggle(memory.id, memory.is_favorite)
           }}
-          className={`p-1 -mr-1 -mt-1 rounded-full hover:bg-gray-100 hover:scale-120 transition-all duration-200 ${
-            memory.is_favorite ? "text-yellow-500" : "text-gray-400 hover:text-yellow-500"
+          className={`p-1 -mr-1 -mt-1 rounded-full hover:bg-gray-100 transition-all duration-200 flex-shrink-0 ${
+            memory.is_favorite ? "text-yellow-500" : "text-slate-400 hover:text-yellow-500"
           }`}
         >
           {memory.is_favorite ? (
@@ -68,7 +96,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
 
       {/* Tags */}
       {memory.tags && memory.tags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1">
           {memory.tags.map((tag, index) => (
             <span
               key={index}
@@ -78,7 +106,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
                   onTagClick(tag)
                 }
               }}
-              className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full hover:bg-yellow-100 hover:scale-105 z-10 transition-all duration-200 cursor-pointer"
+              className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full hover:bg-yellow-100 transition-all duration-200 cursor-pointer"
             >
               #{tag}
             </span>
@@ -87,35 +115,36 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
       )}
 
       {/* Content Preview */}
-      <p className="text-gray-700 text-sm leading-relaxed flex-1 line-clamp-3">
+      <p className="text-slate-600 text-sm leading-relaxed flex-1 line-clamp-2">
         {plainContent
           ? (searchTerm && !searchTerm.startsWith('#')
-              ? highlight(plainContent, searchTerm).map((seg, i) =>
+              ? highlight(getPreview(plainContent), searchTerm).map((seg, i) =>
                   seg.isMatch
                     ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{seg.text}</mark>
                     : <span key={i}>{seg.text}</span>
                 )
-              : plainContent
+              : getPreview(plainContent)
             )
-          : <span className="italic text-gray-400">No content.</span>
+          : <span className="text-slate-400">No content.</span>
         }
       </p>
 
       {/* Footer: Date and Delete button */}
-      <div className="flex justify-between items-center mt-auto pt-2 border-t border-gray-200">
-        <p className="text-xs text-gray-500">
-          {formattedDate}
+      <div className="flex justify-between items-center mt-auto pt-3 border-t border-slate-100">
+        <p className="text-xs text-slate-400 font-medium">
+          {timeLabel} {relativeTime}
         </p>
         <button
           onClick={(e) => {
-            e.stopPropagation() // Prevent card navigation
+            e.stopPropagation()
             if (confirm("Delete this memory?")) {
               if (onDelete) onDelete(memory.id)
             }
           }}
-          className="text-xs text-red-500 hover:text-red-600 hover:scale-110 transition-all duration-200"
+          disabled={isDeleting}
+          className="text-xs text-red-500 hover:text-red-600 opacity-50 hover:opacity-100 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Delete
+          {isDeleting ? '⏳' : 'Delete'}
         </button>
       </div>
 
