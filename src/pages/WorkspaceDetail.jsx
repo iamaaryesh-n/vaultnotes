@@ -1,5 +1,7 @@
 import { encrypt, decrypt, importKey } from "../utils/encryption"
 import MemoryGrid from "../components/MemoryGrid"
+import InviteUserModal from "../components/InviteUserModal"
+import RemoveUserModal from "../components/RemoveUserModal"
 import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
@@ -23,6 +25,9 @@ export default function WorkspaceDetail() {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [sortOrder, setSortOrder] = useState("newest")
   const [deletingId, setDeletingId] = useState(null)
+  const [showInviteModal, setShowInviteModal] = useState(false)
+  const [showRemoveUserModal, setShowRemoveUserModal] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState(null)
 
   // Set up keyboard shortcuts (N for new memory, / for search, Esc to clear search)
   useKeyboardShortcuts({
@@ -54,6 +59,12 @@ export default function WorkspaceDetail() {
   }
 
   const initialize = async () => {
+    // Get current user ID for owner checks
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    if (!userError && user) {
+      setCurrentUserId(user.id)
+    }
+
     await validateSchema()
     await fetchWorkspace()
     await loadWorkspaceKey()
@@ -136,14 +147,15 @@ export default function WorkspaceDetail() {
 
       console.log("[loadSortPreference] Fetching preference. User:", user.id, "Workspace:", id)
 
+      // Step 1: Try to get user-specific preference
       const { data, error } = await supabase
         .from("user_workspace_preferences")
         .select("sort_order")
         .eq("user_id", user.id)
         .eq("workspace_id", id)
-        .single()
+        .maybeSingle()
 
-      console.log("[loadSortPreference] Query result:", { 
+      console.log("[loadSortPreference] Preference query result:", { 
         dataExists: !!data, 
         sort_order: data?.sort_order, 
         errorCode: error?.code,
@@ -153,10 +165,7 @@ export default function WorkspaceDetail() {
       })
 
       if (error) {
-        // PGRST116 = no rows found, which is normal for first time
-        if (error.code === "PGRST116") {
-          console.log("[loadSortPreference] No preference row exists yet, using default 'newest'")
-        } else if (error.code === "PGRST204" || error.status === 404) {
+        if (error.code === "PGRST204" || error.status === 404) {
           console.error("[loadSortPreference] TABLE NOT FOUND (404). Table 'user_workspace_preferences' may not exist in Supabase.")
           console.error("[loadSortPreference] Full error:", error)
         } else {
@@ -165,12 +174,33 @@ export default function WorkspaceDetail() {
         return
       }
 
-      // Only update state if data exists AND has sort_order
+      // If user has a preference, use it
       if (data && data.sort_order) {
-        console.log("[loadSortPreference] Setting sort order to:", data.sort_order)
+        console.log("[loadSortPreference] Using user preference:", data.sort_order)
         setSortOrder(data.sort_order)
+        return
+      }
+
+      // Step 2: No user preference found, fetch workspace default_sort as fallback
+      console.log("[loadSortPreference] No user preference found, fetching workspace default_sort as fallback")
+
+      const { data: workspaceData, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("default_sort")
+        .eq("id", id)
+        .single()
+
+      if (workspaceError) {
+        console.warn("[loadSortPreference] Failed to fetch workspace default_sort:", workspaceError)
+        console.log("[loadSortPreference] Falling back to default 'newest'")
+        return
+      }
+
+      if (workspaceData && workspaceData.default_sort) {
+        console.log("[loadSortPreference] Using workspace default_sort:", workspaceData.default_sort, "(FALLBACK TO WORKSPACE DEFAULT)")
+        setSortOrder(workspaceData.default_sort)
       } else {
-        console.log("[loadSortPreference] No sort_order in fetched data, keeping default")
+        console.log("[loadSortPreference] Workspace has no default_sort configured, keeping default 'newest'")
       }
     } catch (err) {
       console.error("[loadSortPreference] Exception:", err)
@@ -425,7 +455,7 @@ export default function WorkspaceDetail() {
         </button>
 
         <div className="flex flex-col gap-3 mb-8">
-          {/* Row 1: Title and Add Memory Button */}
+          {/* Row 1: Title and Buttons */}
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-4xl font-bold text-gray-900">
@@ -433,12 +463,28 @@ export default function WorkspaceDetail() {
               </h1>
               <p className="text-slate-500 text-sm mt-1">Encrypted memory vault</p>
             </div>
-            <button
-              onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
-              className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 px-5 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-            >
-              + Add Memory
-            </button>
+            <div className="flex gap-2">
+              {workspace?.created_by === currentUserId && (
+                <button
+                  onClick={() => setShowRemoveUserModal(true)}
+                  className="bg-slate-400 hover:bg-slate-300 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  👥 Members
+                </button>
+              )}
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="bg-slate-500 hover:bg-slate-400 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                📤 Share
+              </button>
+              <button
+                onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
+                className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 px-5 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                + Add Memory
+              </button>
+            </div>
           </div>
 
           {/* Row 2: Filter and Sort Controls */}
@@ -512,6 +558,28 @@ export default function WorkspaceDetail() {
         />
 
       </div>
+
+      {showInviteModal && (
+        <InviteUserModal
+          onClose={() => setShowInviteModal(false)}
+          workspaceId={id}
+          onSuccess={() => {
+            // Refresh members list if needed
+            // For now, just close the modal
+          }}
+        />
+      )}
+
+      {showRemoveUserModal && (
+        <RemoveUserModal
+          onClose={() => setShowRemoveUserModal(false)}
+          workspaceId={id}
+          isOwner={workspace?.created_by === currentUserId}
+          onUserRemoved={() => {
+            // Optionally refresh memories if needed
+          }}
+        />
+      )}
     </div>
 
   )
