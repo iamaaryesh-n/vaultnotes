@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { supabase } from "../lib/supabase"
 import { addUserToWorkspace } from "../lib/workspaceMembers"
 
@@ -6,11 +6,14 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
   const [email, setEmail] = useState("")
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
-  const [messageType, setMessageType] = useState(null) // "success", "error", "info"
+  const [messageType, setMessageType] = useState(null)
+  
+  // Track abort controller for cleanup
+  const inviteControllerRef = useRef(null)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    
+
     if (!email.trim()) {
       setMessage("Please enter an email address")
       setMessageType("error")
@@ -20,31 +23,44 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
     setLoading(true)
     setMessage(null)
 
+    // Create new abort controller for this invite
+    inviteControllerRef.current = new AbortController()
+
     try {
-      // Get current user
-      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser()
-      if (userError || !currentUser) {
-        console.error("[InviteUserModal] Auth error:", userError)
+      console.log("[InviteUserModal] Starting invite process for:", email.trim())
+
+      // Step 1: Authenticate current user
+      console.log("[InviteUserModal] Step 1: Authenticating current user...")
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      const currentUser = authData?.user
+      if (authError || !currentUser) {
+        console.error("[InviteUserModal] ❌ Authentication error:", authError)
         setMessage("Authentication error. Please try again.")
         setMessageType("error")
         setLoading(false)
         return
       }
-      
-      const currentUserId = currentUser.id
-      console.log("[InviteUserModal] Current user ID:", currentUserId)
 
-      // Step 1: Find user by email
-      console.log("[InviteUserModal] Looking up user:", email)
-      
-      const { data: userData, error: lookupError } = await supabase
+      console.log("[InviteUserModal] ✅ Current user authenticated")
+
+      // Step 2: Find user by email
+      console.log("[InviteUserModal] Step 2: Looking up user by email...")
+      const { data: userData, error: userError } = await supabase
         .from("profiles")
         .select("id, email")
-        .eq("email", email)
-        .single()
+        .eq("email", email.trim())
+        .maybeSingle()
 
-      if (lookupError || !userData) {
-        console.log("[InviteUserModal] User not found:", email)
+      if (userError) {
+        console.error("[InviteUserModal] ❌ Email lookup error:", userError)
+        setMessage("Email lookup failed. Please try again.")
+        setMessageType("error")
+        setLoading(false)
+        return
+      }
+
+      if (!userData?.id) {
+        console.error("[InviteUserModal] ❌ User not found:", email.trim())
         setMessage("User not found")
         setMessageType("error")
         setLoading(false)
@@ -52,28 +68,27 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
       }
 
       const invitedUserId = userData.id
-      console.log("[InviteUserModal] Found user ID:", invitedUserId)
+      console.log("[InviteUserModal] ✅ User found:", invitedUserId)
 
-      // Step 2: Fetch current user's workspace encryption key
-      console.log("[InviteUserModal] Fetching workspace encryption key")
-      console.log("Fetching key with:", workspaceId, currentUserId)
-      const { data: keyData, error: keyFetchError } = await supabase
+      // Step 3: Fetch current user's workspace encryption key
+      console.log("[InviteUserModal] Step 3: Fetching workspace encryption key...")
+      const { data: keyData, error: keyError } = await supabase
         .from("workspace_keys")
         .select("encrypted_key")
         .eq("workspace_id", workspaceId)
-        .eq("user_id", currentUserId)
+        .eq("user_id", currentUser.id)
         .maybeSingle()
 
-      if (keyFetchError) {
-        console.error("[InviteUserModal] Error fetching workspace key:", keyFetchError)
+      if (keyError) {
+        console.error("[InviteUserModal] ❌ Key fetch error:", keyError)
         setMessage("Failed to fetch encryption key")
         setMessageType("error")
         setLoading(false)
         return
       }
 
-      if (!keyData || !keyData.encrypted_key) {
-        console.error("[InviteUserModal] No workspace key found for current user")
+      if (!keyData?.encrypted_key) {
+        console.error("[InviteUserModal] ❌ No encryption key found for workspace")
         setMessage("Failed to fetch encryption key")
         setMessageType("error")
         setLoading(false)
@@ -81,94 +96,80 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
       }
 
       const workspaceKey = keyData.encrypted_key
-      console.log("[InviteUserModal] Successfully fetched workspace key")
+      console.log("[InviteUserModal] ✅ Encryption key fetched")
 
-      // Step 3: Add user to workspace_members
-      console.log("[InviteUserModal] Adding user to workspace")
+      // Step 4: Add user to workspace_members
+      console.log("[InviteUserModal] Step 4: Adding user to workspace_members...")
       const result = await addUserToWorkspace(invitedUserId, workspaceId, "editor")
-
       if (!result.success) {
-        console.error("[InviteUserModal] Add failed:", result.error)
+        console.error("[InviteUserModal] ❌ Failed to add user to workspace:", result.error)
         setMessage(result.error || "Failed to add user")
         setMessageType("error")
         setLoading(false)
         return
       }
 
-      // Check if user was already a member
-      const userWasAlreadyMember = result.data?.message?.includes("already exists")
-      console.log("[InviteUserModal] DEBUG: userWasAlreadyMember =", userWasAlreadyMember)
-      
-      if (userWasAlreadyMember) {
-        console.log("[InviteUserModal] User already a member of workspace")
-      } else {
-        console.log("[InviteUserModal] User successfully added to workspace")
-      }
+      console.log("[InviteUserModal] ✅ User added to workspace_members")
 
-      console.log("[InviteUserModal] CONTINUING TO KEY CHECK (not returning early)")
-      
-      // Step 4: Ensure workspace_keys entry exists for this user
-      // Even if user already existed, they might not have a key (so add one)
-      console.log("[InviteUserModal] Checking workspace_keys for user")
-      console.log("[InviteUserModal] DEBUG: invitedUserId =", invitedUserId, "workspaceId =", workspaceId)
-      
-      const { data: existingKey, error: keyCheckError } = await supabase
+      // Step 5: Check if workspace_keys entry already exists
+      console.log("[InviteUserModal] Step 5: Checking for existing encryption key...")
+      const { data: existingKey, error: existingKeyError } = await supabase
         .from("workspace_keys")
         .select("id")
         .eq("workspace_id", workspaceId)
         .eq("user_id", invitedUserId)
         .maybeSingle()
 
-      if (keyCheckError) {
-        console.error("[InviteUserModal] Error checking existing key:", keyCheckError)
-        // Continue anyway - might be a permission issue, try to insert
+      if (existingKeyError) {
+        console.warn("[InviteUserModal] Warning checking existing key:", existingKeyError)
+        // Continue anyway - might be permission issue
       }
 
       if (existingKey?.id) {
-        console.log("[InviteUserModal] Key already exists for user, skipping insert")
-        setMessage(`✓ ${email} is ready to access! (Key already set up)`)
+        console.log("[InviteUserModal] ℹ️ Key already exists for this user, skipping insert")
+        setMessage(`✓ ${email.trim()} added successfully! (Key already set up)`)
         setMessageType("success")
       } else {
-        // Key doesn't exist, insert it
-        console.log("[InviteUserModal] Adding user to workspace_keys")
-        console.log("Inserting key for:", invitedUserId, workspaceId, workspaceKey)
-        
+        // Step 6: Insert encryption key
+        console.log("[InviteUserModal] Step 6: Inserting encryption key for invited user...")
         const { error: keyInsertError } = await supabase
           .from("workspace_keys")
           .insert({
             user_id: invitedUserId,
             workspace_id: workspaceId,
-            encrypted_key: workspaceKey
+            encrypted_key: workspaceKey,
           })
 
         if (keyInsertError) {
-          console.error("KEY INSERT FAILED:", keyInsertError)
-          const errorMsg = `Failed to setup encryption key: ${keyInsertError.message}`
-          console.error("[InviteUserModal]", errorMsg)
-          setMessage(errorMsg)
+          console.error("[InviteUserModal] ❌ Failed to insert encryption key:", keyInsertError)
+          setMessage(`Failed to setup encryption key: ${keyInsertError.message}`)
           setMessageType("error")
           setLoading(false)
-          alert(keyInsertError.message)
           return
         }
 
-        console.log("[InviteUserModal] Successfully added user to workspace_keys")
-        setMessage(`✓ ${email} added successfully!`)
+        console.log("[InviteUserModal] ✅ Encryption key inserted")
+        setMessage(`✓ ${email.trim()} added successfully!`)
         setMessageType("success")
       }
+
+      console.log("[InviteUserModal] ✅ Invite process completed successfully")
+      
+      // Notify parent about membership change
+      window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId } }))
 
       setTimeout(() => {
         onClose()
         if (onSuccess) onSuccess()
-      }, 2000)
-    } catch (err) {
-      console.error("[InviteUserModal] EXCEPTION CAUGHT:", err)
-      console.error("[InviteUserModal] Stack:", err.stack)
+      }, 1200)
+    } catch (error) {
+      console.error("[InviteUserModal] ❌ Unexpected error:", error)
       setMessage("An error occurred. Please try again.")
       setMessageType("error")
+    } finally {
+      setLoading(false)
+      inviteControllerRef.current = null
     }
-
-    setLoading(false)
   }
 
   return (
@@ -217,14 +218,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
               disabled={loading}
               className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 rounded-lg font-bold transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {loading ? (
-                <>
-                  <span className="animate-spin">⏳</span>
-                  Adding...
-                </>
-              ) : (
-                "Add User"
-              )}
+              {loading ? "Adding..." : "Add User"}
             </button>
           </div>
         </form>

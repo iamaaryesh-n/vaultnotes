@@ -1,7 +1,9 @@
-import { encrypt, decrypt, importKey } from "../utils/encryption"
+import { encrypt, decrypt, importKey, validateKey, debugLogKey } from "../utils/encryption"
 import MemoryGrid from "../components/MemoryGrid"
 import InviteUserModal from "../components/InviteUserModal"
 import RemoveUserModal from "../components/RemoveUserModal"
+import { canCreate, canDelete, canShare, getUserRole, isViewer } from "../utils/rolePermissions"
+import { verifyWorkspaceAccess } from "../lib/workspaceMembers"
 import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
@@ -27,7 +29,12 @@ export default function WorkspaceDetail() {
   const [deletingId, setDeletingId] = useState(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showRemoveUserModal, setShowRemoveUserModal] = useState(false)
-  const [currentUserId, setCurrentUserId] = useState(null)
+  const [userRole, setUserRole] = useState(null) // "owner", "editor", or "viewer"
+
+  // Track initialization to prevent duplicate loads
+  const initializeControllerRef = useRef(null)
+  const isInitializingRef = useRef(false)
+  const isInitializedRef = useRef(false)
 
   // Set up keyboard shortcuts (N for new memory, / for search, Esc to clear search)
   useKeyboardShortcuts({
@@ -43,7 +50,18 @@ export default function WorkspaceDetail() {
   })
 
   useEffect(() => {
-    initialize()
+    // Prevent multiple initializations
+    if (!isInitializedRef.current && !isInitializingRef.current) {
+      initialize()
+    }
+
+    // Cleanup: cancel pending initialization on unmount
+    return () => {
+      if (initializeControllerRef.current) {
+        initializeControllerRef.current.abort()
+        console.log("[WorkspaceDetail] Cancelled pending initialization on unmount")
+      }
+    }
   }, [])
 
   const validateSchema = async () => {
@@ -59,79 +77,206 @@ export default function WorkspaceDetail() {
   }
 
   const initialize = async () => {
-    // Get current user ID for owner checks
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (!userError && user) {
-      setCurrentUserId(user.id)
+    if (isInitializingRef.current) {
+      console.log("[WorkspaceDetail] Initialization already in progress, skipping duplicate request")
+      return
     }
 
-    await validateSchema()
-    await fetchWorkspace()
-    await loadWorkspaceKey()
-    // Sort preference is now loaded via useEffect for proper dependency handling
+    isInitializingRef.current = true
+    initializeControllerRef.current = new AbortController()
+    const startTime = Date.now()
+
+    try {
+      console.log(`[WorkspaceDetail] Starting initialization for workspace ${id}`)
+
+      // Step 1: Get current user
+      console.log("[WorkspaceDetail] Step 1: Authenticating user...")
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        console.error("[WorkspaceDetail] ❌ Authentication error:", userError)
+        showError("Authentication error. Please log in again.")
+        setLoading(false)
+        isInitializingRef.current = false
+        return
+      }
+
+      // Step 2: Verify workspace access (membership + key)
+      console.log("[WorkspaceDetail] Step 2: Verifying workspace access (membership + key)...")
+      const accessVerification = await verifyWorkspaceAccess(user.id, id)
+
+      if (!accessVerification.isMember) {
+        console.error("[WorkspaceDetail] ❌ User is not a member of this workspace")
+        showError("You are not a member of this workspace")
+        setLoading(false)
+        isInitializingRef.current = false
+        setTimeout(() => navigate("/"), 1500)
+        return
+      }
+
+      if (!accessVerification.hasKey) {
+        console.error("[WorkspaceDetail] ❌ Encryption key not found for this workspace")
+        showError("Encryption key not found. Cannot access this workspace.")
+        setLoading(false)
+        isInitializingRef.current = false
+        setTimeout(() => navigate("/"), 1500)
+        return
+      }
+
+      console.log("[WorkspaceDetail] ✅ Access verified - user is member with encryption key")
+
+      // Step 3: Load user's role
+      console.log("[WorkspaceDetail] Step 3: Loading user's workspace role...")
+      try {
+        const role = await getUserRole(id)
+        setUserRole(role)
+        console.log(`[WorkspaceDetail] Step 3: User role loaded: ${role}`)
+      } catch (err) {
+        console.warn("[WorkspaceDetail] Failed to load user role, defaulting to viewer:", err)
+        setUserRole("viewer")
+      }
+
+      // Step 4: Fetch workspace details and validate schema (can run in parallel)
+      console.log("[WorkspaceDetail] Step 4: Fetching workspace details and validating schema...")
+      await Promise.all([
+        validateSchema(),
+        fetchWorkspace(),
+      ])
+
+      // Step 5: Load workspace key
+      console.log("[WorkspaceDetail] Step 5: Loading encryption key...")
+      await loadWorkspaceKey()
+
+      const elapsed = Date.now() - startTime
+      console.log(`[WorkspaceDetail] ✅ Initialization completed in ${elapsed}ms`)
+      isInitializedRef.current = true
+
+      // Sort preference is loaded via separate useEffect for proper dependency handling
+    } catch (err) {
+      console.error("[WorkspaceDetail] ❌ Initialization error:", err)
+      showError("Failed to load workspace")
+      setLoading(false)
+      isInitializingRef.current = false
+      return
+    }
+
+    isInitializingRef.current = false
+  }
+
+  const loadUserRole = async () => {
+    try {
+      const role = await getUserRole(id)
+      setUserRole(role)
+    } catch {
+      setUserRole("viewer")
+    }
   }
 
   const fetchWorkspace = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("workspaces")
       .select("id, name, created_at, created_by")
       .eq("id", id)
-      .single()
+      .maybeSingle()
 
-    if (error) {
-      console.error(JSON.stringify(error, null, 2))
+    if (!data) {
+      showError("Workspace not found or access denied")
+      navigate("/")
+      return
     }
-    
-    if (data) setWorkspace(data)
+
+    setWorkspace(data)
   }
 
   const loadWorkspaceKey = async () => {
 
     // 1️⃣ Try localStorage first
     let storedKey = localStorage.getItem(`workspace_key_${id}`)
+    
+    if (storedKey) {
+      debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKey - localStorage")
+    }
 
-    // 2️⃣ If not found, fetch from database
+    // 2️⃣ If not found in localStorage, fetch from database
     if (!storedKey) {
 
       const {
-        data: { user }
+        data: { user },
+        error: authError
       } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        console.error("[WorkspaceDetail/loadWorkspaceKey] Authentication error:", authError)
+        showError("Authentication error. Please log in again.")
+        setLoading(false)
+        return
+      }
 
       const { data, error: keyError } = await supabase
         .from("workspace_keys")
         .select("encrypted_key")
         .eq("workspace_id", id)
         .eq("user_id", user.id)
-        .single()
+        .maybeSingle()
 
-      if (keyError || !data?.encrypted_key) {
-        console.error("Key fetch error:", JSON.stringify(keyError, null, 2))
-        alert("No encryption key found for this workspace.")
+      if (keyError) {
+        console.error("[WorkspaceDetail/loadWorkspaceKey] Database error fetching key:", JSON.stringify(keyError, null, 2))
+      }
+      
+      if (!data?.encrypted_key) {
+        console.error(`[WorkspaceDetail/loadWorkspaceKey] ❌ No encryption key found for workspace ${id} (user: ${user.id})`)
+        console.error("[WorkspaceDetail/loadWorkspaceKey] This workspace is inaccessible without a key. Redirecting to dashboard...")
+        showError("Cannot access this workspace - encryption key not found. Please ensure you have been granted access.")
         setLoading(false)
+        
+        // Redirect to dashboard after a short delay to allow user to see the error message
+        setTimeout(() => {
+          navigate("/")
+        }, 2000)
         return
       }
 
       storedKey = data.encrypted_key
+      debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKey - database")
+      
       // Cache locally for fast future loads
       localStorage.setItem(`workspace_key_${id}`, storedKey)
-
     }
 
-    const key = await importKey(storedKey)
+    // 3️⃣ Validate the key format
+    const keyValidation = validateKey(storedKey)
+    if (!keyValidation.isValid) {
+      console.error(`[WorkspaceDetail/loadWorkspaceKey] ❌ Key validation failed: ${keyValidation.error}`)
+      showError(`Invalid encryption key: ${keyValidation.error}`)
+      setLoading(false)
+      
+      // Redirect to dashboard
+      setTimeout(() => {
+        navigate("/")
+      }, 2000)
+      return
+    }
 
-    setWorkspaceKey(key)
 
-    await fetchMemories(key)
-
+    try {
+      const key = await importKey(storedKey)
+      setWorkspaceKey(key)
+      await fetchMemories(key)
+    } catch (err) {
+      console.error("[WorkspaceDetail/loadWorkspaceKey] Failed to import key:", err)
+      showError("Failed to process encryption key. Please try again.")
+      setLoading(false)
+      
+      setTimeout(() => {
+        navigate("/")
+      }, 2000)
+    }
   }
 
   const loadSortPreference = async () => {
     try {
       // Verify workspace ID
-      console.log("[loadSortPreference] Starting. Workspace ID:", id)
       
       if (!id) {
-        console.log("[loadSortPreference] No workspace ID, skipping")
         return
       }
 
@@ -141,11 +286,9 @@ export default function WorkspaceDetail() {
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        console.log("[loadSortPreference] No user or auth error:", userError)
         return
       }
 
-      console.log("[loadSortPreference] Fetching preference. User:", user.id, "Workspace:", id)
 
       // Step 1: Try to get user-specific preference
       const { data, error } = await supabase
@@ -154,15 +297,6 @@ export default function WorkspaceDetail() {
         .eq("user_id", user.id)
         .eq("workspace_id", id)
         .maybeSingle()
-
-      console.log("[loadSortPreference] Preference query result:", { 
-        dataExists: !!data, 
-        sort_order: data?.sort_order, 
-        errorCode: error?.code,
-        errorMessage: error?.message,
-        errorStatus: error?.status,
-        fullError: error
-      })
 
       if (error) {
         if (error.code === "PGRST204" || error.status === 404) {
@@ -176,31 +310,25 @@ export default function WorkspaceDetail() {
 
       // If user has a preference, use it
       if (data && data.sort_order) {
-        console.log("[loadSortPreference] Using user preference:", data.sort_order)
         setSortOrder(data.sort_order)
         return
       }
 
       // Step 2: No user preference found, fetch workspace default_sort as fallback
-      console.log("[loadSortPreference] No user preference found, fetching workspace default_sort as fallback")
 
       const { data: workspaceData, error: workspaceError } = await supabase
         .from("workspaces")
         .select("default_sort")
         .eq("id", id)
-        .single()
+        .maybeSingle()
 
       if (workspaceError) {
         console.warn("[loadSortPreference] Failed to fetch workspace default_sort:", workspaceError)
-        console.log("[loadSortPreference] Falling back to default 'newest'")
         return
       }
 
       if (workspaceData && workspaceData.default_sort) {
-        console.log("[loadSortPreference] Using workspace default_sort:", workspaceData.default_sort, "(FALLBACK TO WORKSPACE DEFAULT)")
         setSortOrder(workspaceData.default_sort)
-      } else {
-        console.log("[loadSortPreference] Workspace has no default_sort configured, keeping default 'newest'")
       }
     } catch (err) {
       console.error("[loadSortPreference] Exception:", err)
@@ -212,14 +340,12 @@ export default function WorkspaceDetail() {
   // This ensures preferences are loaded for each new workspace
   useEffect(() => {
     if (id) {
-      console.log("[useEffect] Workspace changed, loading preferences for:", id)
       loadSortPreference()
     }
   }, [id])
 
   // Log whenever sortOrder state changes (for verification)
   useEffect(() => {
-    console.log("[sortOrder changed] New value:", sortOrder)
   }, [sortOrder])
 
   const saveSortPreference = async (newSortOrder) => {
@@ -239,7 +365,6 @@ export default function WorkspaceDetail() {
         return
       }
 
-      console.log("[saveSortPreference] Saving. SortOrder:", newSortOrder, "Workspace:", id, "User:", user.id)
 
       // Upsert the preference (insert if new, update if exists)
       const { error } = await supabase
@@ -266,8 +391,6 @@ export default function WorkspaceDetail() {
           status: error.status,
           fullError: error
         })
-      } else {
-        console.log("[saveSortPreference] Saved successfully")
       }
     } catch (err) {
       console.error("[saveSortPreference] Exception:", err)
@@ -275,7 +398,6 @@ export default function WorkspaceDetail() {
   }
 
   const fetchMemories = async (key) => {
-    console.log("Workspace ID:", id);
 
     const { data, error } = await supabase
       .from("memories")
@@ -293,10 +415,13 @@ export default function WorkspaceDetail() {
       .order("updated_at", { ascending: false });
 
     if (error) {
-      console.error("Full error:", JSON.stringify(error, null, 2));
+      showError("Failed to load memories")
+      setMemories([])
+      setLoading(false)
+      return
     }
 
-    if (data) {
+    if (data && data.length > 0) {
 
       const decrypted = await Promise.all(
         data.map(async (memory) => {
@@ -317,6 +442,8 @@ export default function WorkspaceDetail() {
 
       setMemories(decrypted)
 
+    } else {
+      setMemories([])
     }
 
     setLoading(false)
@@ -351,6 +478,12 @@ export default function WorkspaceDetail() {
   }
 
   const handleDelete = async (memoryId) => {
+    // Check role permission
+    if (!canDelete(userRole)) {
+      showError("You don't have permission to delete memories")
+      return
+    }
+
     // Optimistic delete: remove from UI immediately
     const originalMemories = memories
     setMemories(prev => prev.filter(m => m.id !== memoryId))
@@ -361,6 +494,7 @@ export default function WorkspaceDetail() {
         .from("memories")
         .delete()
         .eq("id", memoryId)
+        .eq("workspace_id", id)
 
       if (error) {
         console.error("Delete error:", error)
@@ -393,6 +527,7 @@ export default function WorkspaceDetail() {
       .from("memories")
       .update({ is_favorite: !currentStatus })
       .eq("id", memoryId)
+      .eq("workspace_id", id)
 
     if (error) {
       console.error("Favorite toggle failed:", error)
@@ -464,26 +599,45 @@ export default function WorkspaceDetail() {
               <p className="text-slate-500 text-sm mt-1">Encrypted memory vault</p>
             </div>
             <div className="flex gap-2">
-              {workspace?.created_by === currentUserId && (
+              {/* Members Button - Owner Only */}
+              {canShare(userRole) && (
                 <button
                   onClick={() => setShowRemoveUserModal(true)}
                   className="bg-slate-400 hover:bg-slate-300 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                  title="Manage workspace members - Owner only"
                 >
                   👥 Members
                 </button>
               )}
-              <button
-                onClick={() => setShowInviteModal(true)}
-                className="bg-slate-500 hover:bg-slate-400 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-              >
-                📤 Share
-              </button>
-              <button
-                onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
-                className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 px-5 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-              >
-                + Add Memory
-              </button>
+              
+              {/* Share Button - Owner Only */}
+              {canShare(userRole) && (
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="bg-slate-500 hover:bg-slate-400 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                  title="Invite users to workspace - Owner only"
+                >
+                  📤 Share
+                </button>
+              )}
+              
+              {/* Add Memory Button - Owner and Editor */}
+              {canCreate(userRole) && (
+                <button
+                  onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
+                  className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 px-5 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                  title="Create a new memory"
+                >
+                  + Add Memory
+                </button>
+              )}
+              
+              {/* Viewer Status - Viewer Role */}
+              {isViewer(userRole) && (
+                <div className="text-sm text-slate-500 px-4 py-2 font-medium" title="You have read-only access to this workspace">
+                  👁️ Viewer - Read-only access
+                </div>
+              )}
             </div>
           </div>
 
@@ -550,6 +704,7 @@ export default function WorkspaceDetail() {
           onCreateMemory={() => navigate(`/workspace/${id}/new`)}
           searchTerm={searchTerm}
           deletingId={deletingId}
+          userRole={userRole}
           emptyMessage={
             showFavoritesOnly 
               ? "No favorite memories yet ⭐\nStar a memory to pin it here"
@@ -564,8 +719,8 @@ export default function WorkspaceDetail() {
           onClose={() => setShowInviteModal(false)}
           workspaceId={id}
           onSuccess={() => {
-            // Refresh members list if needed
-            // For now, just close the modal
+            window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: id } }))
+            loadUserRole()
           }}
         />
       )}
@@ -574,9 +729,10 @@ export default function WorkspaceDetail() {
         <RemoveUserModal
           onClose={() => setShowRemoveUserModal(false)}
           workspaceId={id}
-          isOwner={workspace?.created_by === currentUserId}
+          isOwner={userRole === "owner"}
           onUserRemoved={() => {
-            // Optionally refresh memories if needed
+            window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: id } }))
+            loadUserRole()
           }}
         />
       )}
@@ -585,3 +741,8 @@ export default function WorkspaceDetail() {
   )
 
 }
+
+
+
+
+

@@ -1,6 +1,6 @@
 import MemoryCard from "./MemoryCard"
 
-export default function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTagClick, emptyMessage = "No memories yet ✨\nStart capturing your thoughts", searchTerm = "", onCreateMemory = null, deletingId = null }) {
+export default function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTagClick, emptyMessage = "No memories yet ✨\nStart capturing your thoughts", searchTerm = "", onCreateMemory = null, deletingId = null, userRole = "viewer" }) {
 
   if (!memories || memories.length === 0) {
     return (
@@ -37,6 +37,7 @@ export default function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTag
           onTagClick={onTagClick} 
           searchTerm={searchTerm}
           isDeleting={deletingId === memory.id}
+          userRole={userRole}
         />
       ))}
     </div>
