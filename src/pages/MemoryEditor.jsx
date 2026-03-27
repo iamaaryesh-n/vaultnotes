@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { supabase } from "../lib/supabase"
-import { encrypt, decrypt, importKey } from "../utils/encryption"
+import { encrypt, decrypt, importKey, debugLogKey, validateKey } from "../utils/encryption"
+import { canEdit, canCreate, getUserRole } from "../utils/rolePermissions"
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
@@ -21,6 +22,10 @@ export default function MemoryEditor() {
   const selectedImageRef = useRef(null)
   const selectedImageElementRef = useRef(null)
 
+  // Track to prevent concurrent loads
+  const loadControllerRef = useRef(null)
+  const isLoadingMemoryRef = useRef(false)
+
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [loading, setLoading] = useState(false)
@@ -37,6 +42,7 @@ export default function MemoryEditor() {
   const [isCropping, setIsCropping] = useState(false)
   const [cropStart, setCropStart] = useState({ x: 0, y: 0 })
   const [cropDimensions, setCropDimensions] = useState({ startX: 0, startY: 0, endX: 100, endY: 100 })
+  const [userRole, setUserRole] = useState(null) // "owner", "editor", or "viewer"
 
   // Set up keyboard shortcuts (Esc to exit editor)
   useKeyboardShortcuts({
@@ -80,7 +86,15 @@ export default function MemoryEditor() {
     if (memoryId) {
       loadMemory()
     }
-  }, [memoryId])
+    loadUserRole()
+
+    return () => {
+      // Cleanup: cancel pending load on unmount
+      if (loadControllerRef.current) {
+        loadControllerRef.current.abort()
+      }
+    }
+  }, [memoryId, id])
 
   // Auto-focus editor when loaded
   useEffect(() => {
@@ -117,7 +131,6 @@ export default function MemoryEditor() {
           e.preventDefault()
           e.stopPropagation()
 
-          console.log('Image clicked!')
 
           // Deselect previous image
           editorDom.querySelectorAll('img.selected').forEach(img => {
@@ -140,7 +153,6 @@ export default function MemoryEditor() {
             top: rect.top - 70 + window.scrollY,
             left: rect.left + rect.width / 2,
           }
-          console.log('Setting toolbar position:', newToolbarPosition, 'Toolbar should show now')
           setToolbarPosition(newToolbarPosition)
 
           // Store dimensions for resize
@@ -294,7 +306,6 @@ export default function MemoryEditor() {
       return
     }
 
-    console.log('Aligning image to:', alignment)
 
     // Remove previous alignment styles
     imgElement.style.marginLeft = ''
@@ -457,123 +468,232 @@ export default function MemoryEditor() {
   }
 
   const loadMemory = async () => {
+    // Prevent concurrent loads
+    if (isLoadingMemoryRef.current) {
+      console.log("[MemoryEditor] Memory load already in progress, skipping duplicate request")
+      return
+    }
+
+    isLoadingMemoryRef.current = true
+    loadControllerRef.current = new AbortController()
+    const startTime = Date.now()
     
     setLoading(true)
 
-    const storedKey = localStorage.getItem(`workspace_key_${id}`)
-    if (!storedKey) {
-      alert("Encryption key not found.")
-      navigate(`/workspace/${id}`)
-      return
-    }
-
-    const { data: memory, error } = await supabase
-      .from("memories")
-      .select(`
-        id,
-        title,
-        encrypted_content,
-        iv,
-        created_at,
-        updated_at,
-        workspace_id,
-        tags,
-        is_favorite
-      `)
-      .eq("id", memoryId)
-      .single()
-
-    if (error || !memory) {
-      console.error("Failed to load memory:", error)
-      setLoading(false)
-      return
-    }
-
     try {
-      const cryptoKey = await importKey(storedKey)
-      const decryptedText = await decrypt(memory.encrypted_content, memory.iv, cryptoKey)
-      
-      setTitle(memory.title)
-      setContent(decryptedText)
-      setIsLoaded(true)
-    } catch (err) {
-      console.error("Decryption failed:", err)
-      alert("Could not decrypt this memory.")
-    }
+      console.log("[MemoryEditor] Starting memory load for ID:", memoryId)
 
-    setLoading(false)
+      const storedKey = localStorage.getItem(`workspace_key_${id}`)
+      if (!storedKey) {
+        console.error("[MemoryEditor] ❌ Encryption key not found in localStorage")
+        showError("Encryption key not found.")
+        navigate(`/workspace/${id}`)
+        return
+      }
+
+      // Step 1: Fetch memory from database
+      console.log("[MemoryEditor] Step 1: Fetching memory from database...")
+      const { data: memory, error } = await supabase
+        .from("memories")
+        .select(`
+          id,
+          title,
+          encrypted_content,
+          iv,
+          created_at,
+          updated_at,
+          workspace_id,
+          tags,
+          is_favorite
+        `)
+        .eq("id", memoryId)
+        .eq("workspace_id", id)
+        .maybeSingle()
+
+      if (error) {
+        console.error("[MemoryEditor] ❌ Database fetch error:", error)
+        showError("Memory not found or you no longer have access")
+        setLoading(false)
+        return
+      }
+
+      if (!memory) {
+        console.error("[MemoryEditor] ❌ Memory not found:", memoryId)
+        showError("Memory not found or you no longer have access")
+        setLoading(false)
+        return
+      }
+
+      console.log("[MemoryEditor] ✅ Memory fetched from database")
+
+      // Step 2: Decrypt memory content
+      console.log("[MemoryEditor] Step 2: Decrypting memory content...")
+      try {
+        const cryptoKey = await importKey(storedKey)
+        const decryptedText = await decrypt(memory.encrypted_content, memory.iv, cryptoKey)
+        
+        setTitle(memory.title)
+        setContent(decryptedText)
+        setIsLoaded(true)
+        
+        console.log("[MemoryEditor] ✅ Memory decrypted successfully")
+      } catch (decryptErr) {
+        console.error("[MemoryEditor] ❌ Decryption error:", decryptErr)
+        showError("Could not decrypt this memory")
+        setLoading(false)
+        return
+      }
+
+      const elapsedMs = Date.now() - startTime
+      console.log(`[MemoryEditor] ✅ Memory load completed in ${elapsedMs}ms`)
+    } catch (err) {
+      console.error("[MemoryEditor] ❌ Unexpected error loading memory:", err)
+      showError("An error occurred while loading the memory")
+      setLoading(false)
+    } finally {
+      setLoading(false)
+      isLoadingMemoryRef.current = false
+    }
+  }
+
+  const loadUserRole = async () => {
+    try {
+      const role = await getUserRole(id)
+      setUserRole(role)
+    } catch {
+      setUserRole("viewer")
+    }
   }
 
   const saveMemory = async () => {
+    const startTime = Date.now()
+    console.log("[MemoryEditor] Starting memory save operation")
+
+    // Check permissions based on action
+    const isEditing = !!memoryId
+    const action = isEditing ? "edit" : "create"
+    
+    console.log(`[MemoryEditor] Step 1: Checking permissions for ${action}...`)
+    const hasPermission = isEditing ? canEdit(userRole) : canCreate(userRole)
+
+    if (!hasPermission) {
+      console.error(`[MemoryEditor] ❌ Permission denied for ${action}`)
+      showError(`You don't have permission to ${action} memories`)
+      return
+    }
+
     if (!content.trim() && !title.trim()) {
+      console.error("[MemoryEditor] ❌ Empty memory: no content or title")
       showError("Please add some content or a title")
       return
     }
 
+    console.log("[MemoryEditor] ✅ Permissions verified")
+
     const storedKey = localStorage.getItem(`workspace_key_${id}`)
 
     if (!storedKey) {
+      console.error("[MemoryEditor] ❌ Encryption key not found in localStorage")
       showError("Encryption key not found. Please go back and reopen the workspace.")
       return
     }
 
+    // Validate key before using
+    console.log("[MemoryEditor] Step 2: Validating encryption key...")
+    const keyValidation = validateKey(storedKey)
+    debugLogKey(storedKey, "MemoryEditor")
+    
+    if (!keyValidation.isValid) {
+      console.error("[MemoryEditor] ❌ Invalid encryption key:", keyValidation.error)
+      showError("Invalid encryption key. Cannot save memory.")
+      return
+    }
+
+    console.log("[MemoryEditor] ✅ Encryption key validated")
+
     setSaving(true)
 
     try {
+      // Step 3: Encrypt content
+      console.log("[MemoryEditor] Step 3: Encrypting memory content...")
       const cryptoKey = await importKey(storedKey)
       const { ciphertext, iv } = await encrypt(content, cryptoKey)
+      console.log("[MemoryEditor] ✅ Content encrypted")
 
+      // Step 4: Get current user
+      console.log("[MemoryEditor] Step 4: Authenticating current user...")
       const {
-        data: { user }
+        data: { user },
+        error: authError
       } = await supabase.auth.getUser()
 
-      const payload = {
+      if (authError || !user) {
+        console.error("[MemoryEditor] ❌ Authentication error:", authError)
+        showError("Authentication error. Please try again.")
+        setSaving(false)
+        return
+      }
+
+      console.log("[MemoryEditor] ✅ User authenticated")
+
+      // For updates, do NOT overwrite created_by (RLS will block if you change creator)
+      const basePayload = {
         workspace_id: id,
         title: title || "Untitled",
         encrypted_content: ciphertext,
-        iv: iv,
-        created_by: user.id
+        iv: iv
       }
 
       let error
 
       if (memoryId) {
-        // Edit existing memory
-        const { data: updatedData, error: updateError } = await supabase
+        // Step 5a: Update existing memory
+        console.log("[MemoryEditor] Step 5: Updating existing memory...")
+        const { error: updateError } = await supabase
           .from("memories")
-          .update(payload)
+          .update(basePayload)
           .eq("id", memoryId)
-          .select()
-          .single()
-          
+          .eq("workspace_id", id)
+
         error = updateError
-        if (!error && updatedData) {
-          sessionStorage.setItem(`memory_${memoryId}`, JSON.stringify({
-            ...updatedData, 
-            content: content
-          }))
+        
+        if (!error) {
+          console.log("[MemoryEditor] ✅ Memory updated")
         }
       } else {
-        // Create new memory
+        // Step 5b: Create new memory
+        console.log("[MemoryEditor] Step 5: Creating new memory...")
+        const insertPayload = {
+          ...basePayload,
+          created_by: user.id
+        }
+
         const { error: insertError } = await supabase
           .from("memories")
-          .insert(payload)
+          .insert(insertPayload)
         error = insertError
+
+        if (!error) {
+          console.log("[MemoryEditor] ✅ Memory created")
+        }
       }
 
       if (error) {
-        console.error(error)
-        showError("Failed to save memory")
+        console.error(`[MemoryEditor] ❌ Failed to ${action} memory:`, error)
+        showError(`Failed to ${action} memory`)
         setSaving(false)
         return
       }
 
+      const elapsedMs = Date.now() - startTime
+      console.log(`[MemoryEditor] ✅ Memory ${action} completed in ${elapsedMs}ms`)
+      
       success("Memory saved")
       setSaving(false)
       navigate(`/workspace/${id}`)
 
     } catch (err) {
-      console.error("Save error:", err)
+      console.error("[MemoryEditor] ❌ Unexpected error during save:", err)
       showError("Something went wrong")
       setSaving(false)
     }
@@ -1174,7 +1294,8 @@ export default function MemoryEditor() {
           </button>
           <button
             onClick={saveMemory}
-            disabled={saving || (!content.trim() && !title.trim())}
+            disabled={saving || (!content.trim() && !title.trim()) || !((memoryId ? canEdit(userRole) : canCreate(userRole)))}
+            title={!((memoryId ? canEdit(userRole) : canCreate(userRole))) ? "You don't have permission to perform this action" : ""}
             className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 font-semibold px-6 py-2 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-yellow-500"
           >
             {saving ? "⏳ Saving..." : "Save Memory"}
@@ -1186,3 +1307,4 @@ export default function MemoryEditor() {
 
   )
 }
+

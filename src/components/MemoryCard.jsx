@@ -1,7 +1,8 @@
 import { useNavigate } from "react-router-dom"
+import { canDelete } from "../utils/rolePermissions"
 import { handleNavigationClick } from "../utils/navigation"
 
-export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "", isDeleting = false }) {
+export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "", isDeleting = false, userRole = "viewer" }) {
 
   const navigate = useNavigate()
 
@@ -134,18 +135,20 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
         <p className="text-xs text-slate-400 font-medium">
           {timeLabel} {relativeTime}
         </p>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            if (confirm("Delete this memory?")) {
-              if (onDelete) onDelete(memory.id)
-            }
-          }}
-          disabled={isDeleting}
-          className="text-xs text-red-500 hover:text-red-600 opacity-50 hover:opacity-100 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {isDeleting ? '⏳' : 'Delete'}
-        </button>
+        {canDelete(userRole) && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (confirm("Delete this memory?")) {
+                if (onDelete) onDelete(memory.id)
+              }
+            }}
+            disabled={isDeleting}
+            className="text-xs text-red-500 hover:text-red-600 opacity-50 hover:opacity-100 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isDeleting ? '⏳' : 'Delete'}
+          </button>
+        )}
       </div>
 
     </div>
