@@ -11,6 +11,7 @@ import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
 import { MemoryGridSkeleton } from "../components/SkeletonLoader"
+import Modal from "../components/Modal"
 
 export default function WorkspaceDetail() {
 
@@ -30,6 +31,8 @@ export default function WorkspaceDetail() {
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showRemoveUserModal, setShowRemoveUserModal] = useState(false)
   const [userRole, setUserRole] = useState(null) // "owner", "editor", or "viewer"
+  const [showQuickMemoryModal, setShowQuickMemoryModal] = useState(false)
+  const [quickMemoryContent, setQuickMemoryContent] = useState("")
 
   // Track initialization to prevent duplicate loads
   const initializeControllerRef = useRef(null)
@@ -85,6 +88,9 @@ export default function WorkspaceDetail() {
     isInitializingRef.current = true
     initializeControllerRef.current = new AbortController()
     const startTime = Date.now()
+    
+    // Set loading state immediately to show skeleton
+    setLoading(true)
 
     try {
       console.log(`[WorkspaceDetail] Starting initialization for workspace ${id}`)
@@ -451,10 +457,15 @@ export default function WorkspaceDetail() {
   }
 
   const addMemory = async () => {
+    if (!workspaceKey) return
+    setQuickMemoryContent("")
+    setShowQuickMemoryModal(true)
+  }
 
+  const handleQuickMemoryCreate = async () => {
     if (!workspaceKey) return
 
-    const content = prompt("Write memory:")
+    const content = quickMemoryContent.trim()
     if (!content) return
 
     const { ciphertext, iv } = await encrypt(content, workspaceKey)
@@ -474,7 +485,8 @@ export default function WorkspaceDetail() {
     ])
 
     await fetchMemories(workspaceKey)
-
+    setShowQuickMemoryModal(false)
+    setQuickMemoryContent("")
   }
 
   const handleDelete = async (memoryId) => {
@@ -583,7 +595,7 @@ export default function WorkspaceDetail() {
       <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
 
         <button
-          onClick={(e) => handleNavigationClick(e, () => navigate("/"))}
+          onClick={(e) => handleNavigationClick(e, () => navigate("/workspaces"))}
           className="mb-6 text-yellow-500 hover:text-yellow-400 transition-colors font-medium"
         >
           ← Back to Workspaces
@@ -736,6 +748,21 @@ export default function WorkspaceDetail() {
           }}
         />
       )}
+
+      <Modal
+        open={showQuickMemoryModal}
+        title="Write Memory"
+        inputValue={quickMemoryContent}
+        onInputChange={setQuickMemoryContent}
+        inputPlaceholder="Write memory"
+        confirmText="Create"
+        confirmDisabled={!quickMemoryContent.trim()}
+        onConfirm={handleQuickMemoryCreate}
+        onCancel={() => {
+          setShowQuickMemoryModal(false)
+          setQuickMemoryContent("")
+        }}
+      />
     </div>
 
   )

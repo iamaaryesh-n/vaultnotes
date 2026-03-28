@@ -7,18 +7,30 @@ import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
 import { WorkspaceListSkeleton } from "../components/SkeletonLoader"
+import Modal from "../components/Modal"
+import { useWorkspaceCacheStore } from "../stores/workspaceCacheStore"
 
 export default function Dashboard({ session }) {
 
   const navigate = useNavigate()
   const { success, error: showError } = useToast()
+  
+  // Cache store access
+  const getCachedWorkspaces = useWorkspaceCacheStore(state => state.getCachedWorkspaces)
+  const setCachedWorkspaces = useWorkspaceCacheStore(state => state.setCachedWorkspaces)
+  const clearCache = useWorkspaceCacheStore(state => state.clearCache)
 
-  const [workspaces, setWorkspaces] = useState([])
-  const [loading, setLoading] = useState(true)
+  // Initialize state from cache if available
+  const cachedData = getCachedWorkspaces()
+  const [workspaces, setWorkspaces] = useState(cachedData?.workspaces || [])
+  const [loading, setLoading] = useState(!cachedData) // Only show loading if no cached data
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
-  const [userRoles, setUserRoles] = useState({}) // {workspaceId: role}
-  const [ownerCounts, setOwnerCounts] = useState({}) // {workspaceId: ownerCount}
+  const [userRoles, setUserRoles] = useState(cachedData?.userRoles || {}) // {workspaceId: role}
+  const [ownerCounts, setOwnerCounts] = useState(cachedData?.ownerCounts || {}) // {workspaceId: ownerCount}
+  const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
+  const [workspaceName, setWorkspaceName] = useState("")
+  const [workspaceDeleteTarget, setWorkspaceDeleteTarget] = useState(null)
 
   // Track fetch state to prevent duplicate calls
   const fetchControllerRef = useRef(null)
@@ -27,6 +39,9 @@ export default function Dashboard({ session }) {
 
   const fetchWorkspaces = useCallback(async () => {
     try {
+      // Set loading to true at the start of the fetch
+      setLoading(true)
+      
       // Prevent multiple concurrent fetches
       if (isFetchingRef.current) {
         console.log("[Dashboard] Fetch already in progress, skipping duplicate request")
@@ -121,6 +136,9 @@ export default function Dashboard({ session }) {
           }
         })
         setOwnerCounts(ownerCountMap)
+        
+        // Cache the fetched data for faster navigation
+        setCachedWorkspaces(workspaceData || [], userRolesMap, ownerCountMap)
       }
 
       const elapsed = Date.now() - startTime
@@ -132,13 +150,19 @@ export default function Dashboard({ session }) {
       setLoading(false)
       isFetchingRef.current = false
     }
-  }, [])
+  }, [setCachedWorkspaces])
 
   const createWorkspace = useCallback(async () => {
-    const name = prompt("Workspace name?")
+    setWorkspaceName("")
+    setShowCreateWorkspaceModal(true)
+  }, [])
+
+  const handleCreateWorkspaceConfirm = useCallback(async () => {
+    const name = workspaceName.trim()
     if (!name) return
 
     setCreating(true)
+    setShowCreateWorkspaceModal(false)
 
     const {
       data: { user },
@@ -227,7 +251,7 @@ export default function Dashboard({ session }) {
       showError("Something went wrong")
       setCreating(false)
     }
-  }, [success, showError, fetchWorkspaces])
+  }, [workspaceName, success, showError, fetchWorkspaces])
 
   useKeyboardShortcuts({
     onNewWorkspace: createWorkspace,
@@ -352,8 +376,8 @@ export default function Dashboard({ session }) {
   }, [workspaces, userRoles, ownerCounts, success, showError, fetchWorkspaces])
 
   const deleteWorkspace = useCallback((workspaceId) => {
-    return runWorkspaceAction(workspaceId, "delete")
-  }, [runWorkspaceAction])
+    setWorkspaceDeleteTarget(workspaceId)
+  }, [])
 
   const leaveWorkspaceAction = useCallback((workspaceId) => {
     return runWorkspaceAction(workspaceId, "leave")
@@ -461,6 +485,41 @@ export default function Dashboard({ session }) {
           ))
         )}
       </div>
+
+      <Modal
+        open={showCreateWorkspaceModal}
+        title="Create Workspace"
+        message="Create a new encrypted workspace for your memories."
+        inputValue={workspaceName}
+        onInputChange={setWorkspaceName}
+        inputPlaceholder="Enter workspace name"
+        confirmText="Create"
+        confirmVariant="primary"
+        confirmDisabled={!workspaceName.trim() || creating}
+        isLoading={creating}
+        onConfirm={handleCreateWorkspaceConfirm}
+        onCancel={() => {
+          setShowCreateWorkspaceModal(false)
+          setWorkspaceName("")
+        }}
+      />
+
+      <Modal
+        open={Boolean(workspaceDeleteTarget)}
+        title="Delete Workspace"
+        message="Are you sure you want to delete this workspace? This action cannot be undone."
+        confirmText="Delete"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (!workspaceDeleteTarget) return
+          runWorkspaceAction(workspaceDeleteTarget, "delete")
+          setWorkspaceDeleteTarget(null)
+        }}
+        onCancel={() => {
+          console.log("[Dashboard] Workspace delete cancelled by user")
+          setWorkspaceDeleteTarget(null)
+        }}
+      />
     </div>
   )
 }

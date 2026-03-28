@@ -53,3 +53,53 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Editor base styles */
+.ProseMirror {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  overflow: visible;
+  line-height: 1.6;
+}
+
+.ProseMirror p {
+  min-height: 20px;
+}
+
+.ProseMirror * {
+  max-width: 100%;
+}
+
+.ProseMirror img {
+  min-width: 200px;
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+  pointer-events: auto;
+}
+
+.ProseMirror img[data-align="left"] {
+  float: left;
+  margin-right: 12px;
+  margin-bottom: 8px;
+}
+
+.ProseMirror img[data-align="right"] {
+  float: right;
+  margin-left: 12px;
+  margin-bottom: 8px;
+}
+
+.ProseMirror img[data-align="center"] {
+  display: block;
+  clear: both;
+  float: none;
+  margin: 0 auto 12px;
+}
+
+.ProseMirror::after {
+  content: "";
+  display: block;
+  clear: both;
+}

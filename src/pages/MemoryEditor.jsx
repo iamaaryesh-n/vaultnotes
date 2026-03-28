@@ -9,6 +9,153 @@ import Image from '@tiptap/extension-image'
 import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
+import { EditorSkeleton } from "../components/SkeletonLoader"
+import Modal from "../components/Modal"
+
+const FloatingImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      align: {
+        default: null,
+        parseHTML: (element) => {
+          const align = element.getAttribute('data-align')
+          return align === 'left' || align === 'right' || align === 'center' ? align : null
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.align) return {}
+          return {
+            'data-align': attributes.align,
+          }
+        },
+      },
+      width: {
+        default: null,
+        parseHTML: (element) => {
+          const width = element.getAttribute('width')
+          return width ? Number.parseInt(width, 10) || null : null
+        },
+        renderHTML: (attributes) => {
+          if (!attributes.width) return {}
+          return {
+            width: String(attributes.width),
+          }
+        },
+      },
+    }
+  },
+
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      setImageAlign:
+        (align) =>
+        ({ commands }) =>
+          commands.updateAttributes('image', { align }),
+      setImageWidth:
+        (width) =>
+        ({ commands }) =>
+          commands.updateAttributes('image', { width }),
+      removeImageAlign:
+        () =>
+        ({ commands }) =>
+          commands.updateAttributes('image', { align: null }),
+      setImageFloat:
+        (align) =>
+        ({ commands }) =>
+          commands.updateAttributes('image', { align }),
+      removeImageFloat:
+        () =>
+        ({ commands }) =>
+          commands.updateAttributes('image', { align: null }),
+    }
+  },
+})
+
+const normalizeEditorHtmlForImages = (html) => {
+  if (!html) return html
+
+  const container = document.createElement('div')
+  container.innerHTML = html
+
+  container.querySelectorAll('img').forEach((image) => {
+    if (image.classList.contains('image-left')) {
+      image.setAttribute('data-align', 'left')
+      image.classList.remove('image-left')
+    }
+
+    if (image.classList.contains('image-right')) {
+      image.setAttribute('data-align', 'right')
+      image.classList.remove('image-right')
+    }
+
+    if (!image.getAttribute('data-align') && image.style.marginLeft === 'auto' && image.style.marginRight === 'auto') {
+      image.setAttribute('data-align', 'center')
+    }
+
+    const inlineWidth = image.style.width || image.getAttribute('width')
+    if (inlineWidth) {
+      const parsedWidth = Number.parseInt(inlineWidth, 10)
+      if (Number.isFinite(parsedWidth)) {
+        image.setAttribute('width', String(parsedWidth))
+      }
+      image.style.width = ''
+    }
+
+    image.style.height = ''
+  })
+
+  container.querySelectorAll('figure.image-wrapper, div.image-wrapper').forEach((wrapper) => {
+    const fragment = document.createDocumentFragment()
+    while (wrapper.firstChild) {
+      fragment.appendChild(wrapper.firstChild)
+    }
+    wrapper.replaceWith(fragment)
+  })
+
+  container.querySelectorAll('p').forEach((paragraph) => {
+    const hasDirectImage = Array.from(paragraph.childNodes).some(
+      (node) => node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'IMG'
+    )
+
+    if (!hasDirectImage) return
+
+    const replacementNodes = []
+    let textParagraph = null
+
+    const ensureTextParagraph = () => {
+      if (!textParagraph) {
+        textParagraph = document.createElement('p')
+      }
+      return textParagraph
+    }
+
+    const flushTextParagraph = () => {
+      if (!textParagraph) return
+      if (textParagraph.textContent.trim() || textParagraph.children.length > 0) {
+        replacementNodes.push(textParagraph)
+      }
+      textParagraph = null
+    }
+
+    Array.from(paragraph.childNodes).forEach((node) => {
+      if (node.nodeType === Node.ELEMENT_NODE && node.nodeName === 'IMG') {
+        flushTextParagraph()
+        replacementNodes.push(node.cloneNode(true))
+      } else {
+        ensureTextParagraph().appendChild(node.cloneNode(true))
+      }
+    })
+
+    flushTextParagraph()
+
+    if (replacementNodes.length > 0) {
+      paragraph.replaceWith(...replacementNodes)
+    }
+  })
+
+  return container.innerHTML
+}
 
 export default function MemoryEditor() {
 
@@ -43,18 +190,25 @@ export default function MemoryEditor() {
   const [cropStart, setCropStart] = useState({ x: 0, y: 0 })
   const [cropDimensions, setCropDimensions] = useState({ startX: 0, startY: 0, endX: 100, endY: 100 })
   const [userRole, setUserRole] = useState(null) // "owner", "editor", or "viewer"
+  const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "" })
+
+  const openModal = (title, message) => {
+    setModalConfig({ open: true, title, message })
+  }
 
   // Set up keyboard shortcuts (Esc to exit editor)
   useKeyboardShortcuts({
-    onEscape: () => navigate(-1),
+    onEscape: () => memoryId 
+      ? navigate(`/workspace/${id}/memory/${memoryId}`)
+      : navigate(`/workspace/${id}`),
   })
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: false }),
-      Image.configure({
+      FloatingImage.configure({
         inline: false,
-        allowBase64: false
+        allowBase64: false,
       })
     ],
     content: "",
@@ -131,6 +285,11 @@ export default function MemoryEditor() {
           e.preventDefault()
           e.stopPropagation()
 
+          const imagePos = editor?.view?.posAtDOM(target, 0)
+          if (typeof imagePos === 'number') {
+            editor.chain().focus().setNodeSelection(imagePos).run()
+          }
+
 
           // Deselect previous image
           editorDom.querySelectorAll('img.selected').forEach(img => {
@@ -140,12 +299,11 @@ export default function MemoryEditor() {
           // Select new image
           target.classList.add('selected')
 
-          const wrapper = target.closest('.image-wrapper')
-          setSelectedImage(wrapper)
+          setSelectedImage(target)
           setSelectedImageElement(target)
           
           // Store in refs for immediate access in event handlers
-          selectedImageRef.current = wrapper
+          selectedImageRef.current = target
           selectedImageElementRef.current = target
 
           const rect = target.getBoundingClientRect()
@@ -259,16 +417,21 @@ export default function MemoryEditor() {
       if (!resizeStart.width) return
 
       const deltaX = e.clientX - resizeStart.x
-      const newWidth = Math.max(100, resizeStart.width + deltaX)
-      const newHeight = newWidth * resizeStart.aspectRatio
-
+      const editorWidth = editorRef.current?.querySelector('.ProseMirror')?.clientWidth || 900
+      const maxAllowedWidth = Math.max(320, Math.min(1000, editorWidth))
+      const newWidth = Math.min(maxAllowedWidth, Math.max(200, resizeStart.width + deltaX))
+      selectedImageElement.setAttribute('width', String(newWidth))
       selectedImageElement.style.width = `${newWidth}px`
-      selectedImageElement.style.height = `${newHeight}px`
+      selectedImageElement.style.height = 'auto'
     }
 
     const handleMouseUp = () => {
       setIsResizing(false)
-      if (editor) {
+      if (editor && selectedImageElement) {
+        const width = selectedImageElement.getAttribute('width')
+        if (width) {
+          editor.chain().focus().setImageWidth(Number.parseInt(width, 10)).run()
+        }
         setContent(editor.getHTML())
       }
     }
@@ -307,20 +470,18 @@ export default function MemoryEditor() {
     }
 
 
-    // Remove previous alignment styles
-    imgElement.style.marginLeft = ''
-    imgElement.style.marginRight = ''
-
-    // Apply new alignment
     if (alignment === 'left') {
-      imgElement.style.marginLeft = '0'
-      imgElement.style.marginRight = 'auto'
-    } else if (alignment === 'center') {
-      imgElement.style.marginLeft = 'auto'
-      imgElement.style.marginRight = 'auto'
+      imgElement.setAttribute('data-align', 'left')
+      editor?.chain().focus().setImageAlign('left').run()
     } else if (alignment === 'right') {
-      imgElement.style.marginLeft = 'auto'
-      imgElement.style.marginRight = '0'
+      imgElement.setAttribute('data-align', 'right')
+      editor?.chain().focus().setImageAlign('right').run()
+    } else if (alignment === 'center') {
+      imgElement.setAttribute('data-align', 'center')
+      editor?.chain().focus().setImageAlign('center').run()
+    } else {
+      imgElement.removeAttribute('data-align')
+      editor?.chain().focus().removeImageAlign().run()
     }
 
     // Update content
@@ -355,12 +516,12 @@ export default function MemoryEditor() {
     imgElement.style.transform = 'rotate(0deg)'
     
     // Reset size
+    imgElement.removeAttribute('width')
     imgElement.style.width = ''
     imgElement.style.height = ''
     
-    // Reset alignment (center by default)
-    imgElement.style.marginLeft = 'auto'
-    imgElement.style.marginRight = 'auto'
+    imgElement.removeAttribute('data-align')
+    editor?.chain().focus().setImageWidth(null).removeImageAlign().run()
 
     if (editor) {
       const htmlContent = editor.getHTML()
@@ -426,7 +587,7 @@ export default function MemoryEditor() {
 
             if (error) {
               console.error('Upload error:', error)
-              alert('Failed to upload cropped image')
+              openModal("Crop Image", "Failed to upload cropped image.")
               return
             }
 
@@ -448,17 +609,17 @@ export default function MemoryEditor() {
             }
           } catch (uploadErr) {
             console.error('Upload error:', uploadErr)
-            alert('Failed to upload cropped image')
+            openModal("Crop Image", "Failed to upload cropped image.")
           }
         }, 'image/png')
       }
 
       imgElement2.onerror = () => {
-        alert('Failed to load image for cropping')
+        openModal("Crop Image", "Failed to load image for cropping.")
       }
     } catch (err) {
       console.error('Crop error:', err)
-      alert('Failed to crop image')
+      openModal("Crop Image", "Failed to crop image.")
     }
   }
 
@@ -531,9 +692,10 @@ export default function MemoryEditor() {
       try {
         const cryptoKey = await importKey(storedKey)
         const decryptedText = await decrypt(memory.encrypted_content, memory.iv, cryptoKey)
-        
+        const normalizedContent = normalizeEditorHtmlForImages(decryptedText)
+
         setTitle(memory.title)
-        setContent(decryptedText)
+        setContent(normalizedContent)
         setIsLoaded(true)
         
         console.log("[MemoryEditor] ✅ Memory decrypted successfully")
@@ -617,7 +779,8 @@ export default function MemoryEditor() {
       // Step 3: Encrypt content
       console.log("[MemoryEditor] Step 3: Encrypting memory content...")
       const cryptoKey = await importKey(storedKey)
-      const { ciphertext, iv } = await encrypt(content, cryptoKey)
+      const normalizedContent = normalizeEditorHtmlForImages(content)
+      const { ciphertext, iv } = await encrypt(normalizedContent, cryptoKey)
       console.log("[MemoryEditor] ✅ Content encrypted")
 
       // Step 4: Get current user
@@ -704,13 +867,13 @@ export default function MemoryEditor() {
 
     // Validate file is an image
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file')
+      openModal("Image Upload", "Please select an image file.")
       return
     }
 
     // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      alert('Image must be less than 5MB')
+      openModal("Image Upload", "Image must be less than 5MB.")
       return
     }
 
@@ -726,7 +889,7 @@ export default function MemoryEditor() {
       const filename = `${user.id}/${id}/${timestamp}-${file.name}`
 
       // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('memory-images')
         .upload(filename, file, {
           cacheControl: '3600',
@@ -735,7 +898,7 @@ export default function MemoryEditor() {
 
       if (error) {
         console.error('Upload error:', error)
-        alert('Failed to upload image')
+        openModal("Image Upload", "Failed to upload image.")
         return
       }
 
@@ -744,17 +907,26 @@ export default function MemoryEditor() {
         .from('memory-images')
         .getPublicUrl(filename)
 
-      const imageUrl = publicData.publicUrl
+      const imageUrl = publicData?.publicUrl
+      if (!imageUrl) {
+        console.error('Upload succeeded but public URL is missing')
+        openModal("Image Upload", "Image uploaded, but URL generation failed.")
+        return
+      }
 
-      // Insert image into editor with wrapper
-      editor
+      const inserted = editor
         .chain()
         .focus()
-        .insertContent(`<figure class="image-wrapper"><img src="${imageUrl}" /></figure>`)
+        .setImage({ src: imageUrl })
         .run()
+      
+      if (!inserted) {
+        console.error('Image uploaded but insertion command failed')
+        openModal("Image Upload", "Image uploaded, but could not insert into the editor.")
+      }
     } catch (err) {
       console.error('Image upload error:', err)
-      alert('Failed to upload image')
+      openModal("Image Upload", "Failed to upload image.")
     } finally {
       setUploadingImage(false)
       // Reset file input
@@ -772,19 +944,20 @@ export default function MemoryEditor() {
     return null
   }
 
+  // Show skeleton loader while loading an existing memory
+  if (memoryId && !isLoaded) {
+    return <EditorSkeleton />
+  }
+
   return (
 
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
-      <div style={{ maxWidth: '800px' }} className="mx-auto px-6 py-12">
-
-        {!isLoaded && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm">
-            Loading memory...
-          </div>
-        )}
+      <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
 
         <button
-          onClick={(e) => handleNavigationClick(e, () => navigate(-1))}
+          onClick={(e) => handleNavigationClick(e, () => memoryId 
+            ? navigate(`/workspace/${id}/memory/${memoryId}`)
+            : navigate(`/workspace/${id}`))}
           className="mb-8 text-yellow-500 hover:text-yellow-400 transition-colors font-medium"
         >
           ← Back
@@ -819,13 +992,16 @@ export default function MemoryEditor() {
           .ProseMirror { 
             width: 100%; 
             display: block;
-            overflow-x: visible; 
+            overflow-x: visible;
+            overflow: visible;
+            line-height: 1.6;
             word-wrap: break-word;
             word-break: normal;
             white-space: normal;
             overflow-wrap: break-word;
           }
-          .ProseMirror p { margin-bottom: 0.6rem; line-height: 1.75; }
+          .ProseMirror * { max-width: 100%; }
+          .ProseMirror p { margin-bottom: 0.6rem; min-height: 20px; line-height: inherit; }
           .ProseMirror ul { list-style-type: disc; margin-left: 1.5rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
           .ProseMirror ul li { margin-bottom: 0.25rem; }
           .ProseMirror pre { background: #f9fafb; border: 1px solid #e5e7eb; padding: 1rem 1.25rem; border-radius: 0.5rem; font-family: 'Fira Code', 'Cascadia Code', monospace; overflow-x: auto; margin: 0.75rem 0; }
@@ -834,10 +1010,13 @@ export default function MemoryEditor() {
           .ProseMirror p.is-empty::before { content: attr(data-placeholder); color: #9ca3af; pointer-events: none; }
           .ProseMirror strong { color: #111827; }
           .ProseMirror em { color: #374151; }
-          .ProseMirror img { display: block; margin: 20px auto; max-width: 100%; max-height: 400px; width: auto; height: auto; object-fit: contain; border: 1px solid #d1d5db; border-radius: 10px; cursor: pointer; position: relative; transition: outline 0.2s ease; }
+          .ProseMirror img { display: inline-block; min-width: 200px; max-width: 100%; height: auto; object-fit: contain; border: 1px solid #d1d5db; border-radius: 10px; cursor: pointer; pointer-events: auto; position: relative; transition: outline 0.2s ease; }
+            .ProseMirror img[data-align="left"] { float: left; margin-right: 12px; margin-bottom: 8px; }
+            .ProseMirror img[data-align="right"] { float: right; margin-left: 12px; margin-bottom: 8px; }
+            .ProseMirror img[data-align="center"] { display: block; clear: both; float: none; margin: 0 auto 12px; }
+            .ProseMirror::after { content: ""; display: block; clear: both; }
           .ProseMirror img.selected { outline: 2px solid #facc15; box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.2); }
           .ProseMirror img.selected::after { content: ''; position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; background: linear-gradient(135deg, transparent 50%, #facc15 50%); cursor: nwse-resize; border-radius: 0 10px 0 0; }
-          .image-wrapper { display: block; text-align: center; position: relative; margin: 20px 0; }
         `}</style>
 
         {/* Unified Editor Card: toolbar + content */}
@@ -987,6 +1166,35 @@ export default function MemoryEditor() {
                 }`}
               >
                 {uploadingImage ? '⏳...' : '🖼️'}
+              </button>
+
+              <div className="w-px h-4 bg-slate-300 mx-1" />
+
+              <button
+                type="button"
+                onClick={() => handleImageAlignment('left')}
+                title="Float Image Left"
+                className="px-2 py-1 rounded text-xs text-slate-600 hover:bg-white hover:text-gray-900 transition-all duration-200"
+              >
+                ↙️ Left
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleImageAlignment('right')}
+                title="Float Image Right"
+                className="px-2 py-1 rounded text-xs text-slate-600 hover:bg-white hover:text-gray-900 transition-all duration-200"
+              >
+                Right ↗️
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleImageAlignment('center')}
+                title="Reset Image Position"
+                className="px-2 py-1 rounded text-xs text-slate-600 hover:bg-white hover:text-gray-900 transition-all duration-200"
+              >
+                🔄 Reset
               </button>
             </div>
           )}
@@ -1285,9 +1493,11 @@ export default function MemoryEditor() {
         )}
 
         {/* Save Button */}
-        <div className="mt-8 flex justify-between items-center">
+        <div className="mt-8 flex justify-between items-center clear-both">
           <button
-            onClick={(e) => handleNavigationClick(e, () => navigate(-1))}
+            onClick={(e) => handleNavigationClick(e, () => memoryId 
+              ? navigate(`/workspace/${id}/memory/${memoryId}`)
+              : navigate(`/workspace/${id}`))}
             className="text-slate-600 hover:text-slate-900 font-medium transition-colors"
           >
             Cancel
@@ -1303,6 +1513,15 @@ export default function MemoryEditor() {
         </div>
 
       </div>
+
+      <Modal
+        open={modalConfig.open}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => setModalConfig({ open: false, title: "", message: "" })}
+      />
     </div>
 
   )

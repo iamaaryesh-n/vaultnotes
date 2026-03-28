@@ -104,31 +104,39 @@ export async function getWorkspaceMembers(workspaceId) {
       
       const { data: profiles, error: profileError } = await supabase
         .from("profiles")
-        .select("id, email")
+        .select("id, email, username, name, avatar_url")
         .in("id", userIds)
 
       if (profileError) {
         console.warn("[getWorkspaceMembers] Warning fetching profiles:", profileError)
-        // Continue anyway - members will have "Unknown User" as fallback
+        // Continue anyway - members will have fallback values
       } else if (profiles && profiles.length > 0) {
         console.log(`[getWorkspaceMembers] Fetched ${profiles.length} profile(s)`)
         profiles.forEach(p => {
-          profileMap[p.id] = p.email
+          profileMap[p.id] = {
+            email: p.email || "Unknown",
+            username: p.username || "unknown",
+            name: p.name || "User",
+            avatar_url: p.avatar_url
+          }
         })
       }
     }
 
-    // Step 3: Join members with profile emails (use fallback if not found)
+    // Step 3: Join members with profile data (use fallback if not found)
     const allMembers = (members || []).map(member => ({
       ...member,
-      email: profileMap[member.user_id] || "Unknown User"
+      email: profileMap[member.user_id]?.email || "Unknown",
+      username: profileMap[member.user_id]?.username || "unknown",
+      name: profileMap[member.user_id]?.name || "User",
+      avatar_url: profileMap[member.user_id]?.avatar_url
     }))
 
     console.log(`[getWorkspaceMembers] Final result: ${allMembers.length} member(s)`)
     console.log("[getWorkspaceMembers] Full data:", JSON.stringify(allMembers, null, 2))
     
     allMembers.forEach((m, idx) => {
-      console.log(`  [${idx}] user_id: ${m.user_id}, email: ${m.email}, role: ${m.role}`)
+      console.log(`  [${idx}] user_id: ${m.user_id}, name: ${m.name}, username: ${m.username}, email: ${m.email}, role: ${m.role}`)
     })
 
     return { success: true, data: allMembers }
