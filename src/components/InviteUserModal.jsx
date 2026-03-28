@@ -1,197 +1,606 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { supabase } from "../lib/supabase"
-import { addUserToWorkspace } from "../lib/workspaceMembers"
+import { addUserToWorkspace, getWorkspaceMembers } from "../lib/workspaceMembers"
+
+// Helper to get initials
+function getInitials(name, username) {
+  const text = name || username || "U"
+  return text
+    .split(" ")
+    .map(part => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+// Helper to get avatar color
+function getAvatarColor(username) {
+  const colors = [
+    "bg-yellow-400", "bg-blue-400", "bg-purple-400", "bg-pink-400", "bg-green-400",
+    "bg-indigo-400", "bg-orange-400", "bg-rose-400", "bg-cyan-400", "bg-teal-400"
+  ]
+  let hash = 0
+  for (let i = 0; i < username.length; i++) {
+    hash = ((hash << 5) - hash) + username.charCodeAt(i)
+    hash = hash & hash
+  }
+  return colors[Math.abs(hash) % colors.length]
+}
+
+// Helper to highlight matching text
+function highlightMatch(text, query) {
+  if (!query) return text
+  const regex = new RegExp(`(${query})`, "gi")
+  return text.split(regex).map((part, idx) =>
+    regex.test(part) ? `<span class="font-bold text-yellow-600">${part}</span>` : part
+  ).join("")
+}
 
 export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
-  const [email, setEmail] = useState("")
+  const [username, setUsername] = useState("")
   const [loading, setLoading] = useState(false)
+  const [searching, setSearching] = useState(false)
   const [message, setMessage] = useState(null)
   const [messageType, setMessageType] = useState(null)
+  const [suggestions, setSuggestions] = useState([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState(null)
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [currentUserId, setCurrentUserId] = useState(null)
+  const [workspaceMembers, setWorkspaceMembers] = useState([])
   
-  // Track abort controller for cleanup
+  const searchTimeoutRef = useRef(null)
   const inviteControllerRef = useRef(null)
+  const dropdownRef = useRef(null)
+
+  // Initialize: get current user and workspace members
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        console.log("[InviteUserModal] Starting initialization...")
+
+        // Step 1: Get current user
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (authError || !user) {
+          console.error("[InviteUserModal] ❌ Auth error:", authError)
+          return
+        }
+        
+        console.log("[InviteUserModal] ✅ Current user authenticated:", user.id)
+        setCurrentUserId(user.id)
+
+        // Step 2: Fetch workspace members (ALL fields for proper filtering)
+        console.log("[InviteUserModal] Fetching workspace members...")
+        const result = await getWorkspaceMembers(workspaceId)
+        if (result.success) {
+          console.log(`[InviteUserModal] ✅ Fetched ${result.data?.length || 0} workspace member(s)`)
+          console.log("[InviteUserModal] Workspace members:", result.data)
+          setWorkspaceMembers(result.data || [])
+        } else {
+          console.warn("[InviteUserModal] ⚠️ Failed to fetch members:", result.error)
+          setWorkspaceMembers([])
+        }
+      } catch (err) {
+        console.error("[InviteUserModal] ❌ Init error:", err)
+      }
+    }
+
+    initialize()
+  }, [workspaceId])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowDropdown(false)
+      }
+    }
+
+    if (showDropdown) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [showDropdown])
+
+  // Debounced search
+  const searchUsers = async (query) => {
+    if (!query.trim() || query.length < 1) {
+      console.log("[InviteUserModal] Empty query, clearing suggestions")
+      setSuggestions([])
+      setShowDropdown(false)
+      return
+    }
+
+    setSearching(true)
+    setMessage(null)
+
+    try {
+      console.log("[InviteUserModal] ========== SEARCH START ==========")
+      console.log("[InviteUserModal] Search query:", query)
+      console.log("[InviteUserModal] Current user ID:", currentUserId)
+      console.log("[InviteUserModal] Workspace members count:", workspaceMembers.length)
+      console.log("[InviteUserModal] Workspace member IDs:", workspaceMembers.map(m => m.user_id))
+
+      // Step 1: Fetch ALL matching users from profiles (no filtering in query)
+      console.log("[InviteUserModal] Step 1: Fetching matching profiles...")
+      const { data: allUsers, error: searchError } = await supabase
+        .from("profiles")
+        .select("id, username, email, name, avatar_url")
+        .ilike("username", `%${query}%`)
+        .limit(10) // Increased limit to ensure we get all matches
+
+      if (searchError) {
+        console.error("[InviteUserModal] ❌ Search error:", searchError)
+        setSuggestions([])
+        setShowDropdown(false)
+        return
+      }
+
+      console.log(`[InviteUserModal] Step 1: ✅ Found ${allUsers?.length || 0} total matching user(s) in profiles`)
+      console.log("[InviteUserModal] All matching users:", allUsers)
+
+      // Step 2: Show ALL users, don't exclude existing members (UX: let user see they're already invited)
+      console.log("[InviteUserModal] Step 2: Preparing all results (including existing members)")
+      const exclusionSet = new Set()
+      
+      // Only exclude current user
+      if (currentUserId) {
+        exclusionSet.add(currentUserId)
+        console.log("[InviteUserModal] Excluding current user:", currentUserId)
+      }
+
+      // Step 3: Filter ONLY current user, keep existing members visible
+      console.log("[InviteUserModal] Step 3: Filtering out current user only...")
+      const filtered = (allUsers || []).filter(user => {
+        const isCurrentUser = exclusionSet.has(user.id)
+        if (isCurrentUser) {
+          console.log(`[InviteUserModal] Excluding user ${user.id} (${user.username}) - this is current user`)
+        }
+        return !isCurrentUser
+      })
+
+      console.log(`[InviteUserModal] ✅ Step 3: Showing ${filtered.length} total user(s) (including existing members)`)
+      console.log("[InviteUserModal] All suggestions:", filtered)
+      console.log("[InviteUserModal] ========== SEARCH END ==========")
+
+      setSuggestions(filtered)
+      setShowDropdown(filtered.length > 0)
+    } catch (err) {
+      console.error("[InviteUserModal] ❌ Search exception:", err)
+      setSuggestions([])
+      setShowDropdown(false)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  // Handle input change with debounce
+  const handleInputChange = (e) => {
+    const value = e.target.value.toLowerCase()
+    setUsername(value)
+    setSelectedUserId(null)
+    setSelectedUser(null)
+
+    // Clear pending timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+
+    // Set new timeout
+    if (value.trim()) {
+      setSearching(true)
+      searchTimeoutRef.current = setTimeout(() => {
+        searchUsers(value)
+      }, 300)
+    } else {
+      setSuggestions([])
+      setShowDropdown(false)
+    }
+  }
+
+  // Handle suggestion click
+  const handleSuggestionClick = (user) => {
+    console.log("[InviteUserModal] ========== USER SELECTED ==========")
+    console.log("[InviteUserModal] Selected user object:", user)
+    console.log("[InviteUserModal] Selected user ID:", user.id)
+    console.log("[InviteUserModal] Selected username:", user.username)
+    
+    // Store the full user object
+    setSelectedUser(user)
+    setUsername(user.username)
+    setMessage(null)
+    
+    // Keep dropdown open so user can see their selection is confirmed
+    // Don't clear suggestions - just keep them visible or fade them
+    setShowDropdown(false)
+    
+    console.log("[InviteUserModal] State updated - selectedUser object stored:", user)
+    console.log("[InviteUserModal] ========== USER SELECTED END ==========")
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
-    if (!email.trim()) {
-      setMessage("Please enter an email address")
+    console.log("[InviteUserModal] ========== INVITE SUBMIT START ==========")
+    console.log("[InviteUserModal] Selected user object:", selectedUser)
+    console.log("[InviteUserModal] Selected user ID:", selectedUser?.id)
+
+    // CRITICAL: Validate that user selected from dropdown (not just typed)
+    if (!selectedUser || !selectedUser.id) {
+      console.error("[InviteUserModal] ❌ No user selected from suggestions")
+      setMessage("Please select a user from suggestions")
       setMessageType("error")
+      console.log("[InviteUserModal] ========== INVITE SUBMIT END (NO USER SELECTED) ==========")
       return
     }
 
     setLoading(true)
     setMessage(null)
 
-    // Create new abort controller for this invite
-    inviteControllerRef.current = new AbortController()
-
     try {
-      console.log("[InviteUserModal] Starting invite process for:", email.trim())
+      console.log("[InviteUserModal] ✅ User selected, proceeding with invite")
+      console.log("[InviteUserModal] User to invite - ID:", selectedUser.id, "Username:", selectedUser.username)
 
       // Step 1: Authenticate current user
       console.log("[InviteUserModal] Step 1: Authenticating current user...")
       const { data: authData, error: authError } = await supabase.auth.getUser()
       const currentUser = authData?.user
+      
       if (authError || !currentUser) {
         console.error("[InviteUserModal] ❌ Authentication error:", authError)
         setMessage("Authentication error. Please try again.")
         setMessageType("error")
         setLoading(false)
+        console.log("[InviteUserModal] ========== INVITE SUBMIT END (AUTH ERROR) ==========")
         return
       }
 
-      console.log("[InviteUserModal] ✅ Current user authenticated")
+      console.log("[InviteUserModal] ✅ Step 2: Current user authenticated")
+      console.log("[InviteUserModal] Current user ID:", currentUser.id)
 
-      // Step 2: Find user by email
-      console.log("[InviteUserModal] Step 2: Looking up user by email...")
-      const { data: userData, error: userError } = await supabase
-        .from("profiles")
-        .select("id, email")
-        .eq("email", email.trim())
-        .maybeSingle()
-
-      if (userError) {
-        console.error("[InviteUserModal] ❌ Email lookup error:", userError)
-        setMessage("Email lookup failed. Please try again.")
+      // Step 2b: Double-check user not already in workspace (might be showing in list now)
+      console.log("[InviteUserModal] Step 2b: Verifying user not already in workspace...")
+      const isMember = workspaceMembers.some(m => m.user_id === selectedUser.id)
+      if (isMember) {
+        const memberName = selectedUser?.name || selectedUser?.username
+        const message = `${memberName} is already in this workspace`
+        console.warn("[InviteUserModal] ⚠️ User already a member:", message)
+        setMessage(message)
         setMessageType("error")
         setLoading(false)
+        console.log("[InviteUserModal] ========== INVITE SUBMIT END (ALREADY MEMBER) ==========")
         return
       }
 
-      if (!userData?.id) {
-        console.error("[InviteUserModal] ❌ User not found:", email.trim())
-        setMessage("User not found")
-        setMessageType("error")
-        setLoading(false)
-        return
-      }
+      console.log("[InviteUserModal] ✅ Step 2b: User not yet a member")
 
-      const invitedUserId = userData.id
-      console.log("[InviteUserModal] ✅ User found:", invitedUserId)
-
-      // Step 3: Fetch current user's workspace encryption key
-      console.log("[InviteUserModal] Step 3: Fetching workspace encryption key...")
+      // Step 3: Fetch an existing workspace encryption key by workspace_id.
+      // We do not depend on currentUser.id so owners/editors can invite reliably.
+      console.log("[InviteUserModal] Step 3: Fetching workspace encryption key by workspace...")
       const { data: keyData, error: keyError } = await supabase
         .from("workspace_keys")
         .select("encrypted_key")
         .eq("workspace_id", workspaceId)
-        .eq("user_id", currentUser.id)
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle()
 
-      if (keyError) {
+      if (keyError || !keyData?.encrypted_key) {
         console.error("[InviteUserModal] ❌ Key fetch error:", keyError)
-        setMessage("Failed to fetch encryption key")
+        setMessage("Failed to fetch workspace encryption key")
         setMessageType("error")
         setLoading(false)
+        console.log("[InviteUserModal] ========== INVITE SUBMIT END (KEY FETCH ERROR) ==========")
         return
       }
 
-      if (!keyData?.encrypted_key) {
-        console.error("[InviteUserModal] ❌ No encryption key found for workspace")
-        setMessage("Failed to fetch encryption key")
-        setMessageType("error")
-        setLoading(false)
-        return
-      }
-
+      console.log("[InviteUserModal] ✅ Step 3: Source encryption key fetched successfully")
       const workspaceKey = keyData.encrypted_key
-      console.log("[InviteUserModal] ✅ Encryption key fetched")
 
-      // Step 4: Add user to workspace_members
-      console.log("[InviteUserModal] Step 4: Adding user to workspace_members...")
-      const result = await addUserToWorkspace(invitedUserId, workspaceId, "editor")
-      if (!result.success) {
-        console.error("[InviteUserModal] ❌ Failed to add user to workspace:", result.error)
-        setMessage(result.error || "Failed to add user")
+      // Step 4: Insert user into workspace_members
+      console.log("[InviteUserModal] Step 4: Inserting into workspace_members...")
+      console.log("[InviteUserModal] Insert data:", {
+        user_id: selectedUser.id,
+        workspace_id: workspaceId,
+        role: "viewer"
+      })
+
+      const { data: insertData, error: insertError } = await supabase
+        .from("workspace_members")
+        .insert({
+          user_id: selectedUser.id,
+          workspace_id: workspaceId,
+          role: "viewer"
+        })
+        .select()
+
+      if (insertError) {
+        console.error("[InviteUserModal] ❌ Insert error:", insertError)
+        console.error("[InviteUserModal] Error details:", {
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        })
+        setMessage(insertError.message || "Failed to add user to workspace")
         setMessageType("error")
         setLoading(false)
+        console.log("[InviteUserModal] ========== INVITE SUBMIT END (INSERT ERROR) ==========")
         return
       }
 
-      console.log("[InviteUserModal] ✅ User added to workspace_members")
+      console.log("[InviteUserModal] ✅ Step 4: User successfully added to workspace_members")
+      console.log("[InviteUserModal] Insert response:", insertData)
 
-      // Step 5: Check if workspace_keys entry already exists
-      console.log("[InviteUserModal] Step 5: Checking for existing encryption key...")
-      const { data: existingKey, error: existingKeyError } = await supabase
+      // Step 5: CRITICAL - create/update key for invited user.
+      // Use schema-safe insert/update flow (works even if ON CONFLICT constraint is missing).
+      console.log("[InviteUserModal] Step 5: Ensuring workspace key for invited user...")
+
+      const { data: existingInvitedKey, error: existingInvitedKeyError } = await supabase
         .from("workspace_keys")
         .select("id")
         .eq("workspace_id", workspaceId)
-        .eq("user_id", invitedUserId)
+        .eq("user_id", selectedUser.id)
         .maybeSingle()
 
-      if (existingKeyError) {
-        console.warn("[InviteUserModal] Warning checking existing key:", existingKeyError)
-        // Continue anyway - might be permission issue
+      if (existingInvitedKeyError) {
+        console.error("[InviteUserModal] ❌ Failed checking invited user key:", existingInvitedKeyError)
+
+        const { error: rollbackError } = await supabase
+          .from("workspace_members")
+          .delete()
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", selectedUser.id)
+
+        if (rollbackError) {
+          console.error("[InviteUserModal] ❌ Rollback failed after key check error:", rollbackError)
+        }
+
+        setMessage("Failed to complete invite: could not verify encryption key")
+        setMessageType("error")
+        setLoading(false)
+        console.log("[InviteUserModal] ========== INVITE SUBMIT END (KEY CHECK ERROR) ==========")
+        return
       }
 
-      if (existingKey?.id) {
-        console.log("[InviteUserModal] ℹ️ Key already exists for this user, skipping insert")
-        setMessage(`✓ ${email.trim()} added successfully! (Key already set up)`)
-        setMessageType("success")
+      let keyWriteError = null
+
+      if (existingInvitedKey?.id) {
+        console.log("[InviteUserModal] Step 5b: Key exists, updating encrypted_key...")
+        const { error: updateKeyError } = await supabase
+          .from("workspace_keys")
+          .update({ encrypted_key: workspaceKey })
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", selectedUser.id)
+
+        keyWriteError = updateKeyError
       } else {
-        // Step 6: Insert encryption key
-        console.log("[InviteUserModal] Step 6: Inserting encryption key for invited user...")
-        const { error: keyInsertError } = await supabase
+        console.log("[InviteUserModal] Step 5b: Key missing, inserting new key row...")
+        const { error: insertKeyError } = await supabase
           .from("workspace_keys")
           .insert({
-            user_id: invitedUserId,
+            user_id: selectedUser.id,
             workspace_id: workspaceId,
             encrypted_key: workspaceKey,
           })
 
-        if (keyInsertError) {
-          console.error("[InviteUserModal] ❌ Failed to insert encryption key:", keyInsertError)
-          setMessage(`Failed to setup encryption key: ${keyInsertError.message}`)
-          setMessageType("error")
-          setLoading(false)
-          return
+        // If another concurrent action inserted first, recover with update.
+        if (insertKeyError?.code === "23505") {
+          const { error: recoverUpdateError } = await supabase
+            .from("workspace_keys")
+            .update({ encrypted_key: workspaceKey })
+            .eq("workspace_id", workspaceId)
+            .eq("user_id", selectedUser.id)
+          keyWriteError = recoverUpdateError
+        } else {
+          keyWriteError = insertKeyError
         }
-
-        console.log("[InviteUserModal] ✅ Encryption key inserted")
-        setMessage(`✓ ${email.trim()} added successfully!`)
-        setMessageType("success")
       }
 
-      console.log("[InviteUserModal] ✅ Invite process completed successfully")
-      
+      if (keyWriteError) {
+        console.error("[InviteUserModal] ❌ Failed to write encryption key:", keyWriteError)
+        console.error("[InviteUserModal] Key write error details:", {
+          code: keyWriteError.code,
+          message: keyWriteError.message,
+          details: keyWriteError.details,
+          hint: keyWriteError.hint
+        })
+
+        // Roll back membership so we never leave a member without a key.
+        const { error: rollbackError } = await supabase
+          .from("workspace_members")
+          .delete()
+          .eq("workspace_id", workspaceId)
+          .eq("user_id", selectedUser.id)
+
+        if (rollbackError) {
+          console.error("[InviteUserModal] ❌ Rollback failed after key write error:", rollbackError)
+        }
+
+        setMessage("Failed to complete invite: encryption key setup failed")
+        setMessageType("error")
+        setLoading(false)
+        console.log("[InviteUserModal] ========== INVITE SUBMIT END (KEY WRITE ERROR) ==========")
+        return
+      }
+
+      // Success - both workspace_members and workspace_keys are guaranteed.
+      console.log("[InviteUserModal] ✅ Step 5: Workspace key ensured for invited user")
+      console.log("[InviteUserModal] ✅ INVITE PROCESS COMPLETED - User can now access workspace")
+      setMessage(`✓ @${selectedUser.username} has been added to the workspace!`)
+      setMessageType("success")
+
+      // Clear form after success
+      console.log("[InviteUserModal] Clearing form state...")
+      setUsername("")
+      setSelectedUser(null)
+      setSuggestions([])
+      setShowDropdown(false)
+
       // Notify parent about membership change
+      console.log("[InviteUserModal] Dispatching workspaceMembershipChanged event...")
       window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId } }))
 
+      // Close modal after success
       setTimeout(() => {
+        console.log("[InviteUserModal] Closing modal and calling onSuccess...")
         onClose()
         if (onSuccess) onSuccess()
       }, 1200)
+
+      console.log("[InviteUserModal] ========== INVITE SUBMIT END (SUCCESS) ==========")
     } catch (error) {
-      console.error("[InviteUserModal] ❌ Unexpected error:", error)
-      setMessage("An error occurred. Please try again.")
+      console.error("[InviteUserModal] ❌ Unexpected error during invite:", error)
+      console.error("[InviteUserModal] Error stack:", error.stack)
+      setMessage("An unexpected error occurred. Please try again.")
       setMessageType("error")
+      console.log("[InviteUserModal] ========== INVITE SUBMIT END (EXCEPTION) ==========")
     } finally {
       setLoading(false)
-      inviteControllerRef.current = null
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-30 flex items-center justify-center z-50 fade-in">
-      <div className="bg-white p-8 rounded-xl w-96 space-y-4 shadow-lg border border-gray-200">
-        <h2 className="text-xl font-bold text-gray-900">Invite User</h2>
-        <p className="text-slate-500 text-sm">Add a user to this workspace by their email address</p>
+    <div className="fixed inset-0 bg-gray-900 bg-opacity-30 flex items-center justify-center z-50 fade-in backdrop-blur-sm p-4">
+      <div className="bg-white rounded-xl w-full max-w-md shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
+        
+        {/* Header - Fixed */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white flex-shrink-0">
+          <h2 className="text-lg font-bold text-gray-900">Invite User</h2>
+          <p className="text-slate-500 text-xs mt-1">Search and add users by username</p>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input
-            type="email"
-            placeholder="Enter email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={loading}
-            autoFocus
-            className="w-full p-3 rounded-lg bg-white text-gray-900 border border-slate-200 placeholder-slate-400 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200 disabled:bg-slate-50 disabled:opacity-60"
-          />
+        {/* Search Box & Suggestions Container - Wraps both */}
+        <div ref={dropdownRef} className="flex flex-col flex-1 min-h-0">
+          {/* Search Box - Sticky at top of content area */}
+          <div className="px-6 py-3 border-b border-gray-100 bg-white flex-shrink-0 space-y-2">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search username..."
+                value={username}
+                onChange={handleInputChange}
+                onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
+                disabled={loading}
+                autoFocus
+                className="w-full p-3 rounded-lg bg-white text-gray-900 border border-slate-200 placeholder-slate-400 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200 disabled:bg-slate-50 disabled:opacity-60"
+              />
+              
+              {searching && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <div className="animate-spin">⏳</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Suggestions List - Scrollable only this section */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+          {showDropdown && suggestions.length > 0 ? (
+            <ul className="divide-y divide-slate-100">
+              {suggestions.map((user) => {
+                // Check if user is already a member
+                const isAlreadyMember = workspaceMembers.some(m => m.user_id === user.id)
+                // Check if this user is currently selected (compare by user.id, not object reference)
+                const isSelected = selectedUser?.id === user.id
+                
+                return (
+                  <li key={user.id}>
+                    <button
+                      type="button"
+                      onClick={() => !isAlreadyMember && handleSuggestionClick(user)}
+                      disabled={isAlreadyMember}
+                      className={`w-full px-6 py-3 flex items-center gap-3 text-left transition-all ${
+                        isAlreadyMember
+                          ? "bg-gray-50 cursor-not-allowed opacity-60"
+                          : isSelected
+                          ? "bg-yellow-50 hover:bg-yellow-100"
+                          : "hover:bg-yellow-50 active:bg-yellow-100"
+                      }`}
+                    >
+                      {/* Avatar */}
+                      <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm shadow-sm ${getAvatarColor(user.username)}`}>
+                        {user.avatar_url ? (
+                          <img
+                            src={user.avatar_url}
+                            alt={user.username}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          getInitials(user.name, user.username)
+                        )}
+                      </div>
+
+                      {/* User Info */}
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="font-semibold text-gray-900 text-sm truncate">
+                          {user.name || user.username}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          @{user.username}
+                        </p>
+                        {user.email && (
+                          <p className="text-xs text-slate-400 truncate">
+                            {user.email}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Status Indicator */}
+                      {isAlreadyMember ? (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded font-medium">
+                            Already a member
+                          </span>
+                        </div>
+                      ) : isSelected ? (
+                        <svg className="w-5 h-5 text-yellow-500 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143Z" clipRule="evenodd" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5 text-slate-300 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                          <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143Z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : showDropdown && searching ? (
+            <div className="px-6 py-12 text-center text-slate-500 text-sm flex flex-col items-center gap-3">
+              <div className="animate-spin text-lg">⏳</div>
+              <span>Searching users...</span>
+            </div>
+          ) : showDropdown ? (
+            <div className="px-6 py-12 text-center text-slate-400 text-sm">
+              <p>No users found</p>
+              <p className="text-xs mt-1">Try searching with a different username</p>
+            </div>
+          ) : (
+            <div className="px-6 py-12 text-center text-slate-400 text-sm">
+              <p>Start typing to search users</p>
+            </div>
+          )}
+          </div>
+        </div>
+
+        {/* Selected User Info & Message - Fixed scroll section above footer */}
+        <div className="px-6 py-3 border-t border-gray-100 bg-slate-50 space-y-2 flex-shrink-0">
+          {selectedUser && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
+              <svg className="w-4 h-4 text-yellow-600 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" d="M2.25 12c0-6.215 5.034-11.25 11.25-11.25s11.25 5.035 11.25 11.25S19.465 23.25 12 23.25 2.25 18.215 2.25 12zm9-4.5a.75.75 0 01.75.75v4.94l3.72-3.72a.75.75 0 111.06 1.061l-5 5a.75.75 0 01-1.06 0l-5-5a.75.75 0 111.06-1.06l3.72 3.72V8.25a.75.75 0 01.75-.75z" clipRule="evenodd" />
+              </svg>
+              <span className="text-sm font-medium text-yellow-800">
+                Ready to invite <strong>@{selectedUser.username}</strong>
+              </span>
+            </div>
+          )}
 
           {message && (
             <div
-              className={`p-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+              className={`p-3 rounded-lg text-sm font-medium transition-all duration-200 flex items-start gap-2 ${
                 messageType === "success"
                   ? "bg-green-50 text-green-700 border border-green-200"
                   : messageType === "error"
@@ -199,29 +608,46 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
                   : "bg-blue-50 text-blue-700 border border-blue-200"
               }`}
             >
-              {message}
+              <span className="text-lg flex-shrink-0">
+                {messageType === "success" ? "✓" : messageType === "error" ? "✕" : "ℹ"}
+              </span>
+              <span>{message}</span>
             </div>
           )}
+        </div>
 
-          <div className="flex justify-between gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-100 text-gray-900 rounded-lg border border-gray-200 hover:bg-gray-200 active:scale-95 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
+        {/* Footer - Buttons Fixed */}
+        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between gap-3 flex-shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 bg-gray-100 text-gray-900 rounded-lg border border-gray-200 hover:bg-gray-200 active:scale-95 transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 rounded-lg font-bold transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {loading ? "Adding..." : "Add User"}
-            </button>
-          </div>
-        </form>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={loading || !selectedUser}
+            className="px-4 py-2 bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 rounded-lg font-bold transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <span className="animate-spin">⏳</span>
+                Adding...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
+                </svg>
+                Add User
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   )

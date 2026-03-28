@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate } from "react-router-dom"
+import Modal from "../components/Modal"
 
 export default function Signup() {
   const navigate = useNavigate()
@@ -8,21 +9,21 @@ export default function Signup() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
+  const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "" })
 
   const handleSignup = async (e) => {
     e.preventDefault()
     setLoading(true)
 
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
     })
 
     if (error) {
-      alert(error.message)
+      setModalConfig({ open: true, title: "Signup Error", message: error.message })
     } else {
-      alert("Signup successful 🔥")
-      navigate("/")
+      setModalConfig({ open: true, title: "Signup Successful", message: "Your account was created successfully." })
     }
 
     setLoading(false)
@@ -60,6 +61,21 @@ export default function Signup() {
           {loading ? "Creating..." : "Sign Up"}
         </button>
       </form>
+
+      <Modal
+        open={modalConfig.open}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText="OK"
+        showCancel={false}
+        onConfirm={() => {
+          const shouldNavigate = modalConfig.title === "Signup Successful"
+          setModalConfig({ open: false, title: "", message: "" })
+          if (shouldNavigate) {
+            navigate("/")
+          }
+        }}
+      />
     </div>
   )
 }

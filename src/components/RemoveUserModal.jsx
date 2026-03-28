@@ -2,6 +2,31 @@ import { useState, useEffect, useRef } from "react"
 import { supabase } from "../lib/supabase"
 import { removeUserFromWorkspace, getWorkspaceMembers, updateUserWorkspaceRole } from "../lib/workspaceMembers"
 
+// Helper function to get initials from name
+function getInitials(name) {
+  if (!name) return "U"
+  return name
+    .split(" ")
+    .map(part => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
+}
+
+// Helper function to get avatar background color based on username
+function getAvatarColor(username) {
+  const colors = [
+    "bg-yellow-400", "bg-blue-400", "bg-purple-400", "bg-pink-400", "bg-green-400",
+    "bg-indigo-400", "bg-orange-400", "bg-rose-400", "bg-cyan-400", "bg-teal-400"
+  ]
+  let hash = 0
+  for (let i = 0; i < username.length; i++) {
+    hash = ((hash << 5) - hash) + username.charCodeAt(i)
+    hash = hash & hash
+  }
+  return colors[Math.abs(hash) % colors.length]
+}
+
 export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserRemoved }) {
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
@@ -12,14 +37,12 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
   const [currentUserId, setCurrentUserId] = useState(null)
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState(null)
 
-  // Track to prevent concurrent member loads
   const isLoadingRef = useRef(false)
   const loadControllerRef = useRef(null)
 
   useEffect(() => {
     loadMembers()
 
-    // 🎯 Listen for membership changes (when new users are invited)
     const handleMembershipChange = (event) => {
       console.log("[RemoveUserModal] workspaceMembershipChanged event received:", event.detail)
       if (event.detail?.workspaceId === workspaceId) {
@@ -31,7 +54,6 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
     window.addEventListener("workspaceMembershipChanged", handleMembershipChange)
 
     return () => {
-      // Cleanup: remove event listener and cancel pending load on unmount
       window.removeEventListener("workspaceMembershipChanged", handleMembershipChange)
       if (loadControllerRef.current) {
         loadControllerRef.current.abort()
@@ -40,7 +62,6 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
   }, [workspaceId])
 
   const loadMembers = async () => {
-    // Prevent concurrent loads
     if (isLoadingRef.current) {
       console.log("[RemoveUserModal] Load already in progress, skipping duplicate request")
       return
@@ -53,11 +74,8 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
       setLoading(true)
       
       console.log("[RemoveUserModal] Starting member load for workspace:", workspaceId)
-
-      // Small delay to ensure database has committed new members
       await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Step 1: Get current user
       console.log("[RemoveUserModal] Step 1: Authenticating current user...")
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError || !user) {
@@ -70,7 +88,6 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
       setCurrentUserId(user.id)
       console.log("[RemoveUserModal] ✅ Current user authenticated")
 
-      // Step 2: Fetch workspace members with profiles (LEFT JOIN)
       console.log("[RemoveUserModal] Step 2: Fetching workspace members with profiles...")
       const result = await getWorkspaceMembers(workspaceId)
       if (!result.success) {
@@ -85,7 +102,6 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
       console.log(`[RemoveUserModal] ✅ Fetched ${memberList.length} member(s)`)
       console.log("[RemoveUserModal] Full member data:", memberList)
       
-      // NO filtering - accept all members including those with null profiles
       setMembers(memberList)
       setLoading(false)
 
@@ -114,7 +130,6 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
     try {
       console.log("[RemoveUserModal] Starting remove process for user:", confirmRemoveUser)
 
-      // Step 1: Remove user from workspace
       console.log("[RemoveUserModal] Step 1: Removing user from workspace...")
       const result = await removeUserFromWorkspace(confirmRemoveUser, workspaceId)
 
@@ -129,37 +144,32 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
 
       console.log("[RemoveUserModal] ✅ User removed from workspace")
 
-      // Step 2: Update UI
       console.log("[RemoveUserModal] Step 2: Updating UI...")
       setMembers(members.filter(m => m.user_id !== confirmRemoveUser))
       
-      const removedProfile = memberProfiles[confirmRemoveUser]
-      const removedEmail = removedProfile?.email || "User"
+      const removedMember = members.find(m => m.user_id === confirmRemoveUser)
+      const removedName = removedMember?.name || "User"
       
-      setMessage(`✓ ${removedEmail} has been removed from the workspace`)
+      setMessage(`✓ ${removedName} has been removed from the workspace`)
       setMessageType("success")
       setRemovingUserId(null)
       setConfirmRemoveUser(null)
 
       console.log("[RemoveUserModal] ✅ UI updated")
 
-      // Step 3: Notify and refresh
       console.log("[RemoveUserModal] Step 3: Notifying parent and dispatching events...")
       if (onUserRemoved) {
         onUserRemoved()
       }
       window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId } }))
       
-      // Step 4: Refresh member list after 1 second
       console.log("[RemoveUserModal] Step 4: Refreshing member list...")
       setTimeout(() => {
         loadMembers()
       }, 1000)
 
-      // Close after 2 seconds
-      setTimeout(() => {
-        onClose()
-      }, 2000)
+      console.log("[RemoveUserModal] ✅ REMOVAL COMPLETE - Modal remains open")
+      // DO NOT close the modal - keep it open for further actions
     } catch (err) {
       console.error("[RemoveUserModal] ❌ Exception:", err)
       setMessage("An unexpected error occurred")
@@ -180,7 +190,6 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
     try {
       console.log("[RemoveUserModal] Starting role change for user:", memberUserId, "new role:", newRole)
 
-      // Step 1: Update role
       console.log("[RemoveUserModal] Step 1: Updating user role...")
       const result = await updateUserWorkspaceRole(memberUserId, workspaceId, newRole)
 
@@ -194,20 +203,17 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
 
       console.log("[RemoveUserModal] ✅ User role updated")
 
-      // Step 2: Update UI with success message
       console.log("[RemoveUserModal] Step 2: Updating UI...")
       const member = members.find(m => m.user_id === memberUserId)
-      const memberEmail = member?.email || "User"
-      setMessage(`✓ ${memberEmail}'s role updated to ${newRole}`)
+      const memberName = member?.name || "User"
+      setMessage(`✓ ${memberName}'s role updated to ${newRole}`)
       setMessageType("success")
       setUpdatingRoleUserId(null)
 
-      // Step 3: Refresh member list after 1 second
       console.log("[RemoveUserModal] Step 3: Refreshing member list...")
       setTimeout(() => {
         loadMembers()
         
-        // Notify parent
         if (onUserRemoved) {
           onUserRemoved()
         }
@@ -222,113 +228,176 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-30 flex items-center justify-center z-50 fade-in">
-      <div className="bg-white p-8 rounded-xl w-full max-w-2xl space-y-4 shadow-lg border border-gray-200 max-h-96 overflow-y-auto">
-        <h2 className="text-xl font-bold text-gray-900">Workspace Members</h2>
-        <p className="text-slate-500 text-sm">
-          {isOwner ? "Manage workspace members and their access" : "Members in this workspace"}
-        </p>
+    <div className="fixed inset-0 bg-gray-900 bg-opacity-40 flex items-center justify-center z-50 fade-in backdrop-blur-sm">
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-100 max-h-[80vh] overflow-hidden flex flex-col">
+        
+        {/* Header */}
+        <div className="px-8 py-6 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
+          <h2 className="text-2xl font-bold text-gray-900">Workspace Members</h2>
+          <p className="text-slate-500 text-sm mt-1">
+            {isOwner ? "Manage member access and roles" : "Members in this workspace"}
+          </p>
+        </div>
 
+        {/* Message */}
         {message && (
-          <div
-            className={`p-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-              messageType === "success"
-                ? "bg-green-50 text-green-700 border border-green-200"
-                : messageType === "error"
-                ? "bg-red-50 text-red-700 border border-red-200"
-                : "bg-blue-50 text-blue-700 border border-blue-200"
-            }`}
-          >
-            {message}
+          <div className="px-8 pt-6">
+            <div
+              className={`p-4 rounded-lg text-sm font-medium transition-all duration-200 ${
+                messageType === "success"
+                  ? "bg-green-50 text-green-700 border border-green-200 flex items-start gap-3"
+                  : messageType === "error"
+                  ? "bg-red-50 text-red-700 border border-red-200 flex items-start gap-3"
+                  : "bg-blue-50 text-blue-700 border border-blue-200 flex items-start gap-3"
+              }`}
+            >
+              <span className="text-lg flex-shrink-0">{messageType === "success" ? "✓" : messageType === "error" ? "✕" : "ℹ"}</span>
+              <span>{message}</span>
+            </div>
           </div>
         )}
 
-        {loading ? (
-          <div className="text-center py-8 text-slate-500">Loading members...</div>
-        ) : members.length === 0 ? (
-          <div className="text-center py-8 text-slate-500">No members in this workspace</div>
-        ) : (
-          <div className="space-y-2">
-            {members.map((member) => {
-              const isCurrentUser = member.user_id === currentUserId
-              const isOwnerRole = member.role === "owner"
-              const email = member.email || "Unknown User"
-              
-              return (
-                <div
-                  key={member.user_id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-gray-50 border border-gray-200 hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">
-                      {email}
-                      {isCurrentUser && <span className="text-xs text-slate-500 ml-2">(You)</span>}
-                    </p>
-                    <p className="text-sm text-slate-600">
-                      <span className={isOwnerRole ? "font-semibold text-blue-600" : "text-slate-500"}>
-                        {member.role}
-                      </span>
-                    </p>
-                  </div>
-
-                  {isOwner && !isCurrentUser && !isOwnerRole && (
-                    <div className="flex gap-2 items-center">
-                      <select
-                        value={member.role}
-                        onChange={(e) => handleRoleChange(member.user_id, e.target.value)}
-                        disabled={updatingRoleUserId === member.user_id || removingUserId === member.user_id}
-                        className="px-3 py-1 text-sm bg-white border border-slate-300 rounded font-medium text-gray-900 hover:border-slate-400 transition-all disabled:opacity-50 cursor-pointer"
-                      >
-                        <option value="viewer">👁️ Viewer</option>
-                        <option value="editor">✏️ Editor</option>
-                        <option value="owner">👑 Owner</option>
-                      </select>
-                      {confirmRemoveUser === member.user_id ? (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleCancelRemove}
-                            disabled={removingUserId === member.user_id}
-                            className="px-3 py-1 text-sm bg-gray-200 text-gray-900 rounded font-medium hover:bg-gray-300 transition-all disabled:opacity-50"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={handleConfirmRemove}
-                            disabled={removingUserId === member.user_id}
-                            className="px-3 py-1 text-sm bg-red-500 text-white rounded font-medium hover:bg-red-600 transition-all disabled:opacity-50 flex items-center gap-1"
-                          >
-                            {removingUserId === member.user_id && <span className="animate-spin">⏳</span>}
-                            Confirm
-                          </button>
+        {/* Members List */}
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="animate-spin mb-3">⏳</div>
+                <p className="text-slate-500 font-medium">Loading members...</p>
+              </div>
+            </div>
+          ) : members.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <p className="text-slate-400 text-lg">👥</p>
+                <p className="text-slate-500 font-medium mt-2">No members yet</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {members.map((member) => {
+                const isCurrentUser = member.user_id === currentUserId
+                const isOwnerRole = member.role === "owner"
+                const isRemoving = removingUserId === member.user_id
+                const isUpdatingRole = updatingRoleUserId === member.user_id
+                const isDisabled = isRemoving || isUpdatingRole || removingUserId !== null || updatingRoleUserId !== null
+                
+                return (
+                  <div
+                    key={member.user_id}
+                    className={`relative group p-4 rounded-xl border transition-all duration-200 ${
+                      isDisabled
+                        ? "bg-gray-50 border-gray-100 opacity-60"
+                        : "bg-white border-gray-200 hover:border-yellow-200 hover:shadow-md hover:bg-gradient-to-r hover:from-yellow-50/30 hover:to-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      
+                      {/* LEFT: Avatar + User Info */}
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        {/* Avatar */}
+                        <div className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center font-bold text-white shadow-sm ${getAvatarColor(member.username || "unknown")}`}>
+                          {member.avatar_url ? (
+                            <img
+                              src={member.avatar_url}
+                              alt={member.name}
+                              className="w-full h-full rounded-full object-cover"
+                            />
+                          ) : (
+                            getInitials(member.name)
+                          )}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => handleRemoveClick(member.user_id)}
-                          disabled={removingUserId !== null || updatingRoleUserId !== null}
-                          className="px-4 py-2 text-sm bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 transition-all disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                      )}
+
+                        {/* User Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-semibold text-gray-900 truncate">
+                              {member.name || "User"}
+                            </p>
+                            {isCurrentUser && (
+                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium flex-shrink-0">
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-500 truncate">
+                            @{member.username || "unknown"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* RIGHT: Role + Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {isOwnerRole ? (
+                          <span className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-full font-semibold flex items-center gap-1.5 shadow-sm">
+                            👑 Owner
+                          </span>
+                        ) : (
+                          isOwner && !isCurrentUser && (
+                            <select
+                              value={member.role}
+                              onChange={(e) => handleRoleChange(member.user_id, e.target.value)}
+                              disabled={isDisabled}
+                              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all border ${
+                                isDisabled
+                                  ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
+                                  : "bg-white border-slate-300 text-gray-900 hover:border-slate-400 cursor-pointer"
+                              }`}
+                            >
+                              <option value="viewer">👁️ Viewer</option>
+                              <option value="editor">✏️ Editor</option>
+                              <option value="owner">👑 Owner</option>
+                            </select>
+                          )
+                        )}
+
+                        {/* Remove/Confirm Buttons */}
+                        {isOwner && !isCurrentUser && !isOwnerRole && (
+                          <>
+                            {confirmRemoveUser === member.user_id ? (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleCancelRemove}
+                                  disabled={isRemoving}
+                                  className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-all disabled:opacity-50"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={handleConfirmRemove}
+                                  disabled={isRemoving}
+                                  className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                >
+                                  {isRemoving && <span className="animate-spin text-xs">⏳</span>}
+                                  Confirm
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleRemoveClick(member.user_id)}
+                                disabled={isDisabled}
+                                className="px-4 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 transition-all disabled:opacity-50 border border-red-200 hover:border-red-300"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
 
-                  {isOwnerRole && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
-                      Owner
-                    </span>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+        {/* Footer */}
+        <div className="px-8 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
           <button
             onClick={onClose}
             disabled={removingUserId !== null}
-            className="px-4 py-2 bg-gray-100 text-gray-900 rounded-lg border border-gray-200 hover:bg-gray-200 active:scale-95 transition-all font-medium disabled:opacity-50"
+            className="px-4 py-2 bg-white text-gray-900 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 active:scale-95 transition-all font-medium disabled:opacity-50"
           >
             Close
           </button>

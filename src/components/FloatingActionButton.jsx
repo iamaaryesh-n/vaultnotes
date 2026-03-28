@@ -36,12 +36,13 @@ export default function FloatingActionButton() {
   }
 
   const handleNewWorkspace = () => {
-    const name = prompt('Workspace name?')
-    if (name) {
-      // Dispatch custom event that Dashboard listens to
-      window.dispatchEvent(new CustomEvent('createWorkspace'))
-      setIsOpen(false)
-    }
+    window.dispatchEvent(new CustomEvent('createWorkspace'))
+    setIsOpen(false)
+  }
+
+  const handleCreatePost = () => {
+    window.dispatchEvent(new CustomEvent('openCreatePostModal'))
+    setIsOpen(false)
   }
 
   return (
@@ -49,6 +50,13 @@ export default function FloatingActionButton() {
       {/* Menu Items */}
       {isOpen && (
         <div className="absolute bottom-16 right-0 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden mb-2 w-48 animate-in fade-in zoom-in duration-150">
+          <button
+            onClick={handleCreatePost}
+            className="w-full px-4 py-3 text-left hover:bg-yellow-50 transition-colors text-sm font-medium text-gray-900 flex items-center gap-2 border-b border-slate-100"
+          >
+            <span className="text-lg">✨</span>
+            Create Post
+          </button>
           {!isDashboard && (
             <button
               onClick={handleNewMemory}
@@ -71,7 +79,7 @@ export default function FloatingActionButton() {
       {/* Main Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-14 h-14 rounded-full bg-yellow-500 hover:bg-yellow-400 text-white shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center text-2xl ${
+        className={`flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-yellow-500 text-2xl text-white shadow-[0_18px_40px_rgba(234,179,8,0.35)] transition-all duration-200 hover:bg-yellow-400 hover:shadow-[0_22px_50px_rgba(234,179,8,0.42)] ${
           isOpen ? 'scale-110' : 'hover:scale-110'
         }`}
         title="Quick actions"

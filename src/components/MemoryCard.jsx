@@ -1,10 +1,13 @@
+import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { canDelete } from "../utils/rolePermissions"
 import { handleNavigationClick } from "../utils/navigation"
+import Modal from "./Modal"
 
 export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "", isDeleting = false, userRole = "viewer" }) {
 
   const navigate = useNavigate()
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
 
   // Calculate relative time (e.g., "2 hours ago")
   const getRelativeTime = (dateString) => {
@@ -56,6 +59,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
   return (
 
     <div
+      data-post-id={memory.id}
       className={`card p-4 flex flex-col gap-3 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-in-out cursor-pointer ${
         isRecent ? 'border border-yellow-200 bg-yellow-50/30' : ''
       }`}
@@ -139,9 +143,7 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
           <button
             onClick={(e) => {
               e.stopPropagation()
-              if (confirm("Delete this memory?")) {
-                if (onDelete) onDelete(memory.id)
-              }
+              setShowDeleteModal(true)
             }}
             disabled={isDeleting}
             className="text-xs text-red-500 hover:text-red-600 opacity-50 hover:opacity-100 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
@@ -150,6 +152,20 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
           </button>
         )}
       </div>
+
+      <Modal
+        open={showDeleteModal}
+        title="Delete Memory"
+        message="Are you sure you want to delete this memory? This action cannot be undone."
+        confirmText="Delete"
+        confirmVariant="danger"
+        isLoading={isDeleting}
+        onConfirm={() => {
+          setShowDeleteModal(false)
+          if (onDelete) onDelete(memory.id)
+        }}
+        onCancel={() => setShowDeleteModal(false)}
+      />
 
     </div>
 

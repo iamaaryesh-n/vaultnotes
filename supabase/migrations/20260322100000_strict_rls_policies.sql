@@ -15,6 +15,8 @@ ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can view their workspaces" ON public.workspaces;
 DROP POLICY IF EXISTS "Users can create workspaces" ON public.workspaces;
+DROP POLICY IF EXISTS "workspaces_select" ON public.workspaces;
+DROP POLICY IF EXISTS "workspaces_insert" ON public.workspaces;
 
 -- SELECT: user can see a workspace only if they are a member
 CREATE POLICY "workspaces_select"
@@ -40,6 +42,9 @@ WITH CHECK (created_by = auth.uid());
 -- ============================================================
 
 DROP POLICY IF EXISTS "Users can view their memberships" ON public.workspace_members;
+DROP POLICY IF EXISTS "workspace_members_select" ON public.workspace_members;
+DROP POLICY IF EXISTS "workspace_members_insert" ON public.workspace_members;
+DROP POLICY IF EXISTS "workspace_members_delete" ON public.workspace_members;
 
 -- SELECT: user can see only their own membership rows
 CREATE POLICY "workspace_members_select"
@@ -83,6 +88,10 @@ DROP POLICY IF EXISTS "Users can view memories in their workspaces" ON public.me
 DROP POLICY IF EXISTS "Users can insert memories in their workspace" ON public.memories;
 DROP POLICY IF EXISTS "Users can update their own memories" ON public.memories;
 DROP POLICY IF EXISTS "Users can delete their own memories" ON public.memories;
+DROP POLICY IF EXISTS "memories_select" ON public.memories;
+DROP POLICY IF EXISTS "memories_insert" ON public.memories;
+DROP POLICY IF EXISTS "memories_update" ON public.memories;
+DROP POLICY IF EXISTS "memories_delete" ON public.memories;
 
 -- SELECT: user can read memories only if they are a workspace member
 CREATE POLICY "memories_select"
