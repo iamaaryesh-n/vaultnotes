@@ -89,13 +89,14 @@ export const usePostCacheStore = create((set, get) => ({
   /**
    * Add a single like to cache
    */
-  addLike: (postId, userId) => {
+  addLike: (postId, isOwnEvent = false) => {
     set(state => ({
+      // Keep counts non-negative and only toggle userLiked for the acting user.
       likesByPost: {
         ...state.likesByPost,
         [postId]: {
           count: (state.likesByPost[postId]?.count || 0) + 1,
-          userLiked: true
+          userLiked: isOwnEvent ? true : (state.likesByPost[postId]?.userLiked || false)
         }
       }
     }))
@@ -104,13 +105,13 @@ export const usePostCacheStore = create((set, get) => ({
   /**
    * Remove a like from cache
    */
-  removeLike: (postId, userId) => {
+  removeLike: (postId, isOwnEvent = false) => {
     set(state => ({
       likesByPost: {
         ...state.likesByPost,
         [postId]: {
           count: Math.max(0, (state.likesByPost[postId]?.count || 1) - 1),
-          userLiked: false
+          userLiked: isOwnEvent ? false : (state.likesByPost[postId]?.userLiked || false)
         }
       }
     }))
@@ -123,7 +124,36 @@ export const usePostCacheStore = create((set, get) => ({
     set(state => ({
       commentsByPost: {
         ...state.commentsByPost,
-        [postId]: [comment, ...(state.commentsByPost[postId] || [])]
+        [postId]: [...(state.commentsByPost[postId] || []), comment]
+      }
+    }))
+  },
+
+  /**
+   * Remove a comment from cache by ID
+   */
+  removeComment: (postId, commentId) => {
+    set(state => ({
+      commentsByPost: {
+        ...state.commentsByPost,
+        [postId]: (state.commentsByPost[postId] || []).filter(comment => comment.id !== commentId)
+      }
+    }))
+  },
+  
+  /**
+   * Update an existing comment's profile information
+   * Finds comment by ID and updates profile data without duplication
+   */
+  updateCommentProfile: (postId, commentId, profileData) => {
+    set(state => ({
+      commentsByPost: {
+        ...state.commentsByPost,
+        [postId]: (state.commentsByPost[postId] || []).map(comment =>
+          comment.id === commentId
+            ? { ...comment, profiles: profileData }
+            : comment
+        )
       }
     }))
   },

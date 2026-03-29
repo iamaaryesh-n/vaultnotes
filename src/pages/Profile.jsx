@@ -31,6 +31,8 @@ export default function Profile() {
     likes: likesByPost,
     loading: postsLoading,
     updateComment,
+    removeComment,
+    removeCommentById,
     updateLike
   } = useSmartFetchPosts(
     async () => {
@@ -410,40 +412,77 @@ export default function Profile() {
 
   // Memoized realtime handlers - stable across renders
   const handleLikesRealtime = useCallback((payload) => {
-    const { eventType = "INSERT", new: newData, old: oldData } = payload
-    const postId = eventType === "DELETE" ? oldData.post_id : newData.post_id
-    
-    if (eventType === "INSERT") {
-      updateLike(postId, true)
-    } else if (eventType === "DELETE") {
-      updateLike(postId, false)
+    console.log("Realtime event:", payload)
+    if (payload.eventType === "DELETE") {
+      const postId = payload.old?.post_id
+      if (!postId) return
+
+      console.log("DELETE LIKE:", payload.old)
+      console.log("Realtime like received for post_id", postId)
+      console.log("Updating post:", postId)
+      updateLike(postId, "DELETE", payload.old?.user_id)
+      return
     }
+
+    const postId = payload.new?.post_id
+    if (!postId) return
+
+    console.log("Realtime like received for post_id", postId)
+    console.log("Updating post:", postId)
+    updateLike(postId, payload.eventType, payload.new?.user_id)
   }, [updateLike])
 
   const handleCommentsRealtime = useCallback(async (payload) => {
-    const { eventType = "INSERT", new: newData } = payload
+    if (payload.eventType === "INSERT" && payload.new?.post_id) {
+      console.log("Realtime event:", payload)
+      console.log("Realtime comment received", payload.new)
+      console.log("Updating post:", payload.new.post_id)
 
-    if (eventType === "INSERT") {
-      const postId = newData.post_id
-      const tempComment = {
-        id: newData.id,
-        user_id: newData.user_id,
-        content: newData.content,
-        created_at: newData.created_at,
+      const comment = {
+        id: payload.new.id,
+        user_id: payload.new.user_id,
+        content: payload.new.content,
+        created_at: payload.new.created_at,
         profiles: { username: "unknown", avatar_url: null }
       }
-      updateComment(postId, tempComment)
 
-      // Fetch and update the profile info asynchronously
-      try {
-        const { fetchUserProfile } = await import("../lib/postInteractions")
-        const profile = await fetchUserProfile(newData.user_id)
-        updateComment(postId, { ...tempComment, profiles: profile })
-      } catch (err) {
-        console.error("[Profile] Error fetching user profile:", err)
+      updateComment(payload.new.post_id, comment)
+      return
+    }
+
+    if (payload.eventType === "DELETE") {
+      console.log("DELETE EVENT FULL:", payload)
+      console.log("OLD DATA:", payload.old)
+
+      const comment_id = payload.old?.id
+      if (!comment_id) return
+
+      let post_id = payload.old?.post_id
+
+      if (!post_id) {
+        const { data, error: fetchError } = await supabase
+          .from("comments")
+          .select("post_id")
+          .eq("id", comment_id)
+          .single()
+
+        if (fetchError) {
+          console.warn("[Profile] Failed to resolve post_id for deleted comment:", fetchError)
+        }
+
+        post_id = data?.post_id
+      }
+
+      console.log("DELETE COMMENT:", payload.old)
+      console.log("Realtime DELETE event:", payload)
+      if (post_id) {
+        console.log("Updating post:", post_id)
+        removeComment(post_id, comment_id)
+      } else {
+        removeCommentById(comment_id)
       }
     }
-  }, [updateComment])
+  }, [updateComment, removeComment, removeCommentById])
 
   // Setup realtime subscriptions
   usePostsRealtime(
@@ -716,12 +755,6 @@ export default function Profile() {
                     post={post}
                     initialComments={commentsByPost[post.id] || []}
                     initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
-                    onCommentAdded={(newComment) => {
-                      updateComment(post.id, newComment)
-                    }}
-                    onLikesChange={(newLikes) => {
-                      updateLike(post.id, newLikes.userLiked)
-                    }}
                   />
                 </article>
               )

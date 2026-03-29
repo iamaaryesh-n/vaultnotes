@@ -2,7 +2,6 @@ import { useState, useEffect } from "react"
 import { useToast } from "../hooks/useToast"
 import { supabase } from "../lib/supabase"
 import {
-  fetchLikesForPosts,
   addComment,
   deleteComment,
   getShareLink,
@@ -13,18 +12,14 @@ import {
 export default function PostInteractions({ 
   post, 
   initialComments = [], 
-  initialLikes = { count: 0, userLiked: false },
-  onCommentAdded,
-  onLikesChange
+  initialLikes = { count: 0, userLiked: false }
 }) {
   const { success, error } = useToast()
 
   const [currentUserId, setCurrentUserId] = useState(null)
-  const [likesCount, setLikesCount] = useState(initialLikes.count || 0)
-  const [userLiked, setUserLiked] = useState(initialLikes.userLiked || false)
-  const [comments, setComments] = useState(initialComments)
   const [commentInput, setCommentInput] = useState("")
   const [addingComment, setAddingComment] = useState(false)
+  const [likingInProgress, setLikingInProgress] = useState(false)
   const [showComments, setShowComments] = useState(false)
   const [deletingCommentId, setDeletingCommentId] = useState(null)
 
@@ -39,40 +34,25 @@ export default function PostInteractions({
     getCurrentUser()
   }, [])
 
-  // Update comments when initialComments prop changes
-  useEffect(() => {
-    setComments(initialComments)
-  }, [initialComments])
-
-  // Update likes when initialLikes prop changes
-  useEffect(() => {
-    setLikesCount(initialLikes.count || 0)
-    setUserLiked(initialLikes.userLiked || false)
-  }, [initialLikes.count, initialLikes.userLiked])
+  const likesCount = Math.max(0, initialLikes.count || 0)
+  const userLiked = !!initialLikes.userLiked
+  const comments = initialComments
 
   const handleLikeClick = async () => {
-    // Optimistic UI update
-    const newLiked = !userLiked
-    setUserLiked(newLiked)
-    setLikesCount((prev) => (newLiked ? prev + 1 : prev - 1))
-
-    // Notify parent of change
-    if (onLikesChange) {
-      onLikesChange({
-        count: newLiked ? likesCount + 1 : likesCount - 1,
-        userLiked: newLiked
-      })
+    if (likingInProgress) {
+      return
     }
 
-    // Make API call
+    // Do not mutate local like count manually.
+    // Realtime events are the single source of truth for UI like updates.
+    setLikingInProgress(true)
     const result = await toggleLike(post.id)
 
     if (!result.success) {
-      // Revert optimistic update on error
-      setUserLiked(!newLiked)
-      setLikesCount((prev) => (newLiked ? prev - 1 : prev + 1))
       error("Failed to update like")
     }
+
+    setLikingInProgress(false)
   }
 
   const handleAddComment = async () => {
@@ -86,12 +66,7 @@ export default function PostInteractions({
 
     if (result.success) {
       setCommentInput("")
-      setComments([result.comment, ...comments])
-      success("Comment added")
-      // Notify parent component with new comment
-      if (onCommentAdded) {
-        onCommentAdded(result.comment)
-      }
+      success("Comment sent")
     } else {
       error(result.error || "Failed to add comment")
     }
@@ -104,7 +79,6 @@ export default function PostInteractions({
     const result = await deleteComment(commentId)
 
     if (result.success) {
-      setComments((prev) => prev.filter((c) => c.id !== commentId))
       success("Comment deleted")
     } else {
       error(result.error || "Failed to delete comment")
@@ -131,11 +105,12 @@ export default function PostInteractions({
         {/* Like Button */}
         <button
           onClick={handleLikeClick}
+          disabled={likingInProgress}
           className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${
             userLiked
               ? "text-red-500 hover:bg-red-50"
               : "text-slate-600 hover:bg-slate-100"
-          }`}
+          } disabled:opacity-60 disabled:cursor-not-allowed`}
           title={userLiked ? "Unlike" : "Like"}
         >
           <span className={`text-lg ${userLiked ? "animate-pulse" : ""}`}>
