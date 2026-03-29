@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom"
+import { Routes, Route, useLocation } from "react-router-dom"
 import { useEffect, useState } from "react"
 import { supabase } from "./lib/supabase"
 import { useScrollToTop } from "./hooks/useScrollToTop"
@@ -16,10 +16,12 @@ import MemoryEditor from "./pages/MemoryEditor"
 import Explore from "./pages/Explore"
 import Profile from "./pages/Profile"
 import PublicProfile from "./pages/PublicProfile"
+import Chat from "./pages/Chat"
 import Login from "./pages/Login"
 import { Notifications } from "./pages/Notifications"
 
 export default function App() {
+  const location = useLocation()
 
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -47,6 +49,7 @@ export default function App() {
   useEffect(() => {
     // Listen for Create Post event from floating action button
     const handleOpenCreatePostModal = () => {
+      console.log("Create Post clicked")
       setCreatePostOpen(true)
     }
 
@@ -85,6 +88,8 @@ export default function App() {
     )
   }
 
+  const isChatRoute = location.pathname === "/chat"
+
   return (
     <ToastProvider>
       <div className="min-h-screen bg-gray-50">
@@ -103,7 +108,12 @@ export default function App() {
             }}
           />
         )}
-        <Routes>
+        <main
+          className={session
+            ? `${isChatRoute ? "h-[100dvh] overflow-hidden" : "min-h-screen"} pt-[64px] pb-20`
+            : "min-h-screen"}
+        >
+          <Routes>
           <Route
             path="/login"
             element={!session ? <Login /> : <Explore />}
@@ -135,6 +145,11 @@ export default function App() {
           />
 
           <Route
+            path="/chat"
+            element={session ? <Chat /> : <Login />}
+          />
+
+          <Route
             path="/workspace/:id"
             element={session ? <WorkspaceDetail /> : <Login />}
           />
@@ -158,7 +173,8 @@ export default function App() {
             path="/notifications"
             element={session ? <Notifications /> : <Login />}
           />
-        </Routes>
+          </Routes>
+        </main>
       </div>
     </ToastProvider>
   )

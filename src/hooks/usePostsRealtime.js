@@ -1,25 +1,32 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import { supabase } from "../lib/supabase"
 
 /**
- * Stable realtime subscription hook for likes and comments
- * - Subscribes ONLY ONCE on mount
- * - Never resubscribes unless component unmounts
- * - Callbacks don't trigger resubscription
- * - Properly cleans up channels on unmount
+ * Realtime subscription hook for likes and comments on posts
+ * 
+ * Features:
+ * - Subscribes to INSERT events on likes table → increment like count
+ * - Subscribes to DELETE events on likes table → decrement like count
+ * - Subscribes to INSERT events on comments table → add new comment instantly
+ * - Uses post_id filter to only get relevant updates
+ * - Stable subscription: only subscribes once, never resubscribes unnecessarily
+ * - Proper cleanup on unmount
  * 
  * @param {string[]} postIds - Array of post IDs to subscribe to
- * @param {Function} onLikesChange - Callback when likes change
- * @param {Function} onCommentsChange - Callback when comments change
+ * @param {Function} onLikesChange - Callback when likes change (INSERT/DELETE events)
+ * @param {Function} onCommentsChange - Callback when comments change (INSERT events)
  */
 export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
   const channelsRef = useRef(null)
-  const postIdsRef = useRef(null)
-
-  // Update callback refs WITHOUT triggering resubscription
   const onLikesChangeRef = useRef(onLikesChange)
   const onCommentsChangeRef = useRef(onCommentsChange)
 
+  const postIdsKey = useMemo(
+    () => Array.from(new Set(postIds || [])).filter(Boolean).sort().join(","),
+    [postIds]
+  )
+
+  // Update callback refs WITHOUT triggering resubscription
   useEffect(() => {
     onLikesChangeRef.current = onLikesChange
   }, [onLikesChange])
@@ -28,50 +35,94 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
     onCommentsChangeRef.current = onCommentsChange
   }, [onCommentsChange])
 
-  // Single subscription on mount ONLY, never resubscribe
+  // Subscribe when post IDs actually change
   useEffect(() => {
-    if (!postIds || postIds.length === 0) {
+    const uniquePostIds = postIdsKey ? postIdsKey.split(",") : []
+
+    if (uniquePostIds.length === 0) {
       console.log("[usePostsRealtime] No post IDs provided")
+      if (channelsRef.current) {
+        supabase.removeChannel(channelsRef.current.likes)
+        supabase.removeChannel(channelsRef.current.comments)
+        channelsRef.current = null
+      }
       return
     }
 
-    console.log("[usePostsRealtime] Subscribing to realtime for posts:", postIds)
+    const nextKey = postIdsKey
 
-    // Subscribe to likes table
+    if (channelsRef.current) {
+      supabase.removeChannel(channelsRef.current.likes)
+      supabase.removeChannel(channelsRef.current.comments)
+      channelsRef.current = null
+    }
+
+    console.log("[usePostsRealtime] ✅ Subscribing to realtime for posts:", uniquePostIds)
+
+    // ============================================
+    // LIKES CHANNEL - Handle INSERT and DELETE
+    // ============================================
     const likesChannel = supabase
-      .channel(`likes-realtime-${postIdsString}`)
+      .channel(`likes-realtime-${nextKey}`)
       .on(
         "postgres_changes",
         {
-          event: "*", // All events: INSERT, UPDATE, DELETE
+          event: "*",
           schema: "public",
           table: "likes",
-          filter: `post_id=in.(${postIds.join(",")})`
+          filter: `post_id=in.(${uniquePostIds.join(",")})`
         },
         (payload) => {
-          console.log("[usePostsRealtime] Likes event for post:", payload.new?.post_id || payload.old?.post_id)
+          console.log("LIKE EVENT:", payload)
+          const postId = payload.eventType === "DELETE" ? payload.old?.post_id : payload.new?.post_id
+          if (postId) {
+            console.log("Updating post:", postId)
+          }
           if (onLikesChangeRef.current) {
             onLikesChangeRef.current(payload)
           }
         }
       )
       .subscribe((status) => {
-        console.log("[usePostsRealtime] Likes channel status:", status)
+        console.log("LIKE CHANNEL STATUS:", status)
       })
 
-    // Subscribe to comments table
+    // ============================================
+    // COMMENTS CHANNEL - Handle INSERT and DELETE
+    // ============================================
     const commentsChannel = supabase
-      .channel(`comments-realtime-${postIdsString}`)
+      .channel(`comments-realtime-${nextKey}`)
       .on(
         "postgres_changes",
         {
-          event: "*", // All events: INSERT, UPDATE, DELETE
+          event: "INSERT",
           schema: "public",
           table: "comments",
-          filter: `post_id=in.(${postIds.join(",")})`
+          filter: `post_id=in.(${uniquePostIds.join(",")})`
         },
         (payload) => {
-          console.log("[usePostsRealtime] Comments event for post:", payload.new?.post_id || payload.old?.post_id)
+          console.log("Realtime event:", payload)
+          console.log("Updating post:", payload.new?.post_id)
+          if (onCommentsChangeRef.current) {
+            onCommentsChangeRef.current(payload)
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "comments",
+          filter: `post_id=in.(${uniquePostIds.join(",")})`
+        },
+        (payload) => {
+          console.log("DELETE EVENT FULL:", payload)
+          console.log("OLD DATA:", payload.old)
+          console.log("DELETE COMMENT:", payload.old)
+          console.log("Realtime DELETE event:", payload)
+          console.log("Realtime event:", payload)
+          console.log("Updating post:", payload.old?.post_id)
           if (onCommentsChangeRef.current) {
             onCommentsChangeRef.current(payload)
           }
@@ -81,20 +132,20 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
         console.log("[usePostsRealtime] Comments channel status:", status)
       })
 
-    // Store channel references
+    // Store channel references for cleanup
     channelsRef.current = {
       likes: likesChannel,
       comments: commentsChannel
     }
 
-    // Cleanup on unmount only
+    // Cleanup on unmount
     return () => {
-      console.log("[usePostsRealtime] Cleaning up on unmount")
+      console.log("[usePostsRealtime] Cleaning up realtime subscriptions on unmount")
       if (channelsRef.current) {
-        channelsRef.current.likes?.unsubscribe()
-        channelsRef.current.comments?.unsubscribe()
+        supabase.removeChannel(channelsRef.current.likes)
+        supabase.removeChannel(channelsRef.current.comments)
         channelsRef.current = null
       }
     }
-  }, []) // Only run ONCE on mount, never resubscribe
+  }, [postIdsKey])
 }

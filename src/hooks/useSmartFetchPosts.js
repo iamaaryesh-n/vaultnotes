@@ -16,12 +16,12 @@ import { supabase } from '../lib/supabase'
  */
 export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
   const store = usePostCacheStore()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [posts, setPosts] = useState([])
   const [commentsByPost, setCommentsByPost] = useState({})
   const [likesByPost, setLikesByPost] = useState({})
-  const [cacheKey_, setCacheKey] = useState(cacheKey)
+  const [currentUserId, setCurrentUserId] = useState(null)
   
   // Store cache key in local storage to track which data is loaded
   useEffect(() => {
@@ -35,25 +35,8 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // If data is cached and not forcing fresh, return immediately
-        if (!forceFresh) {
-          const cachedPostIds = store.getCachedPostIds()
-          if (cachedPostIds.length > 0) {
-            // Check if any are still valid
-            const validPosts = cachedPostIds
-              .filter(id => store.isCacheValid(id))
-              .map(id => store.posts[id])
-            
-            if (validPosts.length > 0) {
-              console.log('[useSmartFetchPosts] Returning cached data for', cacheKey)
-              setPosts(validPosts)
-              setCommentsByPost(store.commentsByPost)
-              setLikesByPost(store.likesByPost)
-              setLoading(false)
-              return
-            }
-          }
-        }
+        const { data: { user } } = await supabase.auth.getUser()
+        setCurrentUserId(user?.id || null)
         
         // Fetch new posts
         setLoading(true)
@@ -70,7 +53,6 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
         
         // Cache posts
         store.setCachedPosts(fetchedPosts)
-        setPosts(fetchedPosts)
         
         // Fetch and cache interactions
         const postIds = fetchedPosts.map(p => p.id)
@@ -78,14 +60,17 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
         // Prefetch comments and likes in parallel
         const [comments, likeData] = await Promise.all([
           fetchCommentsForPosts(postIds),
-          (async () => {
-            const { data: { user } } = await supabase.auth.getUser()
-            return fetchLikesForPosts(postIds, user?.id)
-          })()
+          fetchLikesForPosts(postIds, user?.id)
         ])
         
         store.setCachedComments(comments)
         store.setCachedLikes(likeData)
+        const postsWithCounts = fetchedPosts.map(post => ({
+          ...post,
+          likes_count: likeData[post.id]?.count || 0,
+          comments_count: (comments[post.id] || []).length
+        }))
+        setPosts(postsWithCounts)
         setCommentsByPost(comments)
         setLikesByPost(likeData)
         
@@ -110,18 +95,146 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
     loading,
     error,
     
-    // Helper methods for UI updates
+    // Helper methods for UI updates - update state immutably for realtime
     updateComment: (postId, newComment) => {
-      store.addComment(postId, newComment)
-      setCommentsByPost(store.commentsByPost)
-    },
-    updateLike: (postId, liked) => {
-      if (liked) {
-        store.addLike(postId)
-      } else {
-        store.removeLike(postId)
+      const hasCommentAlready = (commentsByPost[postId] || []).some(comment => comment.id === newComment.id)
+      if (hasCommentAlready) {
+        return
       }
-      setLikesByPost(store.likesByPost)
+
+      setCommentsByPost(prev => {
+        const existing = prev[postId] || []
+        if (existing.some(comment => comment.id === newComment.id)) {
+          return prev
+        }
+        return {
+          ...prev,
+          [postId]: [...existing, newComment]
+        }
+      })
+
+      setPosts(prevPosts =>
+        prevPosts.map(post => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              comments: Array.isArray(post.comments)
+                ? [...post.comments, newComment]
+                : post.comments,
+              comments_count: Math.max(0, (post.comments_count || 0) + 1)
+            }
+          }
+          return post
+        })
+      )
+
+      // Also update cache
+      store.addComment(postId, newComment)
+    },
+    removeComment: (postId, commentId) => {
+      setCommentsByPost(prev => {
+        const existing = prev[postId] || []
+        const next = existing.filter(comment => comment.id?.toString() !== commentId?.toString())
+        if (next.length === existing.length) {
+          return prev
+        }
+
+        return {
+          ...prev,
+          [postId]: next
+        }
+      })
+
+      setPosts(prevPosts =>
+        prevPosts.map(post => {
+          if (post.id?.toString() === postId?.toString()) {
+            return {
+              ...post,
+              comments: Array.isArray(post.comments)
+                ? post.comments.filter(comment => comment.id?.toString() !== commentId?.toString())
+                : post.comments,
+              comments_count: Math.max(0, (post.comments_count || 0) - 1)
+            }
+          }
+          return post
+        })
+      )
+
+      store.removeComment(postId, commentId)
+    },
+    removeCommentById: (commentId) => {
+      const affectedPostIds = Object.keys(commentsByPost).filter(postId =>
+        (commentsByPost[postId] || []).some(comment => comment.id?.toString() === commentId?.toString())
+      )
+
+      if (affectedPostIds.length === 0) {
+        return
+      }
+
+      setCommentsByPost(prev => {
+        const next = { ...prev }
+        affectedPostIds.forEach(postId => {
+          next[postId] = (next[postId] || []).filter(comment => comment.id?.toString() !== commentId?.toString())
+        })
+        return next
+      })
+
+      setPosts(prevPosts =>
+        prevPosts.map(post => {
+          if (affectedPostIds.includes(post.id)) {
+            return {
+              ...post,
+              comments: Array.isArray(post.comments)
+                ? post.comments.filter(comment => comment.id?.toString() !== commentId?.toString())
+                : post.comments,
+              comments_count: Math.max(0, (post.comments_count || 0) - 1)
+            }
+          }
+          return post
+        })
+      )
+
+      affectedPostIds.forEach(postId => {
+        store.removeComment(postId, commentId)
+      })
+    },
+    updateLike: (postId, eventType, eventUserId) => {
+      const isInsert = eventType === "INSERT"
+      const isOwnEvent = !!currentUserId && eventUserId === currentUserId
+
+      setPosts(prevPosts =>
+        prevPosts.map(post => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              likes_count: isInsert
+                ? Math.max(0, (post.likes_count || 0) + 1)
+                : Math.max(0, (post.likes_count || 0) - 1)
+            }
+          }
+          return post
+        })
+      )
+
+      setLikesByPost(prev => ({
+        ...prev,
+        [postId]: {
+          ...prev[postId],
+          count: isInsert
+            ? (prev[postId]?.count || 0) + 1
+            : Math.max(0, (prev[postId]?.count || 1) - 1),
+          userLiked: isOwnEvent
+            ? isInsert
+            : (prev[postId]?.userLiked || false)
+        }
+      }))
+
+      // Also update cache
+      if (isInsert) {
+        store.addLike(postId, isOwnEvent)
+      } else {
+        store.removeLike(postId, isOwnEvent)
+      }
     }
   }
 }

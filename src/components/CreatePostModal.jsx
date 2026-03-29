@@ -10,6 +10,8 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
   if (!isOpen || !user) return null
 
   const handleCreatePost = async () => {
+    console.log("Creating post...")
+
     const trimmedContent = postContent.trim()
     if (!trimmedContent && !postImageFile) {
       setModalConfig({
@@ -60,23 +62,27 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
         console.log('[CreatePostModal] Image public URL:', uploadedImageUrl)
       }
 
-      // Create post with image URL (if any)
-      const { data: insertedPost, error: insertError } = await supabase
+      // Create post (public by default)
+      const { data, error } = await supabase
         .from('posts')
-        .insert({
-          user_id: user.id,
-          content: trimmedContent || null,
-          image_url: uploadedImageUrl || null
-        })
-        .select('id, user_id, content, image_url, created_at')
-        .single()
+        .insert([
+          {
+            user_id: user.id,
+            content: trimmedContent || null,
+            visibility: 'public',
+            image_url: uploadedImageUrl || null
+          }
+        ])
+        .select()
 
-      if (insertError) {
-        console.error('[CreatePostModal] Error creating post:', insertError.message)
+      const insertedPost = Array.isArray(data) ? data[0] : data
+
+      if (error) {
+        console.error('POST ERROR:', error)
         setModalConfig({
           open: true,
           title: 'Error',
-          message: 'Failed to create post. ' + insertError.message,
+          message: 'Failed to create post. ' + error.message,
           onConfirm: () => setModalConfig({ ...modalConfig, open: false })
         })
         setPosting(false)
@@ -117,7 +123,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
   return (
     <>
       {isOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
               <h4 className="text-lg font-bold text-slate-900">Create Post</h4>
@@ -173,7 +179,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
 
       {/* Modal for messages */}
       {modalConfig.open && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
               <h4 className="text-lg font-bold text-slate-900">{modalConfig.title}</h4>

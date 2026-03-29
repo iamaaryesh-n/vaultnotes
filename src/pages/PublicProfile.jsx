@@ -21,6 +21,7 @@ export default function PublicProfile() {
   const [followersCount, setFollowersCount] = useState(0)
   const [followingCount, setFollowingCount] = useState(0)
   const [isFollowLoading, setIsFollowLoading] = useState(false)
+  const [isChatLoading, setIsChatLoading] = useState(false)
   const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "", onConfirm: null })
   
   // Smart fetch posts with caching
@@ -30,6 +31,8 @@ export default function PublicProfile() {
     likes: likesByPost,
     loading: postsLoading,
     updateComment,
+    removeComment,
+    removeCommentById,
     updateLike
   } = useSmartFetchPosts(
     async () => {
@@ -293,41 +296,143 @@ export default function PublicProfile() {
       setIsFollowLoading(false)
     }
   }
-  const handleLikesRealtime = useCallback((payload) => {
-    const { eventType = "INSERT", new: newData, old: oldData } = payload
-    const postId = eventType === "DELETE" ? oldData.post_id : newData.post_id
-    
-    if (eventType === "INSERT") {
-      updateLike(postId, true)
-    } else if (eventType === "DELETE") {
-      updateLike(postId, false)
+
+  const handleStartChat = async () => {
+    if (!currentUser || !profile?.id) {
+      showError("Please log in to send messages")
+      return
     }
+
+    if (currentUser.id === profile.id) {
+      showError("You cannot message yourself")
+      return
+    }
+
+    try {
+      setIsChatLoading(true)
+
+      const currentUserId = currentUser.id
+      const profileUserId = profile.id
+
+      const { data: existingConversation, error: existingError } = await supabase
+        .from("conversations")
+        .select("id, user1_id, user2_id")
+        .or(`and(user1_id.eq.${currentUserId},user2_id.eq.${profileUserId}),and(user1_id.eq.${profileUserId},user2_id.eq.${currentUserId})`)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingError) {
+        console.error("[PublicProfile] Error checking existing conversation:", existingError)
+        showError("Failed to start chat")
+        return
+      }
+
+      let conversationId = existingConversation?.id
+
+      if (!conversationId) {
+        const { data: newConversation, error: insertError } = await supabase
+          .from("conversations")
+          .insert({
+            user1_id: currentUserId,
+            user2_id: profileUserId
+          })
+          .select("id")
+          .single()
+
+        if (insertError) {
+          console.error("[PublicProfile] Error creating conversation:", insertError)
+          showError("Failed to start chat")
+          return
+        }
+
+        conversationId = newConversation?.id
+      }
+
+      if (!conversationId) {
+        showError("Failed to start chat")
+        return
+      }
+
+      navigate(`/chat?conversation=${conversationId}`)
+    } catch (err) {
+      console.error("[PublicProfile] Exception starting chat:", err)
+      showError("Failed to start chat")
+    } finally {
+      setIsChatLoading(false)
+    }
+  }
+  const handleLikesRealtime = useCallback((payload) => {
+    console.log("Realtime event:", payload)
+    if (payload.eventType === "DELETE") {
+      const postId = payload.old?.post_id
+      if (!postId) return
+
+      console.log("DELETE LIKE:", payload.old)
+      console.log("Realtime like received for post_id", postId)
+      console.log("Updating post:", postId)
+      updateLike(postId, "DELETE", payload.old?.user_id)
+      return
+    }
+
+    const postId = payload.new?.post_id
+    if (!postId) return
+
+    console.log("Realtime like received for post_id", postId)
+    console.log("Updating post:", postId)
+    updateLike(postId, payload.eventType, payload.new?.user_id)
   }, [updateLike])
 
   const handleCommentsRealtime = useCallback(async (payload) => {
-    const { eventType = "INSERT", new: newData } = payload
+    if (payload.eventType === "INSERT" && payload.new?.post_id) {
+      console.log("Realtime event:", payload)
+      console.log("Realtime comment received", payload.new)
+      console.log("Updating post:", payload.new.post_id)
 
-    if (eventType === "INSERT") {
-      const postId = newData.post_id
-      const tempComment = {
-        id: newData.id,
-        user_id: newData.user_id,
-        content: newData.content,
-        created_at: newData.created_at,
+      const comment = {
+        id: payload.new.id,
+        user_id: payload.new.user_id,
+        content: payload.new.content,
+        created_at: payload.new.created_at,
         profiles: { username: "unknown", avatar_url: null }
       }
-      updateComment(postId, tempComment)
 
-      // Fetch and update the profile info asynchronously
-      try {
-        const { fetchUserProfile } = await import("../lib/postInteractions")
-        const profile = await fetchUserProfile(newData.user_id)
-        updateComment(postId, { ...tempComment, profiles: profile })
-      } catch (err) {
-        console.error("[PublicProfile] Error fetching user profile:", err)
+      updateComment(payload.new.post_id, comment)
+      return
+    }
+
+    if (payload.eventType === "DELETE") {
+      console.log("DELETE EVENT FULL:", payload)
+      console.log("OLD DATA:", payload.old)
+
+      const comment_id = payload.old?.id
+      if (!comment_id) return
+
+      let post_id = payload.old?.post_id
+
+      if (!post_id) {
+        const { data, error: fetchError } = await supabase
+          .from("comments")
+          .select("post_id")
+          .eq("id", comment_id)
+          .single()
+
+        if (fetchError) {
+          console.warn("[PublicProfile] Failed to resolve post_id for deleted comment:", fetchError)
+        }
+
+        post_id = data?.post_id
+      }
+
+      console.log("DELETE COMMENT:", payload.old)
+      console.log("Realtime DELETE event:", payload)
+      if (post_id) {
+        console.log("Updating post:", post_id)
+        removeComment(post_id, comment_id)
+      } else {
+        removeCommentById(comment_id)
       }
     }
-  }, [updateComment])
+  }, [updateComment, removeComment, removeCommentById])
 
   // Setup realtime subscriptions
   usePostsRealtime(
@@ -449,6 +554,14 @@ export default function PublicProfile() {
                   {isFollowLoading ? "Following..." : "Follow"}
                 </button>
               )}
+
+              <button
+                onClick={handleStartChat}
+                disabled={isChatLoading}
+                className="flex-1 px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold disabled:opacity-50 transition-colors duration-200"
+              >
+                {isChatLoading ? "Opening..." : "Message"}
+              </button>
             </>
           )}
           
@@ -513,12 +626,6 @@ export default function PublicProfile() {
                   post={post}
                   initialComments={commentsByPost[post.id] || []}
                   initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
-                  onCommentAdded={(newComment) => {
-                    updateComment(post.id, newComment)
-                  }}
-                  onLikesChange={(newLikes) => {
-                    updateLike(post.id, newLikes.userLiked)
-                  }}
                 />
               </article>
             ))}

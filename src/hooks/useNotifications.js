@@ -33,6 +33,13 @@ export function useNotifications() {
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current)
       }
+      // Cleanup realtime subscription on unmount
+      if (activeSubscription) {
+        console.log('[useNotifications] Cleaning up realtime subscription on unmount')
+        activeSubscription.unsubscribe()
+        activeSubscription = null
+        subscriptionUser = null
+      }
     }
   }, [])
 
@@ -178,7 +185,7 @@ export function useNotifications() {
             filter: `recipient_id=eq.${user.id}`
           },
           (payload) => {
-            console.log('[useNotifications] New notification received:', payload)
+            console.log('[useNotifications] 🔔 New notification received')
             if (isMountedRef.current) {
               handleNewNotification(payload.new)
             }
@@ -203,7 +210,7 @@ export function useNotifications() {
 
       activeSubscription = channel
       subscriptionUser = user.id
-      console.log('[useNotifications] Subscribed to notifications')
+      console.log('[useNotifications] ✅ Realtime connected for notifications')
     } catch (err) {
       console.error('[useNotifications] Exception subscribing to notifications:', err)
     }
