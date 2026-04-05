@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { supabase } from "../lib/supabase"
+import { useAuth } from "../hooks/useAuth"
 import ReactionModal from "../components/ReactionModal"
+import { useToast } from "../hooks/useToast"
+import { encrypt, decrypt, importKey, generateKey, exportKey, validateKey, debugLogKey } from "../utils/encryption"
+import { getSignedImageUrl, uploadImageToPrivateStorage, isSignedUrlValid, deletePrivateImage } from "../lib/privateImageStorage"
+import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown } from "lucide-react"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -12,11 +17,12 @@ dayjs.extend(utc)
 export default function Chat() {
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024
   const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
-  const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "😡"]
+  const REACTION_EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F621}"]
 
   const navigate = useNavigate()
+  const { user: contextUser } = useAuth()
+  const { success: showSuccess, error: showToastError } = useToast()
   const [searchParams] = useSearchParams()
-  const [currentUser, setCurrentUser] = useState(null)
   const [conversations, setConversations] = useState([])
   const [activeConversationId, setActiveConversationId] = useState(null)
   const [messages, setMessages] = useState([])
@@ -32,16 +38,86 @@ export default function Chat() {
   const [error, setError] = useState("")
   const [uploadingImage, setUploadingImage] = useState(false)
   const [imagePreviewUrl, setImagePreviewUrl] = useState("")
+  const [selectedImageFile, setSelectedImageFile] = useState(null)
+  const [selectedImageComposerUrl, setSelectedImageComposerUrl] = useState("")
+  const [imageCaption, setImageCaption] = useState("")
   const [activeReactionPickerMessageId, setActiveReactionPickerMessageId] = useState(null)
+  const [activeMessageMenuId, setActiveMessageMenuId] = useState(null)
   const [reactionModalMessageId, setReactionModalMessageId] = useState(null)
+  const [forwardModalOpen, setForwardModalOpen] = useState(false)
+  const [forwardingMessage, setForwardingMessage] = useState(null)
+  const [forwardSearchQuery, setForwardSearchQuery] = useState("")
+  const [selectedForwardConversationIds, setSelectedForwardConversationIds] = useState([])
+  const [forwarding, setForwarding] = useState(false)
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false)
+  const [conversationSearchQuery, setConversationSearchQuery] = useState("")
+  const [debouncedConversationSearchQuery, setDebouncedConversationSearchQuery] = useState("")
+  const [matchedMessageIds, setMatchedMessageIds] = useState([])
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [presenceNow, setPresenceNow] = useState(Date.now())
   const [unreadCountsByConversation, setUnreadCountsByConversation] = useState({})
   const [typingByConversation, setTypingByConversation] = useState({})
   const [onlineUsersById, setOnlineUsersById] = useState({})
   const [replyToMessage, setReplyToMessage] = useState(null)
+  const [editingMessage, setEditingMessage] = useState(null)
+  const [loadedImageUrls, setLoadedImageUrls] = useState({}) // messageId -> signed URL
+  const [deleteConfirmationMessage, setDeleteConfirmationMessage] = useState(null)
+
+  // Group chat state
+  const [chatMode, setChatMode] = useState('direct') // 'direct' | 'groups'
+  const [groups, setGroups] = useState([])
+  const [activeGroupId, setActiveGroupId] = useState(null)
+  const [groupMessages, setGroupMessages] = useState([])
+  const [groupMembers, setGroupMembers] = useState([])
+  const [unreadGroupCountsByGroup, setUnreadGroupCountsByGroup] = useState({})
+  const [groupDraft, setGroupDraft] = useState('')
+  const [sendingGroup, setSendingGroup] = useState(false)
+  const [loadingGroups, setLoadingGroups] = useState(false)
+  const [loadingGroupMessages, setLoadingGroupMessages] = useState(false)
+  const [showNewGroupModal, setShowNewGroupModal] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupSearch, setNewGroupSearch] = useState('')
+  const [newGroupSearchResults, setNewGroupSearchResults] = useState([])
+  const [newGroupSelectedUsers, setNewGroupSelectedUsers] = useState([])
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [showMembersDropdown, setShowMembersDropdown] = useState(false)
+  const [memberSearchQuery, setMemberSearchQuery] = useState('')
+  const [memberSearchResults, setMemberSearchResults] = useState([])
+
+  // Group chat features: reactions
+  const [groupMessageReactions, setGroupMessageReactions] = useState({})
+  const [groupReactionModalMessageId, setGroupReactionModalMessageId] = useState(null)
+
+  // Group chat features: read receipts (seen by)
+  const [groupMessageReads, setGroupMessageReads] = useState({}) // maps message_id -> [{ user_id, read_at, profile }]
+
+  // Group chat features: replies
+  const [groupReplyTo, setGroupReplyTo] = useState(null)
+
+  // Group chat features: editing
+  const [editingGroupMessage, setEditingGroupMessage] = useState(null)
+
+  // Group chat features: deletes
+  const [deleteGroupConfirmationMessage, setDeleteGroupConfirmationMessage] = useState(null)
+
+  // Group chat features: images
+  const [groupSelectedImage, setGroupSelectedImage] = useState(null)
+  const [groupImageCaption, setGroupImageCaption] = useState('')
+  const [uploadingGroupImage, setUploadingGroupImage] = useState(false)
+  const [groupSelectedImageComposerUrl, setGroupSelectedImageComposerUrl] = useState('')
+  const [displayGroupImagePreviewUrl, setDisplayGroupImagePreviewUrl] = useState(null) // For viewing image modal
+  const [groupLoadedImageUrls, setGroupLoadedImageUrls] = useState({}) // Cache: messageId -> signed URL
+
+  // Group chat features: message actions menu
+  const [activeGroupMessageMenuId, setActiveGroupMessageMenuId] = useState(null)
+  const [activeGroupEmojiPickerMessageId, setActiveGroupEmojiPickerMessageId] = useState(null)
+  const [groupMessageInfoModalId, setGroupMessageInfoModalId] = useState(null)
+  const [groupTypingIndicators, setGroupTypingIndicators] = useState({}) // userId -> timestamp
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const conversationSearchInputRef = useRef(null)
+  const imageCaptionInputRef = useRef(null)
   const fileInputRef = useRef(null)
   const lastPresenceUpdateRef = useRef(0)
   const activeConversationChannelRef = useRef(null)
@@ -52,6 +128,16 @@ export default function Chat() {
   const typingListenerChannelsRef = useRef([])
   const isTypingRef = useRef(false)
   const lastTypingBroadcastAtRef = useRef(0)
+  const conversationCryptoKeysRef = useRef({})
+  const signedImageUrlCacheRef = useRef({}) // Cache: storagePath -> { url, expiresAt }
+  const groupMessagesChannelRef = useRef(null)
+  const groupReactionsChannelRef = useRef(null)
+  const groupUnreadChannelRef = useRef(null)
+  const groupBottomRef = useRef(null)
+  const groupSignedUrlCacheRef = useRef({}) // Cache: storagePath -> { url, expiresAt }
+  const groupFileInputRef = useRef(null)
+  const groupMessagesContainerRef = useRef(null)
+  
   const requestedConversationId = searchParams.get("conversation")
 
   const activeConversation = useMemo(
@@ -101,13 +187,75 @@ export default function Chat() {
     return "Unknown user"
   }, [])
 
+  const escapeRegExp = useCallback((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), [])
+
+  const closeConversationSearch = useCallback(() => {
+    setConversationSearchOpen(false)
+    setConversationSearchQuery("")
+    setDebouncedConversationSearchQuery("")
+    setMatchedMessageIds([])
+    setActiveMatchIndex(0)
+  }, [])
+
+  const goToNextSearchMatch = useCallback(() => {
+    setActiveMatchIndex((prev) => {
+      if (matchedMessageIds.length === 0) {
+        return 0
+      }
+
+      return (prev + 1) % matchedMessageIds.length
+    })
+  }, [matchedMessageIds.length])
+
+  const goToPreviousSearchMatch = useCallback(() => {
+    setActiveMatchIndex((prev) => {
+      if (matchedMessageIds.length === 0) {
+        return 0
+      }
+
+      return (prev - 1 + matchedMessageIds.length) % matchedMessageIds.length
+    })
+  }, [matchedMessageIds.length])
+
+  const renderHighlightedMessageText = useCallback(
+    (text, messageId) => {
+      const normalizedText = typeof text === "string" ? text : ""
+      const normalizedQuery = debouncedConversationSearchQuery.trim()
+
+      if (!normalizedText || !normalizedQuery) {
+        return normalizedText
+      }
+
+      const regex = new RegExp(`(${escapeRegExp(normalizedQuery)})`, "gi")
+      const segments = normalizedText.split(regex)
+      const activeMatchedMessageId = matchedMessageIds[activeMatchIndex]
+      const isActiveMessage = activeMatchedMessageId === messageId
+
+      return segments.map((segment, index) => {
+        if (segment.toLowerCase() !== normalizedQuery.toLowerCase()) {
+          return <span key={`${messageId}-segment-${index}`}>{segment}</span>
+        }
+
+        return (
+          <mark
+            key={`${messageId}-match-${index}`}
+            className={isActiveMessage ? "rounded bg-yellow-300/90 px-0.5" : "rounded bg-yellow-100 px-0.5"}
+          >
+            {segment}
+          </mark>
+        )
+      })
+    },
+    [activeMatchIndex, debouncedConversationSearchQuery, escapeRegExp, matchedMessageIds]
+  )
+
   const fetchProfilesByIds = useCallback(async (userIds) => {
     const ids = [...new Set((userIds || []).filter(Boolean))]
     if (ids.length === 0) return []
 
     const { data, error: profileError } = await supabase
       .from("profiles")
-      .select("id, username, avatar_url, name, last_seen")
+      .select("id, username, avatar_url, name, is_online, last_seen")
       .in("id", ids)
 
     if (profileError) {
@@ -138,21 +286,177 @@ export default function Chat() {
     return localValue.format("hh:mm A")
   }
 
+  // Conversation encryption key management - Shared via Database
+  const getOrCreateConversationKey = useCallback(async (conversationId) => {
+    if (!conversationId) return null
+
+    // Check if already in memory cache
+    if (conversationCryptoKeysRef.current[conversationId]) {
+      return conversationCryptoKeysRef.current[conversationId]
+    }
+
+    try {
+      // Try to fetch existing key from database first
+      const { data: existingKey, error: fetchError } = await supabase
+        .from("conversation_keys")
+        .select("encrypted_key_user1, encrypted_key_user2")
+        .eq("conversation_id", conversationId)
+        .maybeSingle()
+
+      // If table doesn't exist, the error will be caught and we'll fall back to memory-only
+      if (fetchError) {
+        console.warn(`[Chat] Could not fetch key from DB (table may not exist yet):`, fetchError.message)
+        // Continue - will generate and store in memory only
+      } else if (existingKey) {
+        // Use the key for this user - we store both so either user can decrypt
+        const keyToUse = existingKey.encrypted_key_user1 || existingKey.encrypted_key_user2
+        
+        if (keyToUse) {
+          const validation = validateKey(keyToUse)
+          if (validation.isValid) {
+            const cryptoKey = await importKey(keyToUse)
+            conversationCryptoKeysRef.current[conversationId] = cryptoKey
+            debugLogKey(keyToUse, `Chat-Conversation-${conversationId}-FromDB`)
+            console.log(`[Chat] ✅ Successfully loaded shared key for conversation ${conversationId}`)
+            return cryptoKey
+          }
+        }
+      }
+
+      // Generate new key for this conversation if it doesn't exist
+      console.log(`[Chat] Generating new encryption key for conversation ${conversationId}`)
+      const newKey = await generateKey()
+      const exportedKey = await exportKey(newKey)
+      
+      // Try to store in database so both users can access it
+      try {
+        const { error: insertError } = await supabase
+          .from("conversation_keys")
+          .insert({
+            conversation_id: conversationId,
+            encrypted_key_user1: exportedKey,
+            encrypted_key_user2: exportedKey
+          })
+          .select()
+          .single()
+
+        if (insertError) {
+          // Table might not exist yet - that's OK, we'll use memory-only
+          if (insertError.code === '42P01') {
+            console.warn(`[Chat] conversation_keys table does not exist yet. Using memory-only storage for encryption keys.`)
+            console.warn(`[Chat] Please run the database migration: 20260402_create_conversation_keys.sql`)
+          } else {
+            console.warn(`[Chat] Failed to store key in database:`, insertError)
+          }
+        } else {
+          console.log(`[Chat] ✅ Stored shared key in database for conversation ${conversationId}`)
+        }
+      } catch (dbErr) {
+        console.warn(`[Chat] Database error storing key:`, dbErr)
+      }
+      
+      // Cache in memory
+      conversationCryptoKeysRef.current[conversationId] = newKey
+      debugLogKey(exportedKey, `Chat-Conversation-${conversationId}-New`)
+      return newKey
+    } catch (err) {
+      console.error(`[Chat] Failed to get/create encryption key for conversation ${conversationId}:`, err)
+      return null
+    }
+  }, [])
+
+  const getConversationKeyFresh = useCallback(async (conversationId) => {
+    if (!conversationId) return null
+
+    try {
+      // Always fetch fresh from DB - do not use cache
+      const { data: keyData, error: fetchError } = await supabase
+        .from("conversation_keys")
+        .select("encrypted_key_user1, encrypted_key_user2")
+        .eq("conversation_id", conversationId)
+        .maybeSingle()
+
+      if (fetchError) {
+        if (fetchError.code !== '42P01') {
+          console.warn(`[Chat] Error fetching fresh key from database for ${conversationId}:`, fetchError.message)
+        }
+      } else if (keyData) {
+        const keyToUse = keyData.encrypted_key_user1 || keyData.encrypted_key_user2
+        
+        if (keyToUse) {
+          const validation = validateKey(keyToUse)
+          if (validation.isValid) {
+            const cryptoKey = await importKey(keyToUse)
+            // Update cache with fresh key from DB
+            conversationCryptoKeysRef.current[conversationId] = cryptoKey
+            debugLogKey(keyToUse, `Chat-Conversation-${conversationId}-FreshFromDB`)
+            console.log(`[Chat] ✅ Successfully loaded fresh key for conversation ${conversationId}`)
+            return cryptoKey
+          }
+        }
+      }
+
+      console.warn(`[Chat] No encryption key found in database for conversation ${conversationId}`)
+      return null
+    } catch (err) {
+      console.error(`[Chat] Failed to fetch fresh encryption key for conversation ${conversationId}:`, err)
+      return null
+    }
+  }, [])
+
+  const getConversationKey = useCallback(async (conversationId) => {
+    if (!conversationId) return null
+
+    // Check memory cache first
+    if (conversationCryptoKeysRef.current[conversationId]) {
+      return conversationCryptoKeysRef.current[conversationId]
+    }
+
+    // Cache miss - fetch fresh from DB
+    return getConversationKeyFresh(conversationId)
+  }, [getConversationKeyFresh])
+
   const getMessageType = useCallback((message) => {
     if (message?.type) {
       return message.type
     }
 
-    return message?.media_url ? "image" : "text"
+    return message?.media_url || message?.image_url ? "image" : "text"
   }, [])
 
-  const getImageMessageUrl = useCallback((message) => {
-    if (!message || getMessageType(message) !== "image") {
-      return ""
-    }
+  const getImageMessageUrl = useCallback(
+    async (message) => {
+      if (!message || getMessageType(message) !== "image") {
+        return null
+      }
 
-    return message.media_url || ""
-  }, [getMessageType])
+      // Prefer new private storage path
+      if (message.storage_path) {
+        // Check if we have a valid cached signed URL
+        const cached = signedImageUrlCacheRef.current[message.storage_path]
+        if (cached && isSignedUrlValid(cached.expiresAt)) {
+          console.log(`[Chat] Using cached signed URL for: ${message.storage_path}`)
+          return cached.url
+        }
+
+        // Generate new signed URL (1 hour expiry)
+        const result = await getSignedImageUrl(message.storage_path, 3600)
+        if (result) {
+          // Cache the signed URL with expiry time
+          signedImageUrlCacheRef.current[message.storage_path] = result
+          console.log(`[Chat] Generated new signed URL for: ${message.storage_path}`)
+          return result.url
+        }
+
+        console.warn(`[Chat] Failed to generate signed URL for: ${message.storage_path}`)
+        return null
+      }
+
+      // Fall back to old public URLs for backward compatibility
+      return message.media_url || message.image_url || null
+    },
+    [getMessageType]
+  )
 
   const formatLastSeenStatus = useCallback((lastSeenValue) => {
     if (!lastSeenValue) {
@@ -174,8 +478,7 @@ export default function Chat() {
 
   const activeConversationStatus = useMemo(
     () => {
-      const partnerId = activeConversationPartner?.id
-      const isPartnerOnline = partnerId ? Boolean(onlineUsersById[partnerId]) : false
+      const isPartnerOnline = Boolean(activeConversationPartner?.is_online)
 
       if (isPartnerOnline) {
         return "Active now"
@@ -183,13 +486,28 @@ export default function Chat() {
 
       return formatLastSeenStatus(activeConversationPartner?.last_seen)
     },
-    [activeConversationPartner?.id, activeConversationPartner?.last_seen, formatLastSeenStatus, onlineUsersById, presenceNow]
+    [activeConversationPartner?.is_online, activeConversationPartner?.last_seen, formatLastSeenStatus, presenceNow]
   )
 
-  const lastMessageId = useMemo(() => {
-    if (messages.length === 0) return null
-    return messages[messages.length - 1]?.id || null
-  }, [messages])
+  const getPrivateMessageTickState = useCallback((message) => {
+    if (!message || message.sender_id !== contextUser?.id) {
+      return null
+    }
+
+    if (message.is_read || message.seen_at || message.delivery_status === "seen") {
+      return "read"
+    }
+
+    if (
+      message.delivery_status === "delivered" ||
+      Boolean(message.delivered_at) ||
+      activeConversationPartner?.is_online
+    ) {
+      return "delivered"
+    }
+
+    return "sent"
+  }, [activeConversationPartner?.is_online, contextUser?.id])
 
   const sortConversationsByPriority = useCallback((conversationList, unreadMap = {}, typingMap = {}) => {
     const list = Array.isArray(conversationList) ? [...conversationList] : []
@@ -214,7 +532,7 @@ export default function Chat() {
   }, [])
 
   const updateMyLastSeen = useCallback(async (force = false) => {
-    if (!currentUser?.id) {
+    if (!contextUser?.id) {
       return
     }
 
@@ -227,26 +545,26 @@ export default function Chat() {
 
     const { error: updateError } = await supabase
       .from("profiles")
-      .update({ last_seen: new Date(now).toISOString() })
-      .eq("id", currentUser.id)
+      .update({ last_seen: new Date(now).toISOString(), is_online: true })
+      .eq("id", contextUser.id)
 
     if (updateError) {
       console.warn("[Chat] Failed to update last_seen:", updateError)
     }
-  }, [currentUser?.id])
+  }, [contextUser?.id])
 
   const persistLastSeenNow = useCallback(async () => {
-    if (!currentUser?.id) return
+    if (!contextUser?.id) return
 
     const { error: updateError } = await supabase
       .from("profiles")
-      .update({ last_seen: new Date().toISOString() })
-      .eq("id", currentUser.id)
+      .update({ is_online: false, last_seen: new Date().toISOString() })
+      .eq("id", contextUser.id)
 
     if (updateError) {
       console.warn("[Chat] Failed to persist last_seen on disconnect:", updateError)
     }
-  }, [currentUser?.id])
+  }, [contextUser?.id])
 
   const syncOnlineUsersFromPresence = useCallback((channel) => {
     if (!channel) return
@@ -386,7 +704,7 @@ export default function Chat() {
 
   const broadcastTyping = useCallback(async (typing) => {
     const channel = activeConversationChannelRef.current
-    if (!channel || !activeConversationId || !currentUser?.id) {
+    if (!channel || !activeConversationId || !contextUser?.id) {
       return
     }
 
@@ -396,14 +714,14 @@ export default function Chat() {
         event: "typing",
         payload: {
           conversation_id: activeConversationId,
-          user_id: currentUser.id,
+          user_id: contextUser.id,
           is_typing: typing
         }
       })
     } catch (typingError) {
       console.warn("[Chat] Failed to broadcast typing state:", typingError)
     }
-  }, [activeConversationId, currentUser?.id])
+  }, [activeConversationId, contextUser?.id])
 
   const stopTyping = useCallback(() => {
     if (!isTypingRef.current) {
@@ -423,7 +741,7 @@ export default function Chat() {
     async (action, reaction) => {
       const channel = activeConversationChannelRef.current
 
-      if (!channel || !activeConversationId || !currentUser?.id || !action || !reaction?.message_id) {
+      if (!channel || !activeConversationId || !contextUser?.id || !action || !reaction?.message_id) {
         return
       }
 
@@ -435,14 +753,14 @@ export default function Chat() {
             action,
             conversation_id: activeConversationId,
             reaction,
-            sender_id: currentUser.id
+            sender_id: contextUser.id
           }
         })
       } catch (broadcastError) {
         console.warn("[Chat] Failed to broadcast reaction event:", broadcastError)
       }
     },
-    [activeConversationId, currentUser?.id]
+    [activeConversationId, contextUser?.id]
   )
 
   const handleDraftChange = useCallback((value) => {
@@ -450,7 +768,7 @@ export default function Chat() {
 
     const trimmed = value.trim()
 
-    if (!activeConversationId || !currentUser?.id || !activeConversationChannelRef.current) {
+    if (!activeConversationId || !contextUser?.id || !activeConversationChannelRef.current) {
       return
     }
 
@@ -475,7 +793,7 @@ export default function Chat() {
     typingStopTimerRef.current = setTimeout(() => {
       stopTyping()
     }, 2000)
-  }, [activeConversationId, broadcastTyping, currentUser?.id, stopTyping])
+  }, [activeConversationId, broadcastTyping, contextUser?.id, stopTyping])
 
   const updateMessageSeenStatus = useCallback((messageId) => {
     if (!messageId) return
@@ -674,19 +992,50 @@ export default function Chat() {
         return
       }
 
-      const rawMessages = (data || []).map((message) => ({
-        ...message,
-        type: getMessageType(message),
-        reactions: []
-      }))
-      const participantIds = rawMessages.flatMap((message) => [message.sender_id, message.receiver_id])
+      // Get encryption key for this conversation - fetch fresh from DB
+      const cryptoKey = await getConversationKeyFresh(conversationId)
+      if (!cryptoKey) {
+        console.warn(`[Chat] Could not get encryption key for conversation ${conversationId}`)
+      }
+
+      // Decrypt messages
+      const decryptedMessages = await Promise.all(
+        (data || []).map(async (message) => {
+          const decrypted = { ...message, type: getMessageType(message), reactions: [] }
+          
+          try {
+            // Decrypt content if encrypted_content and iv fields exist
+            if (message.encrypted_content && message.iv && cryptoKey) {
+              const decryptedContent = await decrypt(message.encrypted_content, message.iv, cryptoKey)
+              decrypted.content = decryptedContent
+              decrypted.encrypted_content = message.encrypted_content
+              decrypted.iv = message.iv
+            }
+          } catch (decryptError) {
+            // Old message corrupted - fallback to plaintext or old message indicator
+            console.warn(`[Chat] Could not decrypt old message ${message.id}:`, decryptError.message)
+            // Use plaintext content if available, otherwise indicate message is unavailable
+            if (message.content) {
+              decrypted.content = message.content
+              console.log(`[Chat] Displaying plaintext fallback for message ${message.id}`)
+            } else {
+              decrypted.content = "[Older encrypted message unavailable]"
+              console.log(`[Chat] Message ${message.id} has no plaintext fallback - was encrypted with invalid key`)
+            }
+          }
+          
+          return decrypted
+        })
+      )
+
+      const participantIds = decryptedMessages.flatMap((message) => [message.sender_id, message.receiver_id])
       await fetchProfilesByIds(participantIds)
       
       // First set messages without reactions (to show them immediately)
-      setMessages(rawMessages)
+      setMessages(decryptedMessages)
       
       // Then fetch and attach reactions
-      await fetchReactionsForMessages(rawMessages)
+      await fetchReactionsForMessages(decryptedMessages)
     } catch (err) {
       console.error("[Chat] Messages exception:", err)
       setError("Failed to load messages")
@@ -763,10 +1112,41 @@ export default function Chat() {
         const partnerId = conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
         const latestMessage = latestMessageByConversationId[conversation.id]
 
+        // Determine display content - show actual message preview if available
+        let displayContent = ""
+        
+        if (!latestMessage) {
+          displayContent = "No messages yet"
+        } else if (latestMessage?.type === "image") {
+          displayContent = "📷 Photo"
+        } else if (latestMessage?.type === "file") {
+          displayContent = "📎 File"
+        } else if (latestMessage?.content?.trim()) {
+          // Use plaintext content if available
+          let content = latestMessage.content.trim()
+          
+          // Add "You: " prefix if sender is current user
+          if (latestMessage.sender_id === userId) {
+            content = `You: ${content}`
+          }
+          
+          // Truncate to reasonable length for preview
+          if (content.length > 50) {
+            content = content.substring(0, 47) + "..."
+          }
+          
+          displayContent = content
+        } else if (latestMessage?.encrypted_content) {
+          // For encrypted messages without plaintext, show nothing
+          displayContent = ""
+        }
+
         return {
           ...conversation,
-          last_message_content: latestMessage?.content || "",
+          last_message_content: displayContent,
           last_message_type: getMessageType(latestMessage),
+          last_message_sender_id: latestMessage?.sender_id || null,
+          last_message_is_read: latestMessage?.is_read || false,
           last_message_at: latestMessage?.created_at || null,
           partner: profileMap[partnerId] || {
             id: partnerId,
@@ -777,7 +1157,60 @@ export default function Chat() {
         }
       })
 
-      const sortedHydrated = sortConversationsByPriority(hydrated, unreadMap)
+      // Sort by latest message timestamp (most recent first)
+      const sortedByTime = rawConversations.sort((a, b) => {
+        const timeA = latestMessageByConversationId[a.id]?.created_at || a.created_at || 0
+        const timeB = latestMessageByConversationId[b.id]?.created_at || b.created_at || 0
+        return new Date(timeB) - new Date(timeA)
+      })
+
+      // Re-apply hydration after sorting
+      const hydratedAndSorted = sortedByTime.map((conversation) => {
+        const partnerId = conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
+        const latestMessage = latestMessageByConversationId[conversation.id]
+
+        let displayContent = ""
+        
+        if (!latestMessage) {
+          displayContent = "No messages yet"
+        } else if (latestMessage?.type === "image") {
+          displayContent = "📷 Photo"
+        } else if (latestMessage?.type === "file") {
+          displayContent = "📎 File"
+        } else if (latestMessage?.content?.trim()) {
+          let content = latestMessage.content.trim()
+          
+          if (latestMessage.sender_id === userId) {
+            content = `You: ${content}`
+          }
+          
+          if (content.length > 50) {
+            content = content.substring(0, 47) + "..."
+          }
+          
+          displayContent = content
+        } else if (latestMessage?.encrypted_content) {
+          // For encrypted messages without plaintext, show nothing
+          displayContent = ""
+        }
+
+        return {
+          ...conversation,
+          last_message_content: displayContent,
+          last_message_type: getMessageType(latestMessage),
+          last_message_sender_id: latestMessage?.sender_id || null,
+          last_message_is_read: latestMessage?.is_read || false,
+          last_message_at: latestMessage?.created_at || null,
+          partner: profileMap[partnerId] || {
+            id: partnerId,
+            username: "unknown",
+            name: "Unknown user",
+            avatar_url: null
+          }
+        }
+      })
+
+      const sortedHydrated = sortConversationsByPriority(hydratedAndSorted, unreadMap)
 
       setConversations(sortedHydrated)
       setUnreadCountsByConversation(unreadMap)
@@ -801,30 +1234,23 @@ export default function Chat() {
   }, [sortConversationsByPriority, unreadCountsByConversation, typingByConversation])
 
   useEffect(() => {
-    const initializeChat = async () => {
-      const { data: authData, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !authData?.user) {
-        setError("You need to sign in to use chat")
-        setLoadingConversations(false)
-        return
-      }
-
-      setCurrentUser(authData.user)
-      fetchConversations(authData.user.id)
+    if (!contextUser?.id) {
+      setError("You need to sign in to use chat")
+      setLoadingConversations(false)
+      return
     }
 
-    initializeChat()
-  }, [fetchConversations])
+    fetchConversations(contextUser.id)
+  }, [contextUser?.id, fetchConversations])
 
   useEffect(() => {
-    if (!currentUser?.id) {
+    if (!contextUser?.id) {
       return
     }
 
     const channel = supabase.channel("chat-user-presence", {
       config: {
-        presence: { key: currentUser.id }
+        presence: { key: contextUser.id }
       }
     })
 
@@ -841,8 +1267,12 @@ export default function Chat() {
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           presenceChannelRef.current = channel
+          await supabase
+            .from("profiles")
+            .update({ is_online: true })
+            .eq("id", contextUser.id)
           await channel.track({
-            user_id: currentUser.id,
+            user_id: contextUser.id,
             online_at: new Date().toISOString()
           })
         }
@@ -856,10 +1286,10 @@ export default function Chat() {
       supabase.removeChannel(channel)
       persistLastSeenNow()
     }
-  }, [currentUser?.id, persistLastSeenNow, syncOnlineUsersFromPresence])
+  }, [contextUser?.id, persistLastSeenNow, syncOnlineUsersFromPresence])
 
   useEffect(() => {
-    if (!currentUser?.id) return
+    if (!contextUser?.id) return
 
     const handlePageHide = () => {
       persistLastSeenNow()
@@ -875,8 +1305,12 @@ export default function Chat() {
       }
 
       if (document.visibilityState === "visible" && presenceChannelRef.current) {
+        supabase
+          .from("profiles")
+          .update({ is_online: true })
+          .eq("id", contextUser.id)
         presenceChannelRef.current.track({
-          user_id: currentUser.id,
+          user_id: contextUser.id,
           online_at: new Date().toISOString()
         })
       }
@@ -891,7 +1325,7 @@ export default function Chat() {
       window.removeEventListener("pagehide", handlePageHide)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [currentUser?.id, persistLastSeenNow])
+}, [contextUser?.id, persistLastSeenNow])
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -904,7 +1338,7 @@ export default function Chat() {
   }, [])
 
   useEffect(() => {
-    if (!currentUser?.id) return
+    if (!contextUser?.id) return
 
     const reportActivity = () => {
       if (document.visibilityState !== "visible") {
@@ -945,7 +1379,7 @@ export default function Chat() {
       document.removeEventListener("visibilitychange", handleVisibilityChange)
       clearInterval(heartbeatId)
     }
-  }, [currentUser?.id, updateMyLastSeen])
+  }, [contextUser?.id, updateMyLastSeen])
 
   useEffect(() => {
     const partnerId = activeConversationPartner?.id
@@ -958,7 +1392,7 @@ export default function Chat() {
     const refreshPartnerPresence = async () => {
       const { data, error: profileError } = await supabase
         .from("profiles")
-        .select("id, username, avatar_url, name, last_seen")
+        .select("id, username, avatar_url, name, is_online, last_seen")
         .eq("id", partnerId)
         .maybeSingle()
 
@@ -1010,9 +1444,25 @@ export default function Chat() {
   useEffect(() => {
     if (activeConversationId) {
       console.log("[Chat] messages fetch effect triggered for conversation:", activeConversationId)
-      fetchMessages(activeConversationId)
+      // Clear stale keys from memory cache for this conversation
+      delete conversationCryptoKeysRef.current[activeConversationId]
+      // Clear cached image signed URLs when switching conversations
+      signedImageUrlCacheRef.current = {}
+      // Fetch fresh key from DB (overwrites any stale cache)
+      getOrCreateConversationKey(activeConversationId)
+        .then(() => {
+          fetchMessages(activeConversationId)
+        })
+        .catch((err) => {
+          console.error("[Chat] Error loading conversation key:", err)
+          fetchMessages(activeConversationId)
+        })
     }
-  }, [activeConversationId, fetchMessages])
+  }, [activeConversationId, fetchMessages, getOrCreateConversationKey])
+
+  useEffect(() => {
+    closeConversationSearch()
+  }, [activeConversationId, closeConversationSearch])
 
   useEffect(() => {
     if (!activeConversationId) return
@@ -1080,7 +1530,7 @@ export default function Chat() {
             return
           }
 
-          if (!currentUser?.id || payload.user_id === currentUser.id) {
+          if (!contextUser?.id || payload.user_id === contextUser.id) {
             return
           }
 
@@ -1120,12 +1570,40 @@ export default function Chat() {
           table: "messages",
           filter: `conversation_id=eq.${activeConversationId}`
         },
-        (payload) => {
+        async (payload) => {
           const nextMessage = payload.new
           if (!nextMessage?.id) return
 
+          console.log("[Chat] Active conversation INSERT event:", {
+            messageId: nextMessage.id,
+            sender: nextMessage.sender_id,
+            receiver: nextMessage.receiver_id,
+            hasEncryption: !!nextMessage.encrypted_content,
+            conversation: activeConversationId
+          })
+
+          let decryptedContent = nextMessage.content
+          
+          // Decrypt encrypted content if present
+          if (nextMessage.encrypted_content && nextMessage.iv) {
+            try {
+              const cryptoKey = await getConversationKeyFresh(activeConversationId)
+              if (cryptoKey) {
+                decryptedContent = await decrypt(nextMessage.encrypted_content, nextMessage.iv, cryptoKey)
+              } else {
+                console.warn("[Chat] Could not decrypt incoming message - no key available")
+                decryptedContent = nextMessage.content || "[Encrypted message]"
+              }
+            } catch (decryptError) {
+              console.warn("[Chat] Could not decrypt incoming message:", decryptError.message)
+              // Fallback to plaintext or placeholder
+              decryptedContent = nextMessage.content || "[Message content unavailable]"
+            }
+          }
+
           const normalizedNextMessage = {
             ...nextMessage,
+            content: decryptedContent,
             type: getMessageType(nextMessage)
           }
 
@@ -1136,7 +1614,48 @@ export default function Chat() {
             return [...prev, normalizedNextMessage]
           })
 
-          if (normalizedNextMessage.receiver_id === currentUser?.id && normalizedNextMessage.sender_id !== currentUser?.id) {
+          // Update conversation list with new message preview (for both sender and receiver)
+          setConversations((prev) => {
+            // Format message for preview following same logic as hydration
+            let displayContent = ""
+            
+            if (getMessageType(nextMessage) === "image") {
+              displayContent = "📷 Photo"
+            } else if (getMessageType(nextMessage) === "file") {
+              displayContent = "📎 File"
+            } else if (decryptedContent?.trim()) {
+              let content = decryptedContent.trim()
+              
+              // Add "You: " prefix if current user sent it
+              if (nextMessage.sender_id === contextUser?.id) {
+                content = `You: ${content}`
+              }
+              
+              // Truncate long previews
+              if (content.length > 50) {
+                content = content.substring(0, 47) + "..."
+              }
+              
+              displayContent = content
+            }
+            
+            const updated = prev.map((conversation) =>
+              conversation.id === activeConversationId
+                ? {
+                    ...conversation,
+                    last_message_content: displayContent,
+                    last_message_type: getMessageType(nextMessage),
+                    last_message_sender_id: nextMessage.sender_id,
+                    last_message_is_read: nextMessage.is_read || false,
+                    last_message_at: nextMessage.created_at || conversation.last_message_at
+                  }
+                : conversation
+            )
+
+            return sortConversationsByPriority(updated)
+          })
+
+          if (normalizedNextMessage.receiver_id === contextUser?.id && normalizedNextMessage.sender_id !== contextUser?.id) {
             supabase
               .from("messages")
               .update({ is_read: true })
@@ -1156,6 +1675,15 @@ export default function Chat() {
                 message.id === normalizedNextMessage.id ? { ...message, is_read: true } : message
               )
             )
+
+            // Also update conversation list to show message is read
+            setConversations((prev) =>
+              prev.map((conversation) =>
+                conversation.id === activeConversationId && conversation.last_message_at === normalizedNextMessage.created_at
+                  ? { ...conversation, last_message_is_read: true }
+                  : conversation
+              )
+            )
           }
         }
       )
@@ -1167,22 +1695,103 @@ export default function Chat() {
           table: "messages",
           filter: `conversation_id=eq.${activeConversationId}`
         },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType !== "UPDATE") return
 
           const updatedMessage = payload.new
           if (!updatedMessage?.id) return
+
+          console.log("[Chat] Message UPDATE event received - FULL PAYLOAD:", {
+            payloadNew: updatedMessage,
+            payloadOld: payload.old,
+            deliveryStatus: updatedMessage.delivery_status,
+            seen_at: updatedMessage.seen_at,
+            is_read: updatedMessage.is_read,
+            is_deleted: updatedMessage.is_deleted,
+            edited_at: updatedMessage.edited_at,
+            messageId: updatedMessage.id
+          })
+
+          let decryptedContent = updatedMessage.content
+          
+          // Decrypt encrypted content if present
+          if (updatedMessage.encrypted_content && updatedMessage.iv) {
+            try {
+              const cryptoKey = await getConversationKeyFresh(activeConversationId)
+              if (cryptoKey) {
+                decryptedContent = await decrypt(updatedMessage.encrypted_content, updatedMessage.iv, cryptoKey)
+              } else {
+                console.warn("[Chat] Could not decrypt updated message - no key available")
+                decryptedContent = updatedMessage.content || "[Message content unavailable]"
+              }
+            } catch (decryptError) {
+              console.warn("[Chat] Could not decrypt updated message:", decryptError.message)
+              // Fallback to plaintext or placeholder
+              decryptedContent = updatedMessage.content || "[Message content unavailable]"
+            }
+          }
 
           setMessages((prev) =>
             prev.map((message) =>
               message.id === updatedMessage.id
                 ? {
                     ...message,
-                    ...updatedMessage
+                    ...updatedMessage,
+                    content: decryptedContent
                   }
                 : message
             )
           )
+
+          console.log("[Chat] Message state updated:", {
+            messageId: updatedMessage.id,
+            wasEdited: Boolean(updatedMessage.edited_at),
+            wasDeleted: updatedMessage.is_deleted,
+            wasSeen: Boolean(updatedMessage.seen_at)
+          })
+
+          // Update conversation preview if this is the last message
+          setConversations((prev) => {
+            const updated = prev.map((conversation) => {
+              if (conversation.id !== activeConversationId) return conversation
+              
+              // If the updated message is the last message, update preview
+              const isLastMessage = conversation.last_message_at === updatedMessage.created_at
+              if (!isLastMessage) return conversation
+              
+              // Format message following same logic as hydration
+              let displayContent = ""
+              
+              if (getMessageType(updatedMessage) === "image") {
+                displayContent = "📷 Photo"
+              } else if (getMessageType(updatedMessage) === "file") {
+                displayContent = "📎 File"
+              } else if (decryptedContent?.trim()) {
+                let content = decryptedContent.trim()
+                
+                // Add "You: " prefix if current user sent it
+                if (updatedMessage.sender_id === contextUser?.id) {
+                  content = `You: ${content}`
+                }
+                
+                // Truncate long previews
+                if (content.length > 50) {
+                  content = content.substring(0, 47) + "..."
+                }
+                
+                displayContent = content
+              }
+              
+              return {
+                ...conversation,
+                last_message_content: displayContent,
+                last_message_type: getMessageType(updatedMessage),
+                last_message_is_read: updatedMessage.is_read || false
+              }
+            })
+
+            return sortConversationsByPriority(updated)
+          })
         }
       )
       .subscribe((status) => {
@@ -1200,7 +1809,7 @@ export default function Chat() {
           event: "typing",
           payload: {
             conversation_id: activeConversationId,
-            user_id: currentUser?.id,
+            user_id: contextUser?.id,
             is_typing: false
           }
         })
@@ -1215,10 +1824,10 @@ export default function Chat() {
       isTypingRef.current = false
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, handleReactionDelete, handleReactionInsert, updateReactionInState])
+  }, [activeConversationId, handleReactionDelete, handleReactionInsert, updateReactionInState, sortConversationsByPriority, getMessageType])
 
   useEffect(() => {
-    if (!currentUser?.id) return
+    if (!contextUser?.id) return
 
     const conversationIds = [...new Set(conversations.map((conversation) => conversation.id).filter(Boolean))]
 
@@ -1237,7 +1846,7 @@ export default function Chat() {
               return
             }
 
-            if (payload.user_id === currentUser.id) {
+            if (payload.user_id === contextUser.id) {
               return
             }
 
@@ -1254,7 +1863,7 @@ export default function Chat() {
       })
       typingListenerChannelsRef.current = []
     }
-  }, [activeConversationId, conversations, currentUser?.id, setConversationTypingState])
+  }, [activeConversationId, conversations, contextUser?.id, setConversationTypingState])
 
   useEffect(() => {
     return () => {
@@ -1293,14 +1902,82 @@ export default function Chat() {
   }, [updateMessageSeenStatus])
 
   useEffect(() => {
+    if (conversationSearchOpen && debouncedConversationSearchQuery.trim()) {
+      return
+    }
+
     if (!bottomRef.current) return
     bottomRef.current.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+  }, [conversationSearchOpen, debouncedConversationSearchQuery, messages])
+
+  useEffect(() => {
+    if (!conversationSearchOpen) {
+      return
+    }
+
+    requestAnimationFrame(() => {
+      conversationSearchInputRef.current?.focus()
+    })
+  }, [conversationSearchOpen])
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedConversationSearchQuery(conversationSearchQuery)
+    }, 180)
+
+    return () => {
+      clearTimeout(timeoutId)
+    }
+  }, [conversationSearchQuery])
+
+  useEffect(() => {
+    const query = debouncedConversationSearchQuery.trim().toLowerCase()
+
+    if (!conversationSearchOpen || !query) {
+      setMatchedMessageIds([])
+      setActiveMatchIndex(0)
+      return
+    }
+
+    const nextMatchedIds = messages
+      .filter((message) => {
+        const content = message?.content || ""
+        if (!content) {
+          return false
+        }
+
+        return content.toLowerCase().includes(query)
+      })
+      .map((message) => message.id)
+
+    setMatchedMessageIds(nextMatchedIds)
+    setActiveMatchIndex((prev) => {
+      if (nextMatchedIds.length === 0) {
+        return 0
+      }
+
+      return prev >= nextMatchedIds.length ? 0 : prev
+    })
+  }, [conversationSearchOpen, debouncedConversationSearchQuery, messages])
+
+  useEffect(() => {
+    if (!conversationSearchOpen || matchedMessageIds.length === 0) {
+      return
+    }
+
+    const activeMatchedMessageId = matchedMessageIds[activeMatchIndex]
+    if (!activeMatchedMessageId) {
+      return
+    }
+
+    const element = document.getElementById(`message-${activeMatchedMessageId}`)
+    element?.scrollIntoView({ behavior: "smooth", block: "center" })
+  }, [activeMatchIndex, conversationSearchOpen, matchedMessageIds])
 
   useEffect(() => {
     const query = userSearchQuery.trim()
 
-    if (!query || !currentUser?.id) {
+    if (!query || !contextUser?.id) {
       setUserSearchResults([])
       setUserSearchLoading(false)
       return
@@ -1327,7 +2004,7 @@ export default function Chat() {
 
         if (canceled) return
 
-        setUserSearchResults((data || []).filter((profile) => profile.id !== currentUser.id))
+        setUserSearchResults((data || []).filter((profile) => profile.id !== contextUser.id))
       } catch (err) {
         console.error("[Chat] User search exception:", err)
         if (!canceled) {
@@ -1344,71 +2021,167 @@ export default function Chat() {
       canceled = true
       clearTimeout(timeoutId)
     }
-  }, [userSearchQuery, currentUser?.id])
+  }, [userSearchQuery, contextUser?.id])
 
   const markConversationMessagesAsRead = useCallback(async (conversationId, userId) => {
     if (!conversationId || !userId) return
 
+    console.log("[Chat] markConversationMessagesAsRead called:", { conversationId, userId })
+
+    const now = new Date().toISOString()
+
     try {
       const { error: updateError } = await supabase
         .from("messages")
-        .update({ is_read: true })
+        .update({
+          is_read: true,
+          seen_at: now,
+          delivery_status: "seen"
+        })
         .eq("conversation_id", conversationId)
         .eq("receiver_id", userId)
         .eq("is_read", false)
-        .neq("sender_id", userId)
 
       if (updateError) {
-        console.error("[Chat] Failed to mark messages as read:", updateError)
+        console.error("[Chat] Failed to mark messages as read in DB:", updateError)
         return
       }
 
-      clearUnreadForConversation(conversationId)
-
       setMessages((prev) =>
-        prev.map((message) => {
-          if (
-            message.conversation_id === conversationId &&
-            message.receiver_id === userId &&
-            message.sender_id !== userId &&
-            message.is_read === false
-          ) {
-            return { ...message, is_read: true }
-          }
-
-          return message
-        })
+        prev.map((msg) =>
+          msg.receiver_id === userId &&
+          msg.conversation_id === conversationId &&
+          !msg.is_read
+            ? {
+                ...msg,
+                is_read: true,
+                seen_at: now,
+                delivery_status: "seen"
+              }
+            : msg
+        )
       )
+
+      clearUnreadForConversation(conversationId)
     } catch (err) {
       console.error("[Chat] Exception marking messages as read:", err)
     }
   }, [clearUnreadForConversation])
 
+  const markMessageAsDelivered = useCallback(async (messageId) => {
+    if (!messageId) return
+
+    try {
+      const { error: updateError } = await supabase
+        .from("messages")
+        .update({ 
+          delivery_status: 'delivered',
+          delivered_at: new Date().toISOString()
+        })
+        .eq("id", messageId)
+        .eq("delivery_status", 'sent') // Only update if still in 'sent' state
+
+      if (updateError) {
+        console.error("[Chat] Failed to mark message as delivered:", updateError)
+        return
+      }
+
+      // Update local state
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === messageId && message.delivery_status === 'sent'
+            ? {
+                ...message,
+                delivery_status: 'delivered',
+                delivered_at: new Date().toISOString()
+              }
+            : message
+        )
+      )
+    } catch (err) {
+      console.error("[Chat] Exception marking message as delivered:", err)
+    }
+  }, [])
+
   useEffect(() => {
-    if (!currentUser?.id) return
+    if (!contextUser?.id) return
 
     const channel = supabase
-      .channel(`chat-unread-sync-${currentUser.id}`)
+      .channel(`chat-unread-sync-${contextUser.id}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `receiver_id=eq.${currentUser.id}`
+          filter: `receiver_id=eq.${contextUser.id}`
         },
-        (payload) => {
+        async (payload) => {
           const nextMessage = payload.new
-          if (!nextMessage?.id || nextMessage.receiver_id !== currentUser.id) {
+          if (!nextMessage?.id || nextMessage.receiver_id !== contextUser.id) {
             return
           }
 
+          console.log("[Chat] Receiver listener INSERT event:", {
+            messageId: nextMessage.id,
+            sender: nextMessage.sender_id,
+            receiver: nextMessage.receiver_id,
+            conversation: nextMessage.conversation_id,
+            hasEncryption: !!nextMessage.encrypted_content
+          })
+
+          // Mark message as delivered to sender
+          if (nextMessage.receiver_id === contextUser?.id) {
+            markMessageAsDelivered(nextMessage.id)
+          }
+
+          // Get conversation to decrypt message if needed
+          let decryptedContent = nextMessage.content
+          
+          if (nextMessage.encrypted_content && nextMessage.iv) {
+            try {
+              const cryptoKey = await getConversationKeyFresh(nextMessage.conversation_id)
+              if (cryptoKey) {
+                decryptedContent = await decrypt(nextMessage.encrypted_content, nextMessage.iv, cryptoKey)
+              } else {
+                decryptedContent = nextMessage.content || "[Message]"
+              }
+            } catch (decryptError) {
+              console.warn("[Chat] Could not decrypt message for sidebar:", decryptError.message)
+              // Fallback to plaintext or generic message
+              decryptedContent = nextMessage.content || "[Message]"
+            }
+          }
+
           setConversations((prev) => {
+            // Format message for preview following same logic as hydration
+            let displayContent = ""
+            
+            if (getMessageType(nextMessage) === "image") {
+              displayContent = "📷 Photo"
+            } else if (getMessageType(nextMessage) === "file") {
+              displayContent = "📎 File"
+            } else if (decryptedContent?.trim() && decryptedContent !== "[Message]") {
+              let content = decryptedContent.trim()
+              
+              // Add "You: " prefix if current user sent it
+              if (nextMessage.sender_id === contextUser?.id) {
+                content = `You: ${content}`
+              }
+              
+              // Truncate long previews
+              if (content.length > 50) {
+                content = content.substring(0, 47) + "..."
+              }
+              
+              displayContent = content
+            }
+            
             const updated = prev.map((conversation) =>
               conversation.id === nextMessage.conversation_id
                 ? {
                     ...conversation,
-                    last_message_content: nextMessage.content || conversation.last_message_content,
+                    last_message_content: displayContent,
                     last_message_type: getMessageType(nextMessage),
                     last_message_at: nextMessage.created_at || conversation.last_message_at
                   }
@@ -1419,7 +2192,7 @@ export default function Chat() {
           })
 
           if (nextMessage.conversation_id === activeConversationId) {
-            markConversationMessagesAsRead(nextMessage.conversation_id, currentUser.id)
+            markConversationMessagesAsRead(nextMessage.conversation_id, contextUser.id)
             return
           }
 
@@ -1433,7 +2206,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, currentUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, sortConversationsByPriority])
+  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey])
 
   const handleImageButtonClick = () => {
     if (!activeConversation || uploadingImage) {
@@ -1443,11 +2216,11 @@ export default function Chat() {
     fileInputRef.current?.click()
   }
 
-  const handleImageSelected = async (event) => {
+  const handleImageSelected = (event) => {
     const file = event.target.files?.[0]
     event.target.value = ""
 
-    if (!file || !activeConversationId || !currentUser?.id || uploadingImage) {
+    if (!file || !activeConversationId || !contextUser?.id || uploadingImage) {
       return
     }
 
@@ -1461,13 +2234,99 @@ export default function Chat() {
       return
     }
 
+    setError("")
+    setSelectedImageFile(file)
+    setSelectedImageComposerUrl(URL.createObjectURL(file))
+    setImageCaption("")
+
+    requestAnimationFrame(() => {
+      imageCaptionInputRef.current?.focus()
+    })
+  }
+
+  const clearSelectedImageComposer = useCallback(() => {
+    if (selectedImageComposerUrl) {
+      URL.revokeObjectURL(selectedImageComposerUrl)
+    }
+
+    setSelectedImageFile(null)
+    setSelectedImageComposerUrl("")
+    setImageCaption("")
+  }, [selectedImageComposerUrl])
+
+  useEffect(() => {
+    return () => {
+      if (selectedImageComposerUrl) {
+        URL.revokeObjectURL(selectedImageComposerUrl)
+      }
+    }
+  }, [selectedImageComposerUrl])
+
+  // Refresh expired signed image URLs
+  useEffect(() => {
+    if (messages.length === 0) return
+
+    const refreshIntervalId = setInterval(() => {
+      messages.forEach((message) => {
+        if (message.storage_path && signedImageUrlCacheRef.current[message.storage_path]) {
+          const cached = signedImageUrlCacheRef.current[message.storage_path]
+          if (!isSignedUrlValid(cached.expiresAt)) {
+            console.log(`[Chat] Signed URL expired for: ${message.storage_path}, will refresh on next view`)
+            delete signedImageUrlCacheRef.current[message.storage_path]
+          }
+        }
+      })
+    }, 60000) // Check every minute
+
+    return () => clearInterval(refreshIntervalId)
+  }, [messages])
+
+  // Load signed URLs for all image messages
+  useEffect(() => {
+    const loadImageUrls = async () => {
+      const imageMessages = messages.filter((m) => getMessageType(m) === "image")
+      const urlsToLoad = {}
+      let needsUpdate = false
+
+      for (const message of imageMessages) {
+        // Skip if already loaded
+        if (loadedImageUrls[message.id]) {
+          continue
+        }
+
+        needsUpdate = true
+        const url = await getImageMessageUrl(message)
+        if (url) {
+          urlsToLoad[message.id] = url
+        } else {
+          // Mark as failed to avoid retrying constantly
+          urlsToLoad[message.id] = null
+        }
+      }
+
+      if (needsUpdate) {
+        setLoadedImageUrls((prev) => ({
+          ...prev,
+          ...urlsToLoad
+        }))
+      }
+    }
+
+    loadImageUrls()
+  }, [messages, getImageMessageUrl])
+
+  const handleSendImageMessage = async () => {
+    if (!selectedImageFile || !activeConversationId || !contextUser?.id || uploadingImage) {
+      return
+    }
+
     try {
       stopTyping()
       setUploadingImage(true)
       setError("")
 
       const receiverId = activeConversation
-        ? (activeConversation.user1_id === currentUser.id ? activeConversation.user2_id : activeConversation.user1_id)
+        ? (activeConversation.user1_id === contextUser.id ? activeConversation.user2_id : activeConversation.user1_id)
         : null
 
       if (!receiverId) {
@@ -1475,48 +2334,101 @@ export default function Chat() {
         return
       }
 
-      const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-      const filePath = `${currentUser.id}/${activeConversationId}/${Date.now()}-${sanitizedName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from("chat-media")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type
-        })
-
-      if (uploadError) {
-        console.error("[Chat] Failed to upload image:", uploadError)
+      // Upload image to private chat-media bucket
+      const uploadResult = await uploadImageToPrivateStorage(selectedImageFile, contextUser.id, activeConversationId)
+      if (!uploadResult?.storagePath) {
+        console.error("[Chat] Failed to upload image to private storage")
         setError("Failed to upload image")
         return
       }
 
-      const { data: publicUrlData } = supabase.storage
-        .from("chat-media")
-        .getPublicUrl(filePath)
+      const storagePath = uploadResult.storagePath
+      console.log(`[Chat] Image uploaded to private storage: ${storagePath}`)
 
-      const mediaUrl = publicUrlData?.publicUrl
-      if (!mediaUrl) {
-        setError("Failed to generate image URL")
+      // Get encryption key for this conversation
+      const cryptoKey = await getOrCreateConversationKey(activeConversationId)
+      if (!cryptoKey) {
+        console.error("[Chat] Failed to get encryption key for image message")
+        setError("Failed to encrypt image caption")
         return
       }
 
-      const { error: insertError } = await supabase.from("messages").insert([
-        {
-          conversation_id: activeConversationId,
-          sender_id: currentUser.id,
-          receiver_id: receiverId,
-          content: null,
-          type: "image",
-          media_url: mediaUrl
+      // Encrypt caption if present
+      let encryptedData = null
+      let captionContent = imageCaption.trim()
+      
+      if (captionContent) {
+        try {
+          encryptedData = await encrypt(captionContent, cryptoKey)
+        } catch (encryptError) {
+          console.error("[Chat] Failed to encrypt image caption:", encryptError)
+          setError("Failed to encrypt caption")
+          return
         }
-      ])
+      }
+
+      // Create message with storage path - only include columns we're actually using
+      const messagePayload = {
+        conversation_id: activeConversationId,
+        sender_id: contextUser.id,
+        receiver_id: receiverId,
+        type: "image",
+        storage_path: storagePath,
+        delivery_status: 'sent'
+      }
+
+      // Only add encrypted content if we have a caption
+      if (encryptedData) {
+        messagePayload.encrypted_content = encryptedData.ciphertext
+        messagePayload.iv = encryptedData.iv
+      }
+
+      const { data: insertedData, error: insertError } = await supabase.from("messages").insert([messagePayload]).select()
 
       if (insertError) {
         console.error("[Chat] Failed to send image message:", insertError)
         setError("Failed to send image")
+        return
       }
+
+      // Optimistically add the message to the state immediately
+      if (insertedData && insertedData.length > 0) {
+        const sentMessage = {
+          ...insertedData[0],
+          content: imageCaption.trim() || "[Photo]",
+          type: "image"
+        }
+
+        setMessages((prev) => {
+          if (prev.some((item) => item.id === sentMessage.id)) {
+            return prev
+          }
+          return [...prev, sentMessage]
+        })
+
+        // Update conversation list with new message preview
+        setConversations((prev) => {
+          const updated = prev.map((conversation) =>
+            conversation.id === activeConversationId
+              ? {
+                  ...conversation,
+                  last_message_content: "📷 Photo",
+                  last_message_type: "image",
+                  last_message_sender_id: contextUser.id,
+                  last_message_is_read: false,
+                  last_message_at: sentMessage.created_at || new Date().toISOString()
+                }
+              : conversation
+          )
+          return sortConversationsByPriority(updated)
+        })
+      }
+
+      console.log("[Chat] Image message sent successfully")
+      clearSelectedImageComposer()
+      requestAnimationFrame(() => {
+        inputRef.current?.focus()
+      })
     } catch (imageSendError) {
       console.error("[Chat] Image send exception:", imageSendError)
       setError("Failed to send image")
@@ -1526,7 +2438,7 @@ export default function Chat() {
   }
 
   const handleReactionSelect = async (messageId, emoji) => {
-    if (!messageId || !emoji || !currentUser?.id) {
+    if (!messageId || !emoji || !contextUser?.id) {
       return
     }
 
@@ -1535,7 +2447,7 @@ export default function Chat() {
         .from("message_reactions")
         .select("id, message_id, user_id, emoji")
         .eq("message_id", messageId)
-        .eq("user_id", currentUser.id)
+        .eq("user_id", contextUser.id)
         .maybeSingle()
 
       if (existingError) {
@@ -1568,9 +2480,9 @@ export default function Chat() {
         })
       } else {
         const optimisticReaction = {
-          id: `temp-${currentUser.id}-${messageId}-${Date.now()}`,
+          id: `temp-${contextUser.id}-${messageId}-${Date.now()}`,
           message_id: messageId,
-          user_id: currentUser.id,
+          user_id: contextUser.id,
           emoji
         }
 
@@ -1580,7 +2492,7 @@ export default function Chat() {
           .from("message_reactions")
           .insert({
             message_id: messageId,
-            user_id: currentUser.id,
+            user_id: contextUser.id,
             emoji
           })
           .select("id, message_id, user_id, emoji")
@@ -1630,9 +2542,9 @@ export default function Chat() {
         userId: row.user_id,
         name: userName,
         avatarUrl: profileFromJoin?.avatar_url || fallbackProfile?.avatar_url || null,
-        isCurrentUser: row.user_id === currentUser?.id
+        isCurrentUser: row.user_id === contextUser?.id
       })
-      if (row.user_id === currentUser?.id) {
+      if (row.user_id === contextUser?.id) {
         current.reactedByCurrentUser = true
       }
       byEmoji.set(row.emoji, current)
@@ -1644,15 +2556,288 @@ export default function Chat() {
       users: value.users,
       reactedByCurrentUser: value.reactedByCurrentUser
     }))
-  }, [currentUser?.id, profilesById, messages])
+  }, [contextUser?.id, profilesById, messages])
 
   const handleReply = useCallback((message) => {
+    setEditingMessage(null)
     setReplyToMessage(message)
 
     setTimeout(() => {
       inputRef.current?.focus()
     }, 0)
   }, [])
+
+  const handleStartEditingMessage = useCallback((message) => {
+    if (!message?.id || message.is_deleted) {
+      return
+    }
+
+    setReplyToMessage(null)
+    setActiveMessageMenuId(null)
+    setEditingMessage(message)
+    setDraft(message.content || "")
+
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+    })
+  }, [])
+
+  const openForwardModal = useCallback((message) => {
+    if (!message?.id || message.is_deleted) {
+      return
+    }
+
+    setForwardingMessage(message)
+    setForwardSearchQuery("")
+    setSelectedForwardConversationIds([])
+    setForwardModalOpen(true)
+    setActiveMessageMenuId(null)
+    setActiveReactionPickerMessageId(null)
+  }, [])
+
+  const closeForwardModal = useCallback(() => {
+    if (forwarding) {
+      return
+    }
+
+    setForwardModalOpen(false)
+    setForwardingMessage(null)
+    setForwardSearchQuery("")
+    setSelectedForwardConversationIds([])
+  }, [forwarding])
+
+  const toggleForwardConversation = useCallback((conversationId) => {
+    if (!conversationId) {
+      return
+    }
+
+    setSelectedForwardConversationIds((prev) =>
+      prev.includes(conversationId)
+        ? prev.filter((id) => id !== conversationId)
+        : [...prev, conversationId]
+    )
+  }, [])
+
+  const handleCopyMessage = useCallback(
+    async (message) => {
+      const textToCopy = (message?.content || "").trim() || message?.media_url || message?.image_url || ""
+
+      if (!textToCopy.trim()) {
+        showToastError("Nothing to copy")
+        return
+      }
+
+      try {
+        await navigator.clipboard.writeText(textToCopy)
+        showSuccess("Message copied")
+      } catch (copyError) {
+        console.error("[Chat] Failed to copy message:", copyError)
+        showToastError("Failed to copy message")
+      } finally {
+        setActiveMessageMenuId(null)
+      }
+    },
+    [showSuccess, showToastError]
+  )
+
+  const handleDeleteMessage = useCallback((message) => {
+    if (!message?.id) {
+      return
+    }
+
+    setMessages((prev) => prev.filter((item) => item.id !== message.id))
+    setActiveMessageMenuId(null)
+    showSuccess("Message deleted")
+  }, [showSuccess])
+
+  const handleForwardMessages = useCallback(async () => {
+    if (!forwardingMessage?.id || !contextUser?.id || selectedForwardConversationIds.length === 0 || forwarding) {
+      return
+    }
+
+    try {
+      setForwarding(true)
+
+      const selectedConversations = conversations.filter((conversation) =>
+        selectedForwardConversationIds.includes(conversation.id)
+      )
+
+      const messageType = getMessageType(forwardingMessage)
+      const storagePath = forwardingMessage.storage_path || null
+      const mediaUrl = forwardingMessage.media_url || forwardingMessage.image_url || null
+      const contentToForward = forwardingMessage.content || null
+
+      const rowsToInsert = await Promise.all(
+        selectedConversations.map(async (conversation) => {
+          const receiverId =
+            conversation.user1_id === contextUser.id ? conversation.user2_id : conversation.user1_id
+
+          if (!receiverId) {
+            return null
+          }
+
+          // Get encryption key for target conversation
+          const targetCryptoKey = await getOrCreateConversationKey(conversation.id)
+          if (!targetCryptoKey) {
+            console.warn(`[Chat] Could not get encryption key for forward target conversation ${conversation.id}`)
+            return null
+          }
+
+          let encryptedData = null
+          
+          // Encrypt the content for the target conversation if there is content
+          if (contentToForward) {
+            try {
+              encryptedData = await encrypt(contentToForward, targetCryptoKey)
+            } catch (encryptError) {
+              console.error(`[Chat] Failed to encrypt forwarded message for conversation ${conversation.id}:`, encryptError)
+              return null
+            }
+          }
+
+          const row = {
+            conversation_id: conversation.id,
+            sender_id: contextUser.id,
+            receiver_id: receiverId,
+            ...(encryptedData ? { encrypted_content: encryptedData.ciphertext, iv: encryptedData.iv } : { encrypted_content: null, iv: null }),
+            type: messageType,
+            storage_path: storagePath, // Use private storage path if available
+            media_url: mediaUrl,
+            is_forwarded: true,
+            forwarded_from_message_id: forwardingMessage.id,
+            reply_to_id: null
+          }
+
+          if (Object.prototype.hasOwnProperty.call(forwardingMessage, "image_url")) {
+            row.image_url = mediaUrl
+          }
+
+          return row
+        })
+      )
+
+      const validRows = rowsToInsert.filter(Boolean)
+
+      if (validRows.length === 0) {
+        showToastError("No valid chats selected")
+        return
+      }
+
+      const { error: insertError } = await supabase.from("messages").insert(validRows)
+
+      if (insertError) {
+        console.error("[Chat] Failed to forward message:", insertError)
+        showToastError("Failed to forward message")
+        return
+      }
+
+      closeForwardModal()
+      showSuccess("Message forwarded")
+    } catch (forwardError) {
+      console.error("[Chat] Forward message exception:", forwardError)
+      showToastError("Failed to forward message")
+    } finally {
+      setForwarding(false)
+    }
+  }, [
+    closeForwardModal,
+    conversations,
+    contextUser?.id,
+    forwarding,
+    forwardingMessage,
+    getMessageType,
+    getOrCreateConversationKey,
+    selectedForwardConversationIds,
+    showSuccess,
+    showToastError
+  ])
+
+  const handleUnsendMessage = useCallback(
+    (message) => {
+      if (!message?.id || !contextUser?.id || message.sender_id !== contextUser.id) {
+        return
+      }
+
+      setDeleteConfirmationMessage(message)
+      setActiveMessageMenuId(null)
+    },
+    [contextUser?.id]
+  )
+
+  const confirmDeleteMessage = useCallback(
+    async (message) => {
+      if (!message?.id || !contextUser?.id || message.sender_id !== contextUser.id) {
+        return
+      }
+
+      const unsentAt = new Date().toISOString()
+      const updatePayload = {
+        is_deleted: true,
+        deleted_at: unsentAt,
+        content: null,
+        media_url: null,
+        encrypted_content: null,
+        iv: null
+      }
+
+      if (Object.prototype.hasOwnProperty.call(message, "image_url")) {
+        updatePayload.image_url = null
+      }
+      
+      if (Object.prototype.hasOwnProperty.call(message, "storage_path")) {
+        updatePayload.storage_path = null
+      }
+
+      const previousMessage = message
+
+      // Optimistic UI update for sender-side instant feedback.
+      setMessages((prev) =>
+        prev.map((item) => (item.id === message.id ? { ...item, ...updatePayload } : item))
+      )
+
+      setDeleteConfirmationMessage(null)
+
+      if (editingMessage?.id === message.id) {
+        setEditingMessage(null)
+        setDraft("")
+      }
+
+      if (replyToMessage?.id === message.id) {
+        setReplyToMessage(null)
+      }
+
+      console.log("[Chat] Deleting message:", { messageId: message.id, deletePayload: updatePayload })
+
+      const { error: unsendError } = await supabase
+        .from("messages")
+        .update(updatePayload)
+        .eq("id", message.id)
+        .eq("sender_id", contextUser.id)
+
+      if (unsendError) {
+        console.error("[Chat] Failed to unsend message:", unsendError)
+        setError("Failed to unsend message")
+
+        setMessages((prev) =>
+          prev.map((item) => (item.id === message.id ? { ...item, ...previousMessage } : item))
+        )
+      } else {
+        console.log("[Chat] Message successfully deleted")
+        showSuccess("Message unsent")
+        
+        // Delete image from private storage if it's an image message
+        if (message.storage_path) {
+          try {
+            await deletePrivateImage(message.storage_path)
+            console.log("[Chat] Image deleted from storage")
+          } catch (deleteError) {
+            console.warn("[Chat] Failed to delete image from storage:", deleteError)
+          }
+        }
+      }
+    },
+    [contextUser?.id, editingMessage?.id, replyToMessage?.id, showSuccess]
+  )
 
   const handleRemoveReaction = async (messageId, emoji, userId, reactionId = null) => {
     if (!messageId || !emoji || !userId) {
@@ -1705,7 +2890,15 @@ export default function Chat() {
   const handleSendMessage = async () => {
     const content = draft.trim()
 
-    if (!content || !activeConversationId || !currentUser?.id || sending) {
+    if (!activeConversationId || !contextUser?.id || sending) {
+      return
+    }
+
+    if (editingMessage && !content) {
+      return
+    }
+
+    if (!editingMessage && !content) {
       return
     }
 
@@ -1714,8 +2907,71 @@ export default function Chat() {
       setSending(true)
       setError("")
 
+      if (editingMessage?.id) {
+        const editedAt = new Date().toISOString()
+
+        // Get encryption key for this conversation
+        const cryptoKey = await getOrCreateConversationKey(activeConversationId)
+        if (!cryptoKey) {
+          console.error("[Chat] Failed to get encryption key for editing message")
+          setError("Failed to encrypt message")
+          return
+        }
+
+        // Encrypt the edited content
+        let encryptedData = null
+        try {
+          encryptedData = await encrypt(content, cryptoKey)
+        } catch (encryptError) {
+          console.error("[Chat] Failed to encrypt edited message:", encryptError)
+          setError("Failed to encrypt message")
+          return
+        }
+
+        const { error: updateError } = await supabase
+          .from("messages")
+          .update({
+            encrypted_content: encryptedData.ciphertext,
+            iv: encryptedData.iv,
+            edited_at: editedAt
+          })
+          .eq("id", editingMessage.id)
+          .eq("sender_id", contextUser.id)
+          .eq("is_deleted", false)
+
+        if (updateError) {
+          console.error("[Chat] Failed to edit message:", updateError)
+          setError("Failed to edit message")
+          return
+        }
+
+        // Sender sees immediate edited state while receiver gets it via realtime UPDATE.
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === editingMessage.id
+              ? {
+                  ...message,
+                  content,
+                  encrypted_content: encryptedData.ciphertext,
+                  iv: encryptedData.iv,
+                  edited_at: editedAt
+                }
+              : message
+          )
+        )
+
+        setDraft("")
+        setEditingMessage(null)
+        requestAnimationFrame(() => {
+          inputRef.current?.focus()
+          console.log("[Chat] activeElement after send:", document.activeElement)
+        })
+        bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+        return
+      }
+
       const receiverId = activeConversation
-        ? (activeConversation.user1_id === currentUser.id ? activeConversation.user2_id : activeConversation.user1_id)
+        ? (activeConversation.user1_id === contextUser.id ? activeConversation.user2_id : activeConversation.user1_id)
         : null
 
       if (!receiverId) {
@@ -1723,22 +2979,76 @@ export default function Chat() {
         return
       }
 
-      const { error: insertError } = await supabase.from("messages").insert([
+      // Get encryption key for this conversation
+      const cryptoKey = await getOrCreateConversationKey(activeConversationId)
+      if (!cryptoKey) {
+        console.error("[Chat] Failed to get encryption key for sending message")
+        setError("Failed to encrypt message")
+        return
+      }
+
+      // Encrypt the content
+      let encryptedData = null
+      try {
+        encryptedData = await encrypt(content, cryptoKey)
+      } catch (encryptError) {
+        console.error("[Chat] Failed to encrypt message:", encryptError)
+        setError("Failed to encrypt message")
+        return
+      }
+
+      const { data: insertedData, error: insertError } = await supabase.from("messages").insert([
         {
           conversation_id: activeConversationId,
-          sender_id: currentUser.id,
+          sender_id: contextUser.id,
           receiver_id: receiverId,
-          content,
+          encrypted_content: encryptedData.ciphertext,
+          iv: encryptedData.iv,
           type: "text",
           media_url: null,
-          reply_to_id: replyToMessage?.id || null
+          reply_to_id: replyToMessage?.id || null,
+          delivery_status: 'sent'
         }
-      ])
+      ]).select()
 
       if (insertError) {
         console.error("[Chat] Failed to send message:", insertError)
         setError("Failed to send message")
         return
+      }
+
+      // Optimistically add the message to the state immediately
+      if (insertedData && insertedData.length > 0) {
+        const sentMessage = {
+          ...insertedData[0],
+          content: content, // Store decrypted content
+          type: "text"
+        }
+
+        setMessages((prev) => {
+          // Check if message already exists to avoid duplicates
+          if (prev.some((item) => item.id === sentMessage.id)) {
+            return prev
+          }
+          return [...prev, sentMessage]
+        })
+
+        // Update conversation list with new message preview
+        setConversations((prev) => {
+          const updated = prev.map((conversation) =>
+            conversation.id === activeConversationId
+              ? {
+                  ...conversation,
+                      last_message_content: `You: ${content}`,
+                  last_message_type: "text",
+                  last_message_sender_id: contextUser.id,
+                  last_message_is_read: false,
+                  last_message_at: sentMessage.created_at || new Date().toISOString()
+                }
+              : conversation
+          )
+          return sortConversationsByPriority(updated)
+        })
       }
 
       setDraft("")
@@ -1757,17 +3067,29 @@ export default function Chat() {
   }
 
   useEffect(() => {
-    if (!activeConversationId || !currentUser?.id) return
-
-    markConversationMessagesAsRead(activeConversationId, currentUser.id)
-  }, [activeConversationId, currentUser?.id, markConversationMessagesAsRead])
-
-  const handleStartConversationWithUser = async (selectedUser) => {
-    if (!currentUser?.id || !selectedUser?.id) {
+    if (!activeConversationId || !contextUser?.id) {
+      console.log("[Chat] skipping markAsRead - missing:", { activeConversationId, userId: contextUser?.id })
       return
     }
 
-    if (selectedUser.id === currentUser.id) {
+    console.log("[Chat] useEffect calling markConversationMessagesAsRead:", { activeConversationId, userId: contextUser?.id })
+    markConversationMessagesAsRead(activeConversationId, contextUser.id)
+  }, [activeConversationId, contextUser?.id, markConversationMessagesAsRead])
+
+  // Also mark messages as read when window gains focus
+  useEffect(() => {
+    if (!activeConversationId || !contextUser?.id) return
+    const handleFocus = () => markConversationMessagesAsRead(activeConversationId, contextUser.id)
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [activeConversationId, contextUser?.id, markConversationMessagesAsRead])
+
+  const handleStartConversationWithUser = async (selectedUser) => {
+    if (!contextUser?.id || !selectedUser?.id) {
+      return
+    }
+
+    if (selectedUser.id === contextUser.id) {
       return
     }
 
@@ -1775,7 +3097,7 @@ export default function Chat() {
       setStartingConversationUserId(selectedUser.id)
       setError("")
 
-      const me = currentUser.id
+      const me = contextUser.id
       const them = selectedUser.id
 
       const { data: existingConversation, error: existingError } = await supabase
@@ -1817,6 +3139,9 @@ export default function Chat() {
         return
       }
 
+      // Ensure conversation has an encryption key
+      await getOrCreateConversationKey(conversationId)
+
       await fetchConversations(me)
       navigateToConversation(conversationId)
       setUserSearchQuery("")
@@ -1829,9 +3154,1265 @@ export default function Chat() {
     }
   }
 
+  // ============ GROUP CHAT FUNCTIONS ============
+
+  const fetchUnreadGroupCounts = useCallback(async (userId, groupIds) => {
+    const resolvedUserId = userId || contextUser?.id
+    const ids = Array.isArray(groupIds) ? groupIds.filter(Boolean) : []
+
+    if (!resolvedUserId || ids.length === 0) {
+      setUnreadGroupCountsByGroup({})
+      return {}
+    }
+
+    try {
+      const { data: messageRows, error: messageError } = await supabase
+        .from("group_messages")
+        .select("id, group_id, sender_id")
+        .in("group_id", ids)
+
+      if (messageError) {
+        console.error("[GroupChat] Error fetching unread group message rows:", messageError)
+        return {}
+      }
+
+      const candidateRows = (messageRows || []).filter((row) => row.sender_id !== resolvedUserId)
+      const candidateMessageIds = candidateRows.map((row) => row.id).filter(Boolean)
+
+      let readMessageIds = new Set()
+      if (candidateMessageIds.length > 0) {
+        const { data: readsRows, error: readsError } = await supabase
+          .from("group_message_reads")
+          .select("message_id")
+          .eq("user_id", resolvedUserId)
+          .in("message_id", candidateMessageIds)
+
+        if (readsError) {
+          console.error("[GroupChat] Error fetching unread group read rows:", readsError)
+          return {}
+        }
+
+        readMessageIds = new Set((readsRows || []).map((row) => row.message_id).filter(Boolean))
+      }
+
+      const nextCounts = ids.reduce((acc, groupId) => {
+        acc[groupId] = 0
+        return acc
+      }, {})
+
+      candidateRows.forEach((row) => {
+        if (!readMessageIds.has(row.id)) {
+          nextCounts[row.group_id] = (nextCounts[row.group_id] || 0) + 1
+        }
+      })
+
+      setUnreadGroupCountsByGroup(nextCounts)
+      return nextCounts
+    } catch (err) {
+      console.error("[GroupChat] Exception fetching unread group counts:", err)
+      return {}
+    }
+  }, [contextUser?.id])
+
+  const fetchGroups = useCallback(async () => {
+    if (!contextUser?.id) return
+    try {
+      setLoadingGroups(true)
+      const { data, error: fetchError } = await supabase
+        .from("group_conversations")
+        .select(`
+          id,
+          name,
+          created_by,
+          created_at,
+          last_message,
+          last_message_at,
+          encryption_key,
+          group_members!inner(user_id)
+        `)
+        .eq("group_members.user_id", contextUser.id)
+        .order("last_message_at", { ascending: false })
+
+      if (fetchError) {
+        console.error("[GroupChat] Error fetching groups:", fetchError)
+        return
+      }
+
+      setGroups(data || [])
+      const groupIds = (data || []).map((group) => group.id).filter(Boolean)
+      await fetchUnreadGroupCounts(contextUser.id, groupIds)
+      if (data?.length > 0 && !activeGroupId) {
+        setActiveGroupId(data[0].id)
+      }
+    } catch (err) {
+      console.error("[GroupChat] Exception fetching groups:", err)
+    } finally {
+      setLoadingGroups(false)
+    }
+  }, [contextUser?.id, activeGroupId, fetchUnreadGroupCounts])
+
+  const fetchGroupMessages = useCallback(async (groupId, encryptionKey) => {
+    if (!groupId || !encryptionKey) return
+    try {
+      setLoadingGroupMessages(true)
+      const { data: rawMessages, error: fetchError } = await supabase
+        .from("group_messages")
+        .select("id, group_id, sender_id, content, encrypted_content, iv, is_encrypted, created_at, reply_to_id")
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: true })
+        .limit(100)
+
+      if (fetchError) {
+        console.error("[GroupChat] Error fetching messages:", fetchError)
+        return
+      }
+
+      // Get sender profiles
+      const senderIds = [...new Set((rawMessages || []).map((m) => m.sender_id).filter(Boolean))]
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, username, name, avatar_url")
+        .in("id", senderIds)
+
+      if (profileError) {
+        console.error("[GroupChat] Error fetching profiles:", profileError)
+      }
+
+      const profilesById = {}
+      ;(profiles || []).forEach((p) => {
+        profilesById[p.id] = p
+      })
+
+      // Decrypt messages
+      const decryptedMessages = await Promise.all(
+        (rawMessages || []).map(async (msg) => {
+          let content = msg.content
+          if (msg.is_encrypted && msg.encrypted_content && msg.iv && encryptionKey) {
+            try {
+              const cryptoKey = await importKey(encryptionKey)
+              content = await decrypt(msg.encrypted_content, msg.iv, cryptoKey)
+            } catch (err) {
+              console.error("[GroupChat] Error decrypting message:", err)
+              content = "[Unable to decrypt]"
+            }
+          }
+          return {
+            ...msg,
+            content,
+            senderProfile: profilesById[msg.sender_id]
+          }
+        })
+      )
+
+      setGroupMessages(decryptedMessages)
+      return decryptedMessages
+    } catch (err) {
+      console.error("[GroupChat] Exception fetching messages:", err)
+    } finally {
+      setLoadingGroupMessages(false)
+    }
+  }, [])
+
+  const fetchGroupMembers = useCallback(async (groupId) => {
+    if (!groupId) return
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("group_members")
+        .select(`user_id, role, profiles(id, username, name, avatar_url)`)
+        .eq("group_id", groupId)
+
+      if (fetchError) {
+        console.error("[GroupChat] Error fetching members:", fetchError)
+        return
+      }
+
+      setGroupMembers(data || [])
+    } catch (err) {
+      console.error("[GroupChat] Exception fetching members:", err)
+    }
+  }, [])
+
+  // Validate group membership for RLS policy compliance
+  const validateGroupMembership = useCallback(async (groupId) => {
+    if (!groupId) return false
+
+    try {
+      // ✅ Use actual Supabase auth user ID (not contextUser)
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
+      
+      if (authError || !authUser?.id) {
+        console.warn('[GroupChat] [RLS-FIX] Failed to get authenticated user in validateGroupMembership:', {
+          error: authError?.message
+        })
+        return false
+      }
+
+      const { data, error } = await supabase
+        .from('group_members')
+        .select('id')
+        .eq('group_id', groupId)
+        .eq('user_id', authUser.id)
+        .limit(1)
+
+      if (error) {
+        console.warn('[GroupChat] [RLS-FIX] Error checking group membership:', {
+          groupId,
+          authUserId: authUser.id,
+          error: error.message
+        })
+        return false
+      }
+
+      const isMember = (data && data.length > 0)
+      console.log('[GroupChat] [RLS-FIX] Group membership validation:', {
+        groupId,
+        authUserId: authUser.id,
+        is_member: isMember,
+        rls_requirement: 'User must be in group_members for auth.uid() to pass nested EXISTS check'
+      })
+      return isMember
+    } catch (err) {
+      console.warn('[GroupChat] [RLS-FIX] Exception validating group membership:', err)
+      return false
+    }
+  }, [])
+
+  const fetchGroupMessageReads = useCallback(async (messageIds) => {
+    if (!messageIds || messageIds.length === 0) return
+
+    try {
+      const { data: reads, error } = await supabase
+        .from('group_message_reads')
+        .select('message_id, user_id, read_at, profiles(id, username, name, avatar_url)')
+        .in('message_id', messageIds)
+
+      if (error) {
+        console.error('[GroupChat] Error fetching read receipts:', error)
+        return
+      }
+
+      const map = {}
+
+      ;(reads || []).forEach((read) => {
+        if (!map[read.message_id]) {
+          map[read.message_id] = []
+        }
+        map[read.message_id].push({
+          user_id: read.user_id,
+          read_at: read.read_at,
+          profile: read.profiles
+        })
+      })
+
+      setGroupMessageReads(map)
+      console.log('[GroupChat] Fetched read receipts for', messageIds.length, 'messages')
+      return map
+    } catch (err) {
+      console.error('[GroupChat] Exception fetching message reads:', err)
+    }
+  }, [])
+
+  const markGroupMessagesAsRead = useCallback(async (groupId, messageIds) => {
+    if (!groupId || !messageIds || messageIds.length === 0) {
+      console.warn('[GroupChat] markGroupMessagesAsRead: Missing groupId or messageIds')
+      return
+    }
+
+    try {
+      const rows = messageIds.map((id) => ({
+        message_id: id,
+        user_id: contextUser.id,
+        read_at: new Date().toISOString()
+      }))
+
+      const { error } = await supabase
+        .from('group_message_reads')
+        .upsert(rows, {
+          onConflict: 'message_id,user_id'
+        })
+
+      if (error) {
+        console.error('[GroupChat] Read receipt error:', error)
+        return
+      }
+
+      await fetchGroupMessageReads(messageIds)
+    } catch (err) {
+      console.warn('[GroupChat] Exception marking messages as read:', {
+        error: err.message,
+        userId: contextUser.id,
+        groupId
+      })
+    }
+  }, [contextUser?.id, fetchGroupMessageReads])
+
+  const searchUsersToAdd = useCallback(async (query) => {
+    if (!query.trim()) {
+      setMemberSearchResults([])
+      return
+    }
+
+    const existingIds = groupMembers.map(m => m.user_id)
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, username, name, avatar_url')
+        .ilike('username', `%${query}%`)
+        .not('id', 'in', `(${existingIds.join(',')})`)
+        .limit(5)
+      setMemberSearchResults(data || [])
+    } catch (err) {
+      console.error("[GroupChat] Error searching users:", err)
+    }
+  }, [groupMembers])
+
+  const handleAddMemberToGroup = useCallback(async (userId) => {
+    if (!activeGroupId) return
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .insert({ group_id: activeGroupId, user_id: userId, role: 'member' })
+      if (!error) {
+        await fetchGroupMembers(activeGroupId)
+        showSuccess('Member added')
+      } else {
+        showToastError('Failed to add member')
+      }
+    } catch (err) {
+      console.error("[GroupChat] Error adding member:", err)
+      showToastError('Failed to add member')
+    }
+  }, [activeGroupId, fetchGroupMembers, showSuccess, showToastError])
+
+  const handleRemoveMember = useCallback(async (userId) => {
+    if (!activeGroupId) return
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .delete()
+        .eq('group_id', activeGroupId)
+        .eq('user_id', userId)
+      if (!error) {
+        await fetchGroupMembers(activeGroupId)
+        showSuccess('Member removed')
+      } else {
+        showToastError('Failed to remove member')
+      }
+    } catch (err) {
+      console.error("[GroupChat] Error removing member:", err)
+      showToastError('Failed to remove member')
+    }
+  }, [activeGroupId, fetchGroupMembers, showSuccess, showToastError])
+
+  const handleMakeMemberAdmin = useCallback(async (userId) => {
+    if (!activeGroupId) return
+    try {
+      const { error } = await supabase
+        .from('group_members')
+        .update({ role: 'admin' })
+        .eq('group_id', activeGroupId)
+        .eq('user_id', userId)
+      if (!error) {
+        await fetchGroupMembers(activeGroupId)
+        showSuccess('Member is now an admin')
+      } else {
+        showToastError('Failed to update role')
+      }
+    } catch (err) {
+      console.error("[GroupChat] Error updating role:", err)
+      showToastError('Failed to update role')
+    }
+  }, [activeGroupId, fetchGroupMembers, showSuccess, showToastError])
+
+  const handleSelectGroup = useCallback(
+    async (group) => {
+      setActiveGroupId(group.id)
+      setShowMembersDropdown(false)
+      setUnreadGroupCountsByGroup((prev) => ({
+        ...prev,
+        [group.id]: 0
+      }))
+
+      if (group.encryption_key) {
+        try {
+          const cryptoKey = await importKey(group.encryption_key)
+          const msgs = await fetchGroupMessages(group.id, group.encryption_key)
+          
+          // After fetchGroupMessages completes, fetch reads for all messages
+          if (msgs && msgs.length > 0) {
+            const allIds = msgs.map(m => m.id)
+            await fetchGroupMessageReactions(allIds)
+            await fetchGroupMessageReads(allIds)
+          }
+        } catch (err) {
+          console.error("[GroupChat] Error importing key:", err)
+        }
+      }
+
+      await fetchGroupMembers(group.id)
+
+      // Unsubscribe from old channel if exists
+      if (groupMessagesChannelRef.current) {
+        supabase.removeChannel(groupMessagesChannelRef.current)
+      }
+      if (groupReactionsChannelRef.current) {
+        supabase.removeChannel(groupReactionsChannelRef.current)
+      }
+
+      // Subscribe to new group messages
+      const channel = supabase
+        .channel(`group-messages-${group.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "group_messages",
+            filter: `group_id=eq.${group.id}`
+          },
+          async (payload) => {
+            const newMessage = payload.new
+            
+            // Skip own messages — already added via optimistic update in handleSendGroupMessage
+            if (newMessage.sender_id === contextUser?.id) return
+            
+            let content = newMessage.content
+
+            if (newMessage.is_encrypted && newMessage.encrypted_content && newMessage.iv && group.encryption_key) {
+              try {
+                const cryptoKey = await importKey(group.encryption_key)
+                content = await decrypt(newMessage.encrypted_content, newMessage.iv, cryptoKey)
+              } catch (err) {
+                console.error("[GroupChat] Error decrypting new message:", err)
+                content = "[Unable to decrypt]"
+              }
+            }
+
+            // Fetch sender profile
+            const { data: senderProfile } = await supabase
+              .from("profiles")
+              .select("id, username, name, avatar_url")
+              .eq("id", newMessage.sender_id)
+              .single()
+
+            setGroupMessages((prev) => [
+              ...prev,
+              {
+                ...newMessage,
+                content,
+                senderProfile: senderProfile
+              }
+            ])
+
+            setTimeout(() => {
+              groupBottomRef.current?.scrollIntoView({ behavior: "smooth" })
+            }, 0)
+          }
+        )
+        .subscribe()
+
+      // Subscribe to message reactions in real-time
+      const reactionsChannel = supabase
+        .channel(`group-reactions-${group.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "group_message_reactions"
+          },
+          async (payload) => {
+            const { data: curMessages } = await supabase
+              .from('group_messages')
+              .select('id')
+              .eq('group_id', group.id)
+            
+            if (curMessages && curMessages.length > 0) {
+              const messageIds = curMessages.map(m => m.id)
+              await fetchGroupMessageReactions(messageIds)
+            }
+          }
+        )
+        .subscribe()
+
+      groupMessagesChannelRef.current = channel
+      groupReactionsChannelRef.current = reactionsChannel
+
+      // Subscribe to message reads (seen by) in real-time
+      const readsChannel = supabase
+        .channel(`group-reads-${group.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "group_message_reads"
+          },
+          async (payload) => {
+            console.log("[Chat] group_message_reads INSERT received:", payload)
+            const ids = groupMessages.map((m) => m.id)
+
+            if (ids.length) {
+              console.log("[Chat] Fetching message reads for", ids.length, "messages")
+              await fetchGroupMessageReads(ids)
+            }
+          }
+        )
+        .subscribe()
+    },
+    [fetchGroupMessages, fetchGroupMembers, fetchGroupMessageReads]
+  )
+
+  // Issue 1: Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (groupMessages.length > 0) {
+      setTimeout(() => {
+        groupBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+      }, 0)
+    }
+  }, [groupMessages])
+
+  // Issue 2: Mark group messages as read when viewing group (debounced to avoid constant calls)
+  useEffect(() => {
+    if (!activeGroupId || !groupMessages || groupMessages.length === 0 || !contextUser?.id) return
+
+    const timer = setTimeout(() => {
+      const messageIds = groupMessages.map((msg) => msg.id)
+
+      if (messageIds.length > 0) {
+        console.log("[GroupChat] Initiating read receipt marking:", { 
+          activeGroupId,
+          userId: contextUser.id,
+          messageCount: messageIds.length
+        })
+        markGroupMessagesAsRead(activeGroupId, messageIds)
+        setUnreadGroupCountsByGroup((prev) => ({
+          ...prev,
+          [activeGroupId]: 0
+        }))
+      }
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [activeGroupId, groupMessages, contextUser?.id, markGroupMessagesAsRead])
+
+  // Issue 3: Calculate and sync unread counts
+  const unreadDirectCount = useMemo(() => {
+    const count = Object.values(unreadCountsByConversation).filter(count => count > 0).length
+    console.log("directUnreadCount", count, "conversations:", unreadCountsByConversation)
+    return count
+  }, [unreadCountsByConversation])
+
+  const unreadGroupCount = useMemo(() => {
+    const count = Object.values(unreadGroupCountsByGroup).filter((value) => value > 0).length
+    console.log("groupUnreadCount", count, "groups:", Object.keys(unreadGroupCountsByGroup))
+    return count
+  }, [unreadGroupCountsByGroup])
+
+  const totalUnreadChatCount = unreadDirectCount + unreadGroupCount
+
+  // Dispatch unread count update to navbar
+  useEffect(() => {
+    console.log("[Chat] Dispatching unread count update:", {
+      totalUnreadChatCount,
+      unreadDirectCount,
+      unreadGroupCount
+    })
+    window.dispatchEvent(
+      new CustomEvent("totalChatUnreadChanged", {
+        detail: {
+          totalUnreadChatCount,
+          unreadDirectCount,
+          unreadGroupCount
+        }
+      })
+    )
+  }, [totalUnreadChatCount, unreadDirectCount, unreadGroupCount])
+
+  const handleSendGroupMessage = useCallback(async () => {
+    if (!groupDraft.trim() || !activeGroupId || !contextUser?.id) return
+
+    try {
+      setSendingGroup(true)
+      const activeGroup = groups.find((g) => g.id === activeGroupId)
+      if (!activeGroup?.encryption_key) {
+        console.error("[GroupChat] No encryption key found for group:", activeGroupId)
+        showToastError("No encryption key found")
+        return
+      }
+
+      console.log("[GroupChat] Preparing to send message", {
+        group_id: activeGroupId,
+        sender_id: contextUser.id,
+        content_length: groupDraft.length
+      })
+
+      const cryptoKey = await importKey(activeGroup.encryption_key)
+      const encrypted = await encrypt(groupDraft, cryptoKey)
+
+      console.log("[GroupChat] Message encrypted successfully", {
+        ciphertext_length: encrypted.ciphertext.length,
+        iv_length: encrypted.iv.length
+      })
+
+      const insertPayload = [
+        {
+          group_id: activeGroupId,
+          sender_id: contextUser.id,
+          encrypted_content: encrypted.ciphertext,
+          iv: encrypted.iv,
+          is_encrypted: true,
+          type: "text",
+          content: null,
+          reply_to_id: groupReplyTo?.id || null
+        }
+      ]
+
+      console.log("[GroupChat] Inserting message with payload:", {
+        group_id: insertPayload[0].group_id,
+        sender_id: insertPayload[0].sender_id,
+        is_encrypted: insertPayload[0].is_encrypted,
+        type: insertPayload[0].type
+      })
+
+      const { data: insertedData, error: insertError } = await supabase
+        .from("group_messages")
+        .insert(insertPayload)
+        .select()
+
+      if (insertError) {
+        console.error("[GroupChat] Error inserting message:", {
+          error: insertError,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        })
+        showToastError(`Failed to send message: ${insertError.message}`)
+        return
+      }
+
+      console.log("[GroupChat] Message inserted successfully:", insertedData)
+
+      // Save draft before clearing
+      const sentContent = groupDraft.trim()
+
+      // Optimistic update: immediately append message to UI with plaintext content
+      if (insertedData && insertedData.length > 0) {
+        const newMessageId = insertedData[0].id
+        setGroupMessages((prev) => [
+          ...prev,
+              {
+                ...insertedData[0],
+                content: sentContent,  // Use plaintext for immediate display
+                reply_to_id: groupReplyTo?.id || null,
+                senderProfile: {
+                  id: contextUser?.id,
+                  username: contextUser?.username || '',
+                  name: contextUser?.name || '',
+                  avatar_url: contextUser?.avatar_url || null
+            }
+          }
+        ])
+        // Initialize empty read state for new message
+        setGroupMessageReads((prev) => ({
+          ...prev,
+          [newMessageId]: []
+        }))
+        console.log("[GroupChat] Optimistically updated message list with new message, initialized read state")
+      }
+
+      // Fire-and-forget: Update last message timestamp in group (non-blocking)
+      ;(async () => {
+        try {
+          const { error: updateError } = await supabase
+            .from("group_conversations")
+            .update({
+              last_message_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", activeGroupId)
+
+          if (updateError) {
+            console.warn("[GroupChat] Warning: Failed to update group last_message_at (non-blocking):", updateError)
+          }
+        } catch (err) {
+          console.warn("[GroupChat] Warning: Exception updating group last_message_at (non-blocking):", err)
+        }
+      })()
+
+      // ONLY clear draft after successful insert
+      setGroupDraft("")
+      setGroupReplyTo(null)
+      console.log("[GroupChat] Message sent successfully, draft cleared")
+    } catch (err) {
+      console.error("[GroupChat] Exception sending message:", {
+        error: err,
+        message: err.message,
+        stack: err.stack
+      })
+      showToastError(`Failed to send message: ${err.message}`)
+    } finally {
+      setSendingGroup(false)
+    }
+  }, [groupDraft, activeGroupId, contextUser?.id, groups, groupReplyTo, showToastError])
+
+  const searchNewGroupUsers = useCallback(async (query) => {
+    if (!query.trim()) {
+      setNewGroupSearchResults([])
+      return
+    }
+
+    try {
+      const { data, error: searchError } = await supabase
+        .from("profiles")
+        .select("id, username, name, avatar_url")
+        .ilike("username", `%${query}%`)
+        .neq("id", contextUser?.id)
+        .limit(8)
+
+      if (searchError) {
+        console.error("[GroupChat] Error searching users:", searchError)
+        return
+      }
+
+      const filtered = (data || []).filter((profile) => !newGroupSelectedUsers.some((u) => u.id === profile.id))
+      setNewGroupSearchResults(filtered)
+    } catch (err) {
+      console.error("[GroupChat] Exception searching users:", err)
+    }
+  }, [contextUser?.id, newGroupSelectedUsers])
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) {
+      showToastError('Please enter a group name')
+      return
+    }
+    if (newGroupSelectedUsers.length === 0) {
+      showToastError('Please add at least one member')
+      return
+    }
+
+    setCreatingGroup(true)
+
+    try {
+      // Always get fresh user from Supabase auth
+      const { data: authData, error: authError } = await supabase.auth.getUser()
+      if (authError || !authData?.user) {
+        showToastError('Authentication error. Please refresh and try again.')
+        setCreatingGroup(false)
+        return
+      }
+      const userId = authData.user.id
+      console.log('[GroupChat] Creating group as user:', userId)
+
+      // Generate encryption key
+      const key = await generateKey()
+      const exportedKey = await exportKey(key)
+
+      // Step 1: Insert group conversation
+      const insertPayload = {
+        name: newGroupName.trim(),
+        created_by: userId,
+        encryption_key: exportedKey,
+        last_message_at: new Date().toISOString()
+      }
+      console.log('[GroupChat] Inserting group with payload:', { ...insertPayload, encryption_key: '[REDACTED]' })
+
+      const { data: newGroup, error: groupError } = await supabase
+        .from('group_conversations')
+        .insert(insertPayload)
+        .select('id, name')
+        .single()
+
+      if (groupError) {
+        console.error('[GroupChat] Error creating group:', groupError)
+        showToastError('Failed to create group')
+        setCreatingGroup(false)
+        return
+      }
+
+      console.log('[GroupChat] Group created:', newGroup.id)
+
+      // Step 2: Add creator as admin
+      const { error: creatorError } = await supabase
+        .from('group_members')
+        .insert({ group_id: newGroup.id, user_id: userId, role: 'admin' })
+
+      if (creatorError) {
+        console.error('[GroupChat] Error adding creator as admin:', creatorError)
+      }
+
+      // Step 3: Add selected members
+      const memberInserts = newGroupSelectedUsers.map(u => ({
+        group_id: newGroup.id,
+        user_id: u.id,
+        role: 'member'
+      }))
+
+      if (memberInserts.length > 0) {
+        const { error: membersError } = await supabase
+          .from('group_members')
+          .insert(memberInserts)
+
+        if (membersError) {
+          console.error('[GroupChat] Error adding members:', membersError)
+        }
+      }
+
+      // Reset and refresh
+      setShowNewGroupModal(false)
+      setNewGroupName('')
+      setNewGroupSelectedUsers([])
+      setNewGroupSearch('')
+      setNewGroupSearchResults([])
+      await fetchGroups()
+      showSuccess('Group created!')
+
+    } catch (err) {
+      console.error('[GroupChat] Exception creating group:', err)
+      showToastError('Failed to create group')
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
+  // ==================== GROUP CHAT FEATURES ====================
+
+  // Fetch reactions for group messages
+  const fetchGroupMessageReactions = useCallback(async (messageIds) => {
+    if (messageIds.length === 0) return
+    try {
+      const { data: reactions, error } = await supabase
+        .from('group_message_reactions')
+        .select('message_id, user_id, reaction')
+        .in('message_id', messageIds)
+
+      if (error) {
+        console.error('[GroupChat] Error fetching reactions:', error)
+        return
+      }
+
+      const reactionsMap = {}
+      reactions.forEach((r) => {
+        if (!reactionsMap[r.message_id]) {
+          reactionsMap[r.message_id] = []
+        }
+        reactionsMap[r.message_id].push({ user_id: r.user_id, reaction: r.reaction })
+      })
+      setGroupMessageReactions(reactionsMap)
+    } catch (err) {
+      console.error('[GroupChat] Exception fetching reactions:', err)
+    }
+  }, [])
+
+  // Add/toggle group message reaction
+  const handleAddGroupReaction = useCallback(async (messageId, reaction) => {
+    if (!contextUser?.id || !activeGroupId) return
+
+    try {
+      const reactions = groupMessageReactions[messageId] || []
+      const existingReaction = reactions.find(
+        (r) => r.user_id === contextUser.id && r.reaction === reaction
+      )
+
+      if (existingReaction) {
+        // Delete reaction
+        const { error } = await supabase
+          .from('group_message_reactions')
+          .delete()
+          .eq('message_id', messageId)
+          .eq('user_id', contextUser.id)
+          .eq('reaction', reaction)
+
+        if (error) {
+          console.error('[GroupChat] Error removing reaction:', error)
+          showToastError('Failed to remove reaction')
+          return
+        }
+
+        // Update local state
+        const updated = reactions.filter(
+          (r) => !(r.user_id === contextUser.id && r.reaction === reaction)
+        )
+        setGroupMessageReactions((prev) => ({
+          ...prev,
+          [messageId]: updated.length > 0 ? updated : undefined
+        }))
+      } else {
+        // Add reaction
+        const { error } = await supabase
+          .from('group_message_reactions')
+          .insert({ message_id: messageId, user_id: contextUser.id, reaction })
+
+        if (error) {
+          console.error('[GroupChat] Error adding reaction:', error)
+          showToastError('Failed to add reaction')
+          return
+        }
+
+        // Update local state
+        setGroupMessageReactions((prev) => ({
+          ...prev,
+          [messageId]: [...(prev[messageId] || []), { user_id: contextUser.id, reaction }]
+        }))
+      }
+    } catch (err) {
+      console.error('[GroupChat] Exception toggling reaction:', err)
+      showToastError('Failed to update reaction')
+    }
+  }, [contextUser?.id, activeGroupId, groupMessageReactions, showToastError])
+
+  // Update group message (edit)
+  const handleUpdateGroupMessage = useCallback(async (messageId, newContent) => {
+    if (!activeGroupId || !editingGroupMessage) return
+
+    try {
+      const activeGroup = groups.find((g) => g.id === activeGroupId)
+      if (!activeGroup?.encryption_key) {
+        showToastError('No encryption key found')
+        return
+      }
+
+      const cryptoKey = await importKey(activeGroup.encryption_key)
+      const encrypted = await encrypt(newContent, cryptoKey)
+
+      const { error } = await supabase
+        .from('group_messages')
+        .update({
+          encrypted_content: encrypted.ciphertext,
+          iv: encrypted.iv,
+          edited_at: new Date().toISOString()
+        })
+        .eq('id', messageId)
+
+      if (error) {
+        console.error('[GroupChat] Error updating message:', error)
+        showToastError('Failed to edit message')
+        return
+      }
+
+      showSuccess('Message edited')
+      setEditingGroupMessage(null)
+      setGroupDraft('')
+    } catch (err) {
+      console.error('[GroupChat] Exception updating message:', err)
+      showToastError('Failed to edit message')
+    }
+  }, [activeGroupId, editingGroupMessage, groups, showToastError, showSuccess])
+
+  // Delete group message
+  const handleDeleteGroupMessage = useCallback(async (messageId) => {
+    if (!activeGroupId) return
+
+    try {
+      const { error } = await supabase
+        .from('group_messages')
+        .update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+          encrypted_content: null,
+          iv: null
+        })
+        .eq('id', messageId)
+
+      if (error) {
+        console.error('[GroupChat] Error deleting message:', error)
+        showToastError('Failed to delete message')
+        return
+      }
+
+      showSuccess('Message deleted')
+      setDeleteGroupConfirmationMessage(null)
+    } catch (err) {
+      console.error('[GroupChat] Exception deleting message:', err)
+      showToastError('Failed to delete message')
+    }
+  }, [activeGroupId, showToastError, showSuccess])
+
+  // Copy group message text
+  const handleCopyGroupMessage = useCallback((message) => {
+    const textToCopy = message.content || (message.type === 'image' ? `[Image: ${message.file_name || 'Shared image'}]` : '')
+    if (!textToCopy) return
+
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      showSuccess('Message copied to clipboard')
+    }).catch(() => {
+      showToastError('Failed to copy message')
+    })
+  }, [showSuccess, showToastError])
+
+  const handleForwardGroupMessage = useCallback((message) => {
+    const sourceText = message.content || (message.caption ? message.caption : "")
+    if (!sourceText) return
+
+    const forwardPrefix = `Fwd: ${sourceText}`
+    setGroupDraft((prev) => (prev ? `${prev}\n${forwardPrefix}` : forwardPrefix))
+    setActiveGroupMessageMenuId(null)
+    setActiveGroupEmojiPickerMessageId(null)
+    showSuccess("Message prepared for forwarding")
+  }, [showSuccess])
+
+  // Handle group image file selection
+  const handleGroupImageSelected = useCallback((event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      showToastError(`Image must be less than 5 MB`)
+      return
+    }
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      showToastError('Only JPEG, PNG, and WebP images are allowed')
+      return
+    }
+
+    setGroupSelectedImage(file)
+    const url = URL.createObjectURL(file)
+    setGroupSelectedImageComposerUrl(url)
+  }, [showToastError])
+
+  // Send group message with image
+  const handleSendGroupMessageWithImage = useCallback(async () => {
+    if (!groupSelectedImage || !activeGroupId || !contextUser?.id) return
+
+    try {
+      setUploadingGroupImage(true)
+
+      // Upload image to storage
+      const { publicUrl, error: uploadError } = await uploadImageToPrivateStorage(
+        groupSelectedImage,
+        contextUser.id,
+        activeGroupId
+      )
+
+      if (uploadError) {
+        console.error('[GroupChat] Error uploading image:', uploadError)
+        showToastError('Failed to upload image')
+        return
+      }
+
+      // Insert message with image
+      const activeGroup = groups.find((g) => g.id === activeGroupId)
+      if (!activeGroup?.encryption_key) {
+        showToastError('No encryption key found')
+        return
+      }
+
+      const cryptoKey = await importKey(activeGroup.encryption_key)
+      const caption = groupImageCaption || ''
+      const encrypted = caption ? await encrypt(caption, cryptoKey) : {}
+
+      const { error: insertError } = await supabase
+        .from('group_messages')
+        .insert({
+          group_id: activeGroupId,
+          sender_id: contextUser.id,
+          type: 'image',
+          media_url: publicUrl,
+          encrypted_content: encrypted.ciphertext || null,
+          iv: encrypted.iv || null,
+          content: null
+        })
+
+      if (insertError) {
+        console.error('[GroupChat] Error sending image message:', insertError)
+        showToastError('Failed to send image')
+        return
+      }
+
+      // Update last message timestamp in group (do NOT store plaintext caption/preview)
+      await supabase
+        .from('group_conversations')
+        .update({
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', activeGroupId)
+
+      // Reset
+      setGroupSelectedImage(null)
+      setGroupSelectedImageComposerUrl('')
+      setGroupImageCaption('')
+      showSuccess('Image sent!')
+    } catch (err) {
+      console.error('[GroupChat] Exception sending image:', err)
+      showToastError('Failed to send image')
+    } finally {
+      setUploadingGroupImage(false)
+    }
+  }, [groupSelectedImage, groupImageCaption, activeGroupId, contextUser?.id, groups, showToastError, showSuccess])
+
+  // Get signed URL for group image
+  const getGroupImageSignedUrl = useCallback(async (storagePath) => {
+    if (!storagePath) return null
+
+    try {
+      const cached = groupSignedUrlCacheRef.current[storagePath]
+      if (cached && isSignedUrlValid(cached)) {
+        return cached.url
+      }
+
+      const { url, expiresAt } = await getSignedImageUrl(storagePath)
+      groupSignedUrlCacheRef.current[storagePath] = { url, expiresAt }
+      return url
+    } catch (err) {
+      console.error('[GroupChat] Error getting signed URL:', err)
+      return null
+    }
+  }, [])
+
+  // ==================== END GROUP CHAT FEATURES ====================
+
+  // useEffect to load groups when mode changes
+  useEffect(() => {
+    if (chatMode === "groups") {
+      fetchGroups()
+    }
+  }, [chatMode, fetchGroups])
+
+  useEffect(() => {
+    if (!contextUser?.id || groups.length === 0) {
+      if (groups.length === 0) {
+        setUnreadGroupCountsByGroup({})
+      }
+      return
+    }
+
+    fetchUnreadGroupCounts(
+      contextUser.id,
+      groups.map((group) => group.id)
+    )
+  }, [contextUser?.id, groups, fetchUnreadGroupCounts])
+
+  useEffect(() => {
+    if (!contextUser?.id || groups.length === 0) return
+
+    if (groupUnreadChannelRef.current) {
+      supabase.removeChannel(groupUnreadChannelRef.current)
+      groupUnreadChannelRef.current = null
+    }
+
+    const groupIds = new Set(groups.map((group) => group.id).filter(Boolean))
+
+    const channel = supabase
+      .channel(`group-unread-${contextUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_messages"
+        },
+        (payload) => {
+          const row = payload.new
+          if (!row?.group_id || !groupIds.has(row.group_id)) return
+          if (row.sender_id === contextUser.id) return
+
+          if (chatMode === "groups" && activeGroupId === row.group_id) {
+            setUnreadGroupCountsByGroup((prev) => ({ ...prev, [row.group_id]: 0 }))
+            return
+          }
+
+          setUnreadGroupCountsByGroup((prev) => ({
+            ...prev,
+            [row.group_id]: (prev[row.group_id] || 0) + 1
+          }))
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_message_reads",
+          filter: `user_id=eq.${contextUser.id}`
+        },
+        () => {
+          fetchUnreadGroupCounts(
+            contextUser.id,
+            Array.from(groupIds)
+          )
+        }
+      )
+      .subscribe()
+
+    groupUnreadChannelRef.current = channel
+
+    return () => {
+      supabase.removeChannel(channel)
+      if (groupUnreadChannelRef.current === channel) {
+        groupUnreadChannelRef.current = null
+      }
+    }
+  }, [activeGroupId, chatMode, contextUser?.id, fetchUnreadGroupCounts, groups])
+
+  // Debounce member search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (memberSearchQuery.trim()) {
+        searchUsersToAdd(memberSearchQuery)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [memberSearchQuery, searchUsersToAdd])
+
+  // Search users for new group modal
+  useEffect(() => {
+    if (!newGroupSearch.trim()) {
+      setNewGroupSearchResults([])
+      return
+    }
+
+    const searchUsers = async () => {
+      try {
+        const { data, error: searchError } = await supabase
+          .from("profiles")
+          .select("id, username, name, avatar_url")
+          .ilike("username", `%${newGroupSearch}%`)
+          .limit(10)
+
+        if (searchError) {
+          console.error("[Chat] Error searching users:", searchError)
+          return
+        }
+
+        // Filter out current user and already selected users
+        const filtered = (data || []).filter(
+          (profile) =>
+            profile.id !== contextUser?.id &&
+            !newGroupSelectedUsers.some((u) => u.id === profile.id)
+        )
+
+        setNewGroupSearchResults(filtered)
+      } catch (err) {
+        console.error("[Chat] Exception searching users:", err)
+      }
+    }
+
+    const debounce = setTimeout(searchUsers, 300)
+    return () => clearTimeout(debounce)
+  }, [newGroupSearch, contextUser?.id, newGroupSelectedUsers])
+
+  // Handle click outside of group message menus to close them
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (groupMessagesContainerRef.current && !groupMessagesContainerRef.current.contains(event.target)) {
+        setActiveGroupEmojiPickerMessageId(null)
+        setActiveGroupMessageMenuId(null)
+      }
+    }
+
+    if (activeGroupEmojiPickerMessageId || activeGroupMessageMenuId) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [activeGroupEmojiPickerMessageId, activeGroupMessageMenuId])
+
+
   return (
-    <div className="mx-auto flex h-full w-full max-w-[1300px] flex-col overflow-hidden px-3 pt-1">
-      <h1 className="mb-1 shrink-0 text-3xl font-bold text-slate-800">Chat</h1>
+    <div className="mx-auto flex h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-2 pt-3 pb-1 md:px-3">
+      <h1 className="mb-0.5 shrink-0 text-2xl font-bold text-slate-800">Chat</h1>
 
       {error && (
         <div className="mb-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -1839,8 +4420,45 @@ export default function Chat() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 w-full grid-cols-[320px,1fr] gap-2 rounded-2xl bg-white p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.05)] overflow-hidden">
-        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+      <div className="grid h-full min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:grid-cols-[300px,minmax(0,1fr)]">
+        <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+          {/* Mode Toggle */}
+          <div className="flex gap-1 p-2 border-b border-slate-100">
+            <button
+              onClick={() => setChatMode("direct")}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition-colors relative ${
+                chatMode === "direct"
+                  ? "bg-yellow-500 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Direct
+              {unreadDirectCount > 0 && (
+                <span className="absolute -top-2 -right-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
+                  {unreadDirectCount > 9 ? "9+" : unreadDirectCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setChatMode("groups")}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-lg transition-colors relative ${
+                chatMode === "groups"
+                  ? "bg-yellow-500 text-white"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Groups
+              {unreadGroupCount > 0 && (
+                <span className="absolute -top-2 -right-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold leading-none text-white bg-red-600 rounded-full">
+                  {unreadGroupCount > 9 ? "9+" : unreadGroupCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Direct Chat Sidebar */}
+          {chatMode === "direct" && (
+            <>
           <div className="border-b border-slate-100 px-3 py-2.5">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Conversations</h2>
             <div className="relative mt-2">
@@ -1916,9 +4534,9 @@ export default function Chat() {
                 const isActive = conversation.id === activeConversationId
                 const displayName = getDisplayName(conversation.partner)
                 const partnerAvatar = conversation.partner?.avatar_url
-                const latestContent = conversation.last_message_type === "image"
-                  ? "Photo"
-                  : (conversation.last_message_content?.trim() || "No messages yet")
+                
+                // Simple display - just show the message content like Instagram
+                const latestContent = conversation.last_message_content?.trim() || "No messages yet"
                 const latestTimestamp = conversation.last_message_at || conversation.created_at
                 const unreadCount = unreadCountsByConversation[conversation.id] || 0
                 const hasUnread = unreadCount > 0
@@ -1950,15 +4568,15 @@ export default function Chat() {
                       )}
 
                       <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
+                          <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
                           {showTypingPreview ? (
                             <p className="mt-1 truncate text-xs italic text-slate-400">Typing...</p>
-                          ) : (
-                            <p className={`mt-1 truncate text-xs ${hasUnread ? "font-medium text-slate-700" : "text-slate-500"}`}>
+                          ) : latestContent ? (
+                            <p className={`mt-1 truncate text-[0.8125rem] ${hasUnread ? "font-medium text-slate-600" : "text-slate-400"}`}>
                               {latestContent}
                             </p>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -1976,19 +4594,200 @@ export default function Chat() {
               })
             )}
           </div>
+            </>
+          )}
+
+          {/* Groups Chat Sidebar */}
+          {chatMode === "groups" && (
+            <>
+              <div className="border-b border-slate-100 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Groups</h2>
+                  <button
+                    onClick={() => setShowNewGroupModal(true)}
+                    className="inline-flex items-center justify-center rounded-lg bg-yellow-400 hover:bg-yellow-500 text-white p-1 transition-colors"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 5v14m7-7H5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <input
+                  value={newGroupSearch}
+                  onChange={(e) => setNewGroupSearch(e.target.value)}
+                  placeholder="Search groups..."
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+                />
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {loadingGroups ? (
+                  <div className="space-y-3 p-4">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <div key={index} className="h-16 animate-pulse rounded-lg bg-slate-100" />
+                    ))}
+                  </div>
+                ) : groups.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-slate-500">No groups yet. Create one to get started!</p>
+                ) : (
+                  groups
+                    .filter((group) =>
+                      group.name.toLowerCase().includes(newGroupSearch.toLowerCase())
+                    )
+                    .map((group) => {
+                      const isActive = group.id === activeGroupId
+                      const lastMessagePreview = group.last_message?.substring(0, 40) || "No messages yet"
+                      const lastMessageTime = group.last_message_at
+                        ? dayjs(group.last_message_at).fromNow()
+                        : ""
+
+                      return (
+                        <button
+                          key={group.id}
+                          onClick={() => handleSelectGroup(group)}
+                          className={`w-full border-b border-slate-100 px-3 py-2.5 text-left transition-all duration-200 ${
+                            isActive ? "bg-slate-100 border-l-4 border-l-yellow-400" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-yellow-200 text-sm font-semibold text-yellow-700 flex-shrink-0">
+                              {group.name.charAt(0).toUpperCase()}
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-slate-900">{group.name}</p>
+                              <p className="mt-1 truncate text-[0.8125rem] text-slate-400">
+                                {lastMessagePreview}
+                              </p>
+                            </div>
+
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                              <p className="text-[11px] text-slate-500">{lastMessageTime}</p>
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })
+                )}
+              </div>
+            </>
+          )}
         </section>
 
-        <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
-          <div className="border-b border-slate-100 px-3 py-2.5">
-            <h2 className="text-base font-semibold text-slate-900">
-              {activeConversation ? getDisplayName(activeConversationPartner) : "Select a conversation"}
-            </h2>
-            {activeConversation && (
-              <p className="mt-1 text-xs text-slate-500">{activeConversationStatus}</p>
+        {/* Direct Chat Window */}
+        {chatMode === "direct" && (
+        <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+          <div className="flex h-full min-h-0 overflow-hidden">
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="shrink-0 border-b border-slate-100 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  {activeConversation ? getDisplayName(activeConversationPartner) : "Select a conversation"}
+                </h2>
+                {activeConversation && (
+                  <p className="mt-1.5 text-xs text-slate-500/80">{activeConversationStatus}</p>
+                )}
+              </div>
+
+              {activeConversation && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (conversationSearchOpen) {
+                      closeConversationSearch()
+                      return
+                    }
+
+                    setConversationSearchOpen(true)
+                  }}
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                  aria-label="Search messages"
+                  title="Search messages"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3-3" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {conversationSearchOpen && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={conversationSearchInputRef}
+                    type="text"
+                    value={conversationSearchQuery}
+                    onChange={(event) => setConversationSearchQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && event.shiftKey) {
+                        event.preventDefault()
+                        goToPreviousSearchMatch()
+                        return
+                      }
+
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        goToNextSearchMatch()
+                      }
+                    }}
+                    placeholder="Search in conversation"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={goToPreviousSearchMatch}
+                    disabled={matchedMessageIds.length === 0}
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Previous result"
+                  >
+                    ↑
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={goToNextSearchMatch}
+                    disabled={matchedMessageIds.length === 0}
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Next result"
+                  >
+                    ↓
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={closeConversationSearch}
+                    className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 transition hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  {conversationSearchQuery.trim() && matchedMessageIds.length === 0
+                    ? "No messages found"
+                    : matchedMessageIds.length > 0
+                      ? `${activeMatchIndex + 1} of ${matchedMessageIds.length}`
+                      : "Search messages in this conversation"}
+                </p>
+              </div>
             )}
           </div>
 
-          <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-2.5 py-2 pb-2.5">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 py-2.5 pb-3 md:px-4">
             {!activeConversation ? (
               <p className="text-sm text-slate-500">Select a conversation to start chatting</p>
             ) : loadingMessages ? (
@@ -2001,13 +4800,27 @@ export default function Chat() {
               <p className="text-sm text-slate-500">No messages yet. Send the first one.</p>
             ) : (
               messages.map((message) => {
-                const mine = message.sender_id === currentUser?.id
-                const showSeen = mine && message.id === lastMessageId && message.is_read === true
+                const mine = message.sender_id === contextUser?.id
+                const messageTickState = getPrivateMessageTickState(message)
+                
                 const senderProfile = profilesById[message.sender_id]
-                const imageUrl = getImageMessageUrl(message)
-                const isImageMessage = Boolean(imageUrl)
+                const imageUrl = loadedImageUrls[message.id] || null
+                const isImageMessage = Boolean(imageUrl) || getMessageType(message) === "image"
+                const isDeletedMessage = message.is_deleted === true
+                const isForwardedMessage = message.is_forwarded === true
                 const reactionSummary = getReactionSummary(message.id)
                 const isReactionPickerOpen = activeReactionPickerMessageId === message.id
+                const isMessageMenuOpen = activeMessageMenuId === message.id
+                const canReplyMessage = !isDeletedMessage
+                const canReactMessage = !isDeletedMessage
+                const canForwardMessage = !isDeletedMessage
+                const canCopyMessage = !isDeletedMessage && Boolean(message.content || imageUrl)
+                const canEditMessage = mine && !isDeletedMessage && !isImageMessage
+                const canUnsendMessage = mine && !isDeletedMessage
+                const canDeleteMessage = mine && !isDeletedMessage
+                const canShowActionTrigger = canReplyMessage || canReactMessage || canForwardMessage || canCopyMessage || canEditMessage || canUnsendMessage || canDeleteMessage
+                const isMatchedMessage = matchedMessageIds.includes(message.id)
+                const isActiveMatchedMessage = matchedMessageIds[activeMatchIndex] === message.id
 
                 return (
                   <div key={message.id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -2016,22 +4829,27 @@ export default function Chat() {
                         <img
                           src={senderProfile.avatar_url}
                           alt={getDisplayName(senderProfile)}
-                          className="mr-2 h-8 w-8 self-end rounded-full object-cover"
+                          className="mr-2 h-8 w-8 shrink-0 self-end rounded-full object-cover"
                         />
                       ) : (
-                        <div className="mr-2 flex h-8 w-8 self-end items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                        <div className="mr-2 flex h-8 w-8 shrink-0 self-end items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
                           {getDisplayName(senderProfile).charAt(0).toUpperCase()}
                         </div>
                       )
                     )}
-                    <div className={`max-w-[52%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
+                    <div className={`max-w-[75%] md:max-w-[58%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
+                      {isForwardedMessage && (
+                        <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-500/60">
+                          Forwarded
+                        </p>
+                      )}
+
                       {message.reply_to_id && (
                         <div className="mb-1.5 border-l-2 border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-600">
                           {(() => {
                             const repliedMessage = messages.find((m) => m.id === message.reply_to_id)
                             if (!repliedMessage) return <span className="italic text-slate-400">Original message unavailable</span>
                             const repliedSender = profilesById[repliedMessage.sender_id]
-                            const repliedImageUrl = getImageMessageUrl(repliedMessage)
                             return (
                               <button
                                 type="button"
@@ -2050,33 +4868,166 @@ export default function Chat() {
                       )}
                       <div
                         id={`message-${message.id}`}
-                        className="relative w-fit cursor-pointer"
-                        onClick={() => setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))}
+                        className={`relative w-fit cursor-pointer ${
+                          isMatchedMessage
+                            ? isActiveMatchedMessage
+                              ? "ring-2 ring-yellow-300/80 ring-offset-2 ring-offset-white"
+                              : "ring-1 ring-yellow-200/80 ring-offset-1 ring-offset-white"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                          setActiveMessageMenuId(null)
+                        }}
                       >
-                        <span className={`absolute ${mine ? "-left-12" : "-right-12"} top-1/2 -translate-y-1/2 flex gap-0.5 rounded-lg border border-slate-200 bg-white px-0.5 py-1 shadow-sm transition md:opacity-0 md:group-hover:opacity-100 ${isReactionPickerOpen ? "opacity-100" : "opacity-70"}`}>
+                        <div
+                          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 flex items-center gap-1 ${mine ? "right-full mr-2" : "left-full ml-2"} ${isReactionPickerOpen || isMessageMenuOpen ? "opacity-100" : "opacity-0 md:group-hover:opacity-100"} transition-opacity duration-150`}
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                              setActiveMessageMenuId(null)
+                            }}
+                            disabled={isDeletedMessage}
+                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100"
+                            title="React"
+                            aria-label="React to message"
+                          >
+                            <SmilePlus className="h-3.5 w-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleReply(message)
                             }}
-                            className="px-1 text-xs text-slate-500 transition hover:text-slate-700"
+                            disabled={isDeletedMessage}
+                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100"
                             title="Reply"
+                            aria-label="Reply to message"
                           >
-                            ↩️
+                            <Reply className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                            }}
-                            className="px-1 text-xs text-slate-500 transition hover:text-slate-700"
-                            title="React"
+                          {canShowActionTrigger && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                                setActiveReactionPickerMessageId(null)
+                              }}
+                              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100"
+                              title="More options"
+                              aria-label="Open message options"
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {isMessageMenuOpen && canShowActionTrigger && (
+                          <div
+                            className={`absolute z-40 top-full mt-2 ${mine ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-slate-700 bg-slate-900/95 p-1.5 text-slate-100 shadow-2xl backdrop-blur transition-all duration-150`}
+                            onClick={(event) => event.stopPropagation()}
                           >
-                            🙂
-                          </button>
-                        </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleReply(message)
+                                setActiveMessageMenuId(null)
+                              }}
+                              disabled={!canReplyMessage}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Reply className="h-3.5 w-3.5" />
+                              Reply
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyMessage(message)}
+                              disabled={!canCopyMessage}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              {isImageMessage && !message.content ? "Copy image link" : "Copy"}
+                            </button>
+
+                            {canEditMessage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleStartEditingMessage(message)
+                                  setActiveMessageMenuId(null)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800"
+                              >
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
+                                Edit
+                              </button>
+                            )}
+
+                            {canForwardMessage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  openForwardModal(message)
+                                  setActiveMessageMenuId(null)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800"
+                              >
+                                <Forward className="h-3.5 w-3.5" />
+                                Forward
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                                setActiveMessageMenuId(null)
+                              }}
+                              disabled={!canReactMessage}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <SmilePlus className="h-3.5 w-3.5" />
+                              React
+                            </button>
+
+                            {canUnsendMessage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleUnsendMessage(message)
+                                  setActiveMessageMenuId(null)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Unsend
+                              </button>
+                            )}
+
+                            {canDeleteMessage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeleteMessage(message)
+                                  setActiveMessageMenuId(null)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        )}
 
                         {isReactionPickerOpen && (
                           <div className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-md`}>
@@ -2096,37 +5047,62 @@ export default function Chat() {
                           </div>
                         )}
 
-                        {isImageMessage ? (
-                          <div className="relative w-fit overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                setImagePreviewUrl(imageUrl)
-                              }}
-                              className="absolute right-2 top-2 z-10 rounded-full bg-black/45 px-2 py-1 text-[10px] text-white"
-                            >
-                              View
-                            </button>
+                        {isDeletedMessage ? (
+                          <div className="w-fit rounded-2xl bg-slate-100 px-2.5 py-1.5 text-[13px] italic text-slate-500">
+                            This message was unsent
+                          </div>
+                        ) : isImageMessage ? (
+                          <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                            <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setImagePreviewUrl(imageUrl)
+                                }}
+                                className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white"
+                              >
+                                View
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                                  setActiveReactionPickerMessageId(null)
+                                }}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs text-white transition hover:bg-black/70"
+                                title="More actions"
+                              >
+                                ⋯
+                              </button>
+                            </div>
                             <img
                               src={imageUrl}
                               alt="Shared media"
                               className="max-h-72 w-full max-w-[260px] object-cover"
                               loading="lazy"
                             />
+                            {message.content && (
+                              <p className={`border-t px-2.5 py-2 text-[13px] ${mine ? "text-slate-800" : "text-slate-700"}`}>
+                                {renderHighlightedMessageText(message.content, message.id)}
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <div
-                            className={`w-fit rounded-2xl px-2.5 py-1.5 text-[14px] ${
+                            className={`w-fit max-w-sm md:max-w-xs rounded-2xl px-2.5 py-1.5 text-[14px] ${
                               mine ? "bg-[#f4b400] text-white" : "bg-[#eef1f6] text-slate-900"
                             }`}
                           >
-                            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                            <p className="whitespace-pre-wrap break-words">
+                              {renderHighlightedMessageText(message.content, message.id)}
+                            </p>
                           </div>
                         )}
                       </div>
 
-                      {reactionSummary.length > 0 && (
+                      {!isDeletedMessage && reactionSummary.length > 0 && (
                         <div className="mt-1 flex flex-wrap gap-1">
                           {reactionSummary.map((item) => (
                             <button
@@ -2146,9 +5122,34 @@ export default function Chat() {
                         </div>
                       )}
 
-                      <p className="mt-1 text-[10px] text-slate-500/80">
-                        {formatTime(message.created_at)}
-                        {showSeen ? " · Seen" : ""}
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-slate-500/60">
+                        <span>
+                          {formatTime(message.created_at)}
+                          {message.edited_at && " � edited"}
+                        </span>
+                        {mine && !isDeletedMessage && messageTickState && (
+                          <span
+                            className={`inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] ${
+                              messageTickState === "read" ? "text-[#0ea5e9]" : "text-slate-400"
+                            }`}
+                            title={
+                              messageTickState === "read"
+                                ? "Read"
+                                : messageTickState === "delivered"
+                                  ? "Delivered"
+                                  : "Sent"
+                            }
+                            aria-label={
+                              messageTickState === "read"
+                                ? "Read"
+                                : messageTickState === "delivered"
+                                  ? "Delivered"
+                                  : "Sent"
+                            }
+                          >
+                            {messageTickState === "sent" ? "✓" : "✓✓"}
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -2158,7 +5159,80 @@ export default function Chat() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="sticky bottom-0 z-10 border-t border-[#eee] bg-white px-2.5 py-2">
+          <div className="z-10 shrink-0 border-t border-[#eee] bg-white px-2.5 py-2">
+            {selectedImageFile && selectedImageComposerUrl && (
+              <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                <div className="mb-2 flex items-start gap-2">
+                  <img
+                    src={selectedImageComposerUrl}
+                    alt="Selected"
+                    className="h-20 w-20 rounded-lg object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-slate-600">Image preview</p>
+                    <p className="mt-0.5 truncate text-[11px] text-slate-500">{selectedImageFile.name}</p>
+                    <input
+                      ref={imageCaptionInputRef}
+                      value={imageCaption}
+                      onChange={(event) => setImageCaption(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault()
+                          handleSendImageMessage()
+                        }
+                      }}
+                      placeholder="Add a caption..."
+                      className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearSelectedImageComposer}
+                    className="rounded-md p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
+                    aria-label="Remove selected image"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={handleSendImageMessage}
+                    disabled={uploadingImage || !activeConversation}
+                    className="rounded-lg bg-[#f4b400] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#e0a500] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {uploadingImage ? "Sending..." : "Send image"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {editingMessage && (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-blue-700">Editing message</p>
+                  <p className="truncate text-xs text-blue-700/80">{editingMessage.content || "[Message]"}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingMessage(null)
+                    setDraft("")
+                    requestAnimationFrame(() => {
+                      inputRef.current?.focus()
+                    })
+                  }}
+                  className="shrink-0 rounded-md p-1 text-blue-500 transition hover:bg-blue-100 hover:text-blue-700"
+                  aria-label="Cancel editing"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
             {replyToMessage && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
                 <div className="min-w-0 flex-1">
@@ -2198,7 +5272,7 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={handleImageButtonClick}
-                disabled={!activeConversation || uploadingImage || sending}
+                disabled={!activeConversation || uploadingImage || sending || Boolean(selectedImageFile)}
                 className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Upload image"
                 title="Upload image"
@@ -2228,21 +5302,877 @@ export default function Chat() {
                     handleSendMessage()
                   }
                 }}
-                disabled={!activeConversation || sending || uploadingImage}
-                placeholder={activeConversation ? "Type a message..." : "Select a conversation first"}
+                disabled={!activeConversation || sending || uploadingImage || Boolean(selectedImageFile)}
+                placeholder={
+                  activeConversation
+                    ? editingMessage
+                      ? "Edit your message..."
+                      : selectedImageFile
+                        ? "Send from image composer..."
+                      : "Type a message..."
+                    : "Select a conversation first"
+                }
                 className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
               />
               <button
                 onClick={handleSendMessage}
-                disabled={!activeConversation || sending || uploadingImage || !draft.trim()}
+                disabled={!activeConversation || sending || uploadingImage || !draft.trim() || Boolean(selectedImageFile)}
                 className="rounded-lg bg-[#f4b400] px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-[#e0a500] disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {sending ? "Sending..." : "Send"}
               </button>
             </div>
           </div>
+          </div>
+          </div>
         </section>
+        )}
+
+        {/* Group Chat Window */}
+        {chatMode === "groups" && (
+        <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+          <div className="flex h-full min-h-0 overflow-hidden">
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+          {activeGroupId ? (
+            <>
+              {/* Header */}
+              <div className="shrink-0 border-b border-slate-100 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-semibold text-slate-900">
+                      {groups.find((g) => g.id === activeGroupId)?.name || "Group Chat"}
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {groupMembers.length} {groupMembers.length === 1 ? "member" : "members"}
+                    </p>
+                  </div>
+
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowMembersDropdown(!showMembersDropdown)}
+                      className="px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                      Members
+                    </button>
+
+                    {showMembersDropdown && (
+                      <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-slate-200 bg-white shadow-lg flex flex-col max-h-96">
+                        {/* Current Members */}
+                        <div className="border-b border-slate-200 px-3 py-2">
+                          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Members</p>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto">
+                          {groupMembers.map((member) => {
+                            const isAdmin = contextUser?.id && groupMembers.some(m => m.user_id === contextUser.id && m.role === 'admin')
+                            const isCurrentUser = member.user_id === contextUser?.id
+                            return (
+                              <div
+                                key={member.user_id}
+                                className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors"
+                              >
+                                {member.profiles?.avatar_url ? (
+                                  <img
+                                    src={member.profiles.avatar_url}
+                                    alt={member.profiles.name || member.profiles.username}
+                                    className="h-8 w-8 rounded-full object-cover flex-shrink-0"
+                                  />
+                                ) : (
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600 flex-shrink-0 bg-gradient-to-br from-slate-300 to-slate-400">
+                                    {(member.profiles?.name || member.profiles?.username || "?").charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-slate-900">
+                                    {member.profiles?.name || member.profiles?.username}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  {member.role === "admin" && (
+                                    <span className="text-[9px] font-bold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded whitespace-nowrap">
+                                      Admin
+                                    </span>
+                                  )}
+                                  {isAdmin && !isCurrentUser && (
+                                    <div className="flex gap-1">
+                                      {member.role === 'member' && (
+                                        <button
+                                          onClick={() => handleMakeMemberAdmin(member.user_id)}
+                                          className="text-[10px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-200 px-1.5 py-0.5 rounded transition-colors"
+                                          title="Make admin"
+                                        >
+                                          Make Admin
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => handleRemoveMember(member.user_id)}
+                                        className="text-[10px] font-medium text-red-600 hover:text-red-900 hover:bg-red-100 px-1.5 py-0.5 rounded transition-colors"
+                                        title="Remove member"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Add People Section */}
+                        <div className="border-t border-slate-200 px-3 py-2">
+                          <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Add People</p>
+                          <input
+                            type="text"
+                            value={memberSearchQuery}
+                            onChange={(e) => setMemberSearchQuery(e.target.value)}
+                            placeholder="Search by username..."
+                            className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded bg-slate-50 outline-none transition focus:border-yellow-400 focus:bg-white"
+                          />
+                          {memberSearchQuery.trim() && (
+                            <div className="mt-2 max-h-32 overflow-y-auto space-y-0.5">
+                              {memberSearchResults.length > 0 ? (
+                                memberSearchResults.map((user) => (
+                                  <button
+                                    key={user.id}
+                                    onClick={() => {
+                                      handleAddMemberToGroup(user.id)
+                                      setMemberSearchQuery('')
+                                      setMemberSearchResults([])
+                                    }}
+                                    className="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm hover:bg-slate-100 rounded transition-colors"
+                                  >
+                                    {user.avatar_url ? (
+                                      <img
+                                        src={user.avatar_url}
+                                        alt={user.name || user.username}
+                                        className="h-6 w-6 rounded-full object-cover flex-shrink-0"
+                                      />
+                                    ) : (
+                                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-600 flex-shrink-0">
+                                        {(user.name || user.username || "?").charAt(0).toUpperCase()}
+                                      </div>
+                                    )}
+                                    <span className="truncate">{user.name || user.username}</span>
+                                  </button>
+                                ))
+                              ) : (
+                                <p className="text-xs text-slate-500 text-center py-2">No users found</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div
+                ref={groupMessagesContainerRef}
+                onClick={() => {
+                  setActiveGroupEmojiPickerMessageId(null)
+                  setActiveGroupMessageMenuId(null)
+                }}
+                className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 py-2.5 pb-3 md:px-4"
+              >
+                {loadingGroupMessages ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-slate-500">Loading messages...</p>
+                  </div>
+                ) : groupMessages.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-slate-500">No messages yet. Start the conversation!</p>
+                  </div>
+                ) : (
+                  groupMessages.map((message) => {
+                    const isMine = message.sender_id === contextUser?.id
+
+                    const reads = groupMessageReads[message.id] || []
+
+                    const seenCount = reads.filter(
+                      (r) => r.user_id !== contextUser?.id
+                    ).length
+                    const totalMembers = Math.max(groupMembers.length - 1, 0)
+                    const readCount = Math.min(seenCount, totalMembers)
+                    const groupTickMarks = totalMembers > 0 ? "✓✓" : "✓"
+
+                    if (isMine) {
+                    }
+
+                    const isOwn = isMine
+                    const sender = message.senderProfile
+                    const messageReactions = groupMessageReactions[message.id] || []
+                    const reactionSummary = {}
+                    messageReactions.forEach((r) => {
+                      reactionSummary[r.reaction] = (reactionSummary[r.reaction] || 0) + 1
+                    })
+                    const isDeleted = message.is_deleted
+                    const isImage = message.type === 'image'
+                    const repliedTo = message.reply_to_id ? groupMessages.find((m) => m.id === message.reply_to_id) : null
+                    const isReactionPickerOpen = activeGroupEmojiPickerMessageId === message.id
+                    const isMessageMenuOpen = activeGroupMessageMenuId === message.id
+                    const canReplyMessage = !isDeleted
+                    const canReactMessage = !isDeleted
+                    const canForwardMessage = !isDeleted
+                    const canCopyMessage = !isDeleted && Boolean(message.content || message.storage_path)
+                    const canDeleteMessage = isOwn && !isDeleted
+                    const canShowActionTrigger =
+                      canReplyMessage || canReactMessage || canForwardMessage || canCopyMessage || canDeleteMessage
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`group relative flex min-w-0 gap-2 ${isOwn ? "justify-end" : "justify-start"}`}
+                      >
+                        {!isOwn && (
+                          <>
+                            {sender?.avatar_url ? (
+                              <img
+                                src={sender.avatar_url}
+                                alt={sender.name || sender.username}
+                                className="h-6 w-6 rounded-full object-cover flex-shrink-0 mt-5"
+                              />
+                            ) : (
+                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600 flex-shrink-0 mt-5">
+                                {(sender?.name || sender?.username || "?").charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        <div
+                          className={`relative flex min-w-0 max-w-[65%] flex-col ${isOwn ? "items-end" : "items-start"}`}
+                        >
+                          {!isOwn && (
+                            <p className="text-xs font-semibold text-slate-600 mb-1">
+                              {sender?.name || sender?.username || "Unknown"}
+                            </p>
+                          )}
+
+                          {/* Reply preview */}
+                          {message.reply_to_id && (
+                            <div className="mb-1.5 border-l-2 border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                              {repliedTo ? (
+                                <>
+                                  <p className="font-semibold text-slate-700">
+                                    {repliedTo.senderProfile?.name || repliedTo.senderProfile?.username || "Unknown"}
+                                  </p>
+                                  <p className="line-clamp-1 italic">{repliedTo.content || "[Image]"}</p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="font-semibold text-slate-700">Reply</p>
+                                  <p className="line-clamp-1 italic text-slate-400">Original message unavailable</p>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          <div
+                            className="relative w-fit cursor-pointer"
+                            onClick={() => {
+                              setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                              setActiveGroupMessageMenuId(null)
+                            }}
+                          >
+                            <div
+                              className={`pointer-events-none absolute top-1/2 -translate-y-1/2 flex items-center gap-1 ${isOwn ? "right-full mr-2" : "left-full ml-2"} ${isReactionPickerOpen || isMessageMenuOpen ? "opacity-100" : "opacity-0 md:group-hover:opacity-100"} transition-opacity duration-150`}
+                            >
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                                  setActiveGroupMessageMenuId(null)
+                                }}
+                                disabled={!canReactMessage}
+                                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="React"
+                                aria-label="React to message"
+                              >
+                                <SmilePlus className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setGroupReplyTo(message)
+                                  setActiveGroupEmojiPickerMessageId(null)
+                                  setActiveGroupMessageMenuId(null)
+                                }}
+                                disabled={!canReplyMessage}
+                                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Reply"
+                                aria-label="Reply to message"
+                              >
+                                <Reply className="h-3.5 w-3.5" />
+                              </button>
+                              {canShowActionTrigger && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setActiveGroupMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                                    setActiveGroupEmojiPickerMessageId(null)
+                                  }}
+                                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100"
+                                  title="More options"
+                                  aria-label="Open message options"
+                                >
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {isMessageMenuOpen && canShowActionTrigger && (
+                              <div
+                                className={`absolute z-40 top-full mt-2 ${isOwn ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-slate-700 bg-slate-900/95 p-1.5 text-slate-100 shadow-2xl backdrop-blur transition-all duration-150`}
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setGroupReplyTo(message)
+                                    setActiveGroupMessageMenuId(null)
+                                  }}
+                                  disabled={!canReplyMessage}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <Reply className="h-3.5 w-3.5" />
+                                  Reply
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleCopyGroupMessage(message)
+                                    setActiveGroupMessageMenuId(null)
+                                  }}
+                                  disabled={!canCopyMessage}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                  {isImage && !message.content ? "Copy image link" : "Copy"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleForwardGroupMessage(message)
+                                    setActiveGroupMessageMenuId(null)
+                                  }}
+                                  disabled={!canForwardMessage}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <Forward className="h-3.5 w-3.5" />
+                                  Forward
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                                    setActiveGroupMessageMenuId(null)
+                                  }}
+                                  disabled={!canReactMessage}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <SmilePlus className="h-3.5 w-3.5" />
+                                  React
+                                </button>
+
+                                {canDeleteMessage && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDeleteGroupConfirmationMessage(message)
+                                      setActiveGroupMessageMenuId(null)
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Delete
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setGroupMessageInfoModalId(message.id)
+                                    setActiveGroupMessageMenuId(null)
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-800"
+                                >
+                                  <Info className="h-3.5 w-3.5" />
+                                  Message info
+                                </button>
+                              </div>
+                            )}
+
+                            {isReactionPickerOpen && (
+                              <div className={`absolute z-20 ${isOwn ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-md`}>
+                                {REACTION_EMOJIS.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      handleAddGroupReaction(message.id, emoji)
+                                      setActiveGroupEmojiPickerMessageId(null)
+                                    }}
+                                    className="rounded-full p-1 text-sm transition hover:bg-slate-100"
+                                    title={emoji}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Message bubble or deleted state */}
+                            {isDeleted ? (
+                              <div className="rounded-lg px-3 py-2 text-sm text-slate-400 italic">
+                                This message was deleted
+                              </div>
+                            ) : isImage && message.storage_path ? (
+                              <div className="relative w-full max-w-full cursor-pointer overflow-hidden rounded-2xl bg-slate-100 shadow-sm">
+                                <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      setDisplayGroupImagePreviewUrl(message.storage_path)
+                                    }}
+                                    className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white transition hover:bg-black/60"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+                                <img
+                                  src={message.storage_path}
+                                  alt={message.file_name || "Image"}
+                                  className="max-h-64 w-full cursor-pointer object-cover transition hover:opacity-90"
+                                  onClick={() => setDisplayGroupImagePreviewUrl(message.storage_path)}
+                                />
+                                {message.caption && (
+                                  <p className="px-2 py-1.5 text-xs text-slate-600 bg-slate-50">
+                                    {message.caption}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              <div
+                                className={`relative w-full rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
+                                  isOwn
+                                    ? "bg-yellow-400 text-yellow-900"
+                                    : "bg-slate-100 text-slate-900"
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Reactions display */}
+                          {Object.keys(reactionSummary).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {Object.entries(reactionSummary).map(([emoji, count]) => (
+                                <button
+                                  key={emoji}
+                                  onClick={() => handleAddGroupReaction(message.id, emoji)}
+                                  type="button"
+                                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-50 transition whitespace-nowrap"
+                                  title={`${count} ${count === 1 ? 'reaction' : 'reactions'}`}
+                                >
+                                  <span className="text-sm">{emoji}</span>
+                                  <span className="text-slate-600 font-medium">{count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-500">
+                            <span>
+                              {dayjs(message.created_at).format("HH:mm")}
+                              {message.edited_at && " � edited"}
+                            </span>
+                            {isOwn && (
+                              <span
+                                className="inline-flex items-center gap-1"
+                                title={readCount > 0 ? `Seen by ${readCount}` : totalMembers > 0 ? "Delivered" : "Sent"}
+                              >
+                                <span className="font-semibold tracking-[-0.08em]">{groupTickMarks}</span>
+                                {readCount > 0 && (
+                                  <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                                    {readCount}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+                <div ref={groupBottomRef} />
+              </div>
+
+              <div className="z-10 shrink-0 border-t border-[#eee] bg-white px-2.5 py-2">
+              {/* Reply preview */}
+              {groupReplyTo && (
+                <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-slate-600">Replying to {groupReplyTo.senderProfile?.name || groupReplyTo.senderProfile?.username || "someone"}</p>
+                    <p className="truncate text-xs text-slate-700">{groupReplyTo.content || "[Image]"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGroupReplyTo(null)}
+                    className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-200 hover:text-slate-600"
+                    aria-label="Cancel reply"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              {/* Edit mode */}
+              {editingGroupMessage && (
+                <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-blue-700">Editing message</p>
+                    <p className="truncate text-xs text-blue-700/80">{editingGroupMessage.content || "[Message]"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingGroupMessage(null)
+                      setGroupDraft("")
+                    }}
+                    className="shrink-0 rounded-md p-1 text-blue-500 transition hover:bg-blue-100 hover:text-blue-700"
+                    aria-label="Cancel editing"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              {/* Image preview when selected */}
+              {groupSelectedImageComposerUrl && (
+                <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-medium text-slate-600">Image selected</p>
+                    <button
+                      onClick={() => {
+                        setGroupSelectedImage(null)
+                        setGroupSelectedImageComposerUrl('')
+                        setGroupImageCaption('')
+                      }}
+                      className="text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      �
+                    </button>
+                  </div>
+                  <img
+                    src={groupSelectedImageComposerUrl}
+                    alt="Selected"
+                    className="max-h-20 max-w-full rounded"
+                  />
+                  <input
+                    type="text"
+                    value={groupImageCaption}
+                    onChange={(e) => setGroupImageCaption(e.target.value)}
+                    placeholder="Add a caption (optional)..."
+                    className="mt-2 w-full text-xs border border-slate-200 rounded px-2 py-1 outline-none focus:border-yellow-400"
+                  />
+                </div>
+              )}
+
+              {/* Typing Indicators */}
+              {Object.keys(groupTypingIndicators).length > 0 && (
+                <div className="mb-1.5 flex items-center gap-1.5 text-xs italic text-slate-600">
+                  <span className="inline-flex gap-1">
+                    <span className="inline-block w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
+                    <span className="inline-block w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></span>
+                    <span className="inline-block w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></span>
+                  </span>
+                  <span>
+                    {Object.keys(groupTypingIndicators).map((userId) => {
+                      const member = groupMembers.find((m) => m.user_id === userId)
+                      return member?.profiles?.name || member?.profiles?.username || "Someone"
+                    }).join(", ")} {Object.keys(groupTypingIndicators).length === 1 ? "is" : "are"} typing...
+                  </span>
+                </div>
+              )}
+
+              {/* Message Input */}
+              <div className="pt-1">
+                <div className="flex gap-2">
+                  <input
+                    type="file"
+                    ref={groupFileInputRef}
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleGroupImageSelected}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => groupFileInputRef.current?.click()}
+                    disabled={groupSelectedImage !== null || uploadingGroupImage}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Attach image"
+                    title="Attach image"
+                  >
+                    ??
+                  </button>
+                  <input
+                    type="text"
+                    value={editingGroupMessage ? editingGroupMessage.content || "" : groupDraft}
+                    onChange={(e) => editingGroupMessage ? null : setGroupDraft(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        if (editingGroupMessage) {
+                          handleUpdateGroupMessage(editingGroupMessage.id, groupDraft)
+                        } else {
+                          handleSendGroupMessage()
+                        }
+                      }
+                    }}
+                    placeholder={editingGroupMessage ? "Edit message..." : "Type your message..."}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400] disabled:bg-slate-50"
+                    disabled={editingGroupMessage ? false : uploadingGroupImage}
+                  />
+                  <button
+                    onClick={() => {
+                      if (groupSelectedImage) {
+                        handleSendGroupMessageWithImage()
+                      } else if (editingGroupMessage) {
+                        handleUpdateGroupMessage(editingGroupMessage.id, groupDraft)
+                      } else {
+                        handleSendGroupMessage()
+                      }
+                    }}
+                    disabled={
+                      (editingGroupMessage ? !groupDraft.trim() : !groupDraft.trim() && !groupSelectedImage) ||
+                      sendingGroup ||
+                      uploadingGroupImage
+                    }
+                    className="px-4 py-2 rounded-lg bg-yellow-400 hover:bg-yellow-500 disabled:bg-slate-300 text-yellow-900 font-medium transition-colors disabled:cursor-not-allowed"
+                  >
+                    {uploadingGroupImage
+                      ? "Uploading..."
+                      : sendingGroup
+                        ? "..."
+                        : editingGroupMessage
+                          ? "Update"
+                          : groupSelectedImage
+                            ? "Send Image"
+                            : "Send"}
+                  </button>
+                </div>
+              </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <p className="text-slate-500">Select a group to start chatting</p>
+            </div>
+          )}
+          </div>
+          </div>
+        </section>
+        )}
       </div>
+
+      {displayGroupImagePreviewUrl && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setDisplayGroupImagePreviewUrl("")}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 rounded-full bg-black/50 px-3 py-1.5 text-sm text-white"
+            onClick={() => setDisplayGroupImagePreviewUrl("")}
+          >
+            Close
+          </button>
+          <img
+            src={displayGroupImagePreviewUrl}
+            alt="Preview"
+            className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
+
+      {deleteGroupConfirmationMessage && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[3px]"
+          onClick={() => setDeleteGroupConfirmationMessage(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="mb-2 text-base font-semibold text-slate-900">Delete message?</h3>
+            <p className="mb-5 text-sm text-slate-600">
+              This will delete the message for everyone in the group.
+            </p>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteGroupConfirmationMessage(null)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteGroupMessage(deleteGroupConfirmationMessage.id)}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white transition hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {groupMessageInfoModalId && (() => {
+        const msg = groupMessages.find((m) => m.id === groupMessageInfoModalId)
+        if (!msg) return null
+        
+        // Only show delivery/read details for sender's own messages
+        const isOwnMessage = msg.sender_id === contextUser?.id
+        const reads = isOwnMessage ? (groupMessageReads[msg.id] || []) : []
+        const readUserIds = new Set(reads.map(r => r.user_id))
+        
+        // Get members who haven't read (excluding sender)
+        const deliveredMembers = isOwnMessage 
+          ? groupMembers.filter(m => m.user_id !== contextUser?.id && !readUserIds.has(m.user_id))
+          : []
+        
+        // Get members who have read (excluding sender)
+        const readMembers = isOwnMessage
+          ? reads.filter(r => r.user_id !== contextUser?.id)
+          : []
+        
+        return (
+          <div
+            className="fixed inset-0 z-[140] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[3px]"
+            onClick={() => setGroupMessageInfoModalId(null)}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h3 className="mb-4 text-base font-semibold text-slate-900">Message info</h3>
+              
+              <div className="space-y-4 text-sm max-h-[400px] overflow-y-auto">
+                {isOwnMessage ? (
+                  <>
+                    {/* Delivered To Section */}
+                    {deliveredMembers.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Delivered to</p>
+                        <div className="space-y-2">
+                          {deliveredMembers.map((member) => (
+                            <div key={member.user_id} className="flex items-center gap-2">
+                              {member.profiles?.avatar_url ? (
+                                <img
+                                  src={member.profiles.avatar_url}
+                                  alt={getDisplayName(member.profiles)}
+                                  className="h-6 w-6 rounded-full object-cover shrink-0"
+                                />
+                              ) : (
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600 shrink-0">
+                                  {getDisplayName(member.profiles).charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <p className="text-slate-700">{getDisplayName(member.profiles)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Read By Section */}
+                    {readMembers.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Read by</p>
+                        <div className="space-y-2">
+                          {readMembers
+                            .slice()
+                            .sort((a, b) => new Date(b.read_at).getTime() - new Date(a.read_at).getTime())
+                            .map((read) => (
+                              <div key={`${read.user_id}-${read.read_at}`} className="flex items-center gap-2">
+                                {read.profile?.avatar_url ? (
+                                  <img
+                                    src={read.profile.avatar_url}
+                                    alt={getDisplayName(read.profile)}
+                                    className="h-6 w-6 rounded-full object-cover shrink-0"
+                                  />
+                                ) : (
+                                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600 shrink-0">
+                                    {getDisplayName(read.profile).charAt(0).toUpperCase()}
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-slate-700 truncate">{getDisplayName(read.profile)}</p>
+                                  <p className="text-[11px] text-slate-500">
+                                    {read.read_at ? dayjs(read.read_at).format("h:mm A") : "Time unavailable"}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* No reads yet message */}
+                    {deliveredMembers.length === 0 && readMembers.length === 0 && (
+                      <p className="text-slate-500 text-sm">No members yet in this group.</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* For non-own messages, show sender and sent time */}
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">From</p>
+                      <p className="text-slate-900">{msg.senderProfile?.name || msg.senderProfile?.username || "Unknown"}</p>
+                    </div>
+                    
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Sent</p>
+                      <p className="text-slate-900">
+                        {dayjs(msg.created_at).format("MMMM D, YYYY � h:mm A")}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-5 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => setGroupMessageInfoModalId(null)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {imagePreviewUrl && (
         <div
@@ -2272,6 +6202,264 @@ export default function Chat() {
           onClick={() => setActiveReactionPickerMessageId(null)}
           aria-label="Close reactions picker"
         />
+      )}
+
+      {activeMessageMenuId && (
+        <button
+          type="button"
+          className="fixed inset-0 z-20 bg-transparent"
+          onClick={() => setActiveMessageMenuId(null)}
+          aria-label="Close message actions"
+        />
+      )}
+
+      {forwardModalOpen && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[3px]"
+          onClick={closeForwardModal}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-900">Forward message</h3>
+              <button
+                type="button"
+                onClick={closeForwardModal}
+                disabled={forwarding}
+                className="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={forwardSearchQuery}
+              onChange={(event) => setForwardSearchQuery(event.target.value)}
+              placeholder="Search chats"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+            />
+
+            <div className="mt-3 max-h-[320px] space-y-1 overflow-y-auto pr-1">
+              {conversations
+                .filter((conversation) => {
+                  const query = forwardSearchQuery.trim().toLowerCase()
+                  if (!query) return true
+
+                  const displayName = getDisplayName(conversation.partner).toLowerCase()
+                  const username = conversation.partner?.username?.toLowerCase() || ""
+                  return displayName.includes(query) || username.includes(query)
+                })
+                .map((conversation) => {
+                  const displayName = getDisplayName(conversation.partner)
+                  const isSelected = selectedForwardConversationIds.includes(conversation.id)
+
+                  return (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      onClick={() => toggleForwardConversation(conversation.id)}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
+                        isSelected
+                          ? "border-yellow-300 bg-yellow-50"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-900">{displayName}</p>
+                        <p className="truncate text-xs text-slate-500">@{conversation.partner?.username || "unknown"}</p>
+                      </div>
+                      <span
+                        className={`ml-3 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] ${
+                          isSelected
+                            ? "border-yellow-400 bg-[#f4b400] text-white"
+                            : "border-slate-300 bg-white text-transparent"
+                        }`}
+                      >
+                        ✓
+                      </span>
+                    </button>
+                  )
+                })}
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeForwardModal}
+                disabled={forwarding}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleForwardMessages}
+                disabled={forwarding || selectedForwardConversationIds.length === 0}
+                className="rounded-lg bg-[#f4b400] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#e0a500] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {forwarding ? "Forwarding..." : `Forward (${selectedForwardConversationIds.length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmationMessage && (
+        <div
+          className="fixed inset-0 z-[140] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[3px]"
+          onClick={() => setDeleteConfirmationMessage(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="mb-2 text-base font-semibold text-slate-900">Unsend message?</h3>
+            <p className="mb-5 text-sm text-slate-600">
+              This will unsend the message for both you and the recipient. This action cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmationMessage(null)}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmDeleteMessage(deleteConfirmationMessage)}
+                className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white transition hover:bg-red-700"
+              >
+                Unsend
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewGroupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Create New Group</h3>
+
+            {/* Group Name Input */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Group Name
+              </label>
+              <input
+                type="text"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Enter group name..."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+              />
+            </div>
+
+            {/* Add Members */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Add Members
+              </label>
+              <input
+                type="text"
+                value={newGroupSearch}
+                onChange={(e) => setNewGroupSearch(e.target.value)}
+                placeholder="Search by username..."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+              />
+
+              {newGroupSearch.trim() && (
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50">
+                  {newGroupSearchResults.length === 0 ? (
+                    <p className="p-3 text-center text-sm text-slate-500">No users found.</p>
+                  ) : (
+                    newGroupSearchResults.map((profile) => (
+                      <button
+                        key={profile.id}
+                        onClick={() => {
+                          setNewGroupSelectedUsers([...newGroupSelectedUsers, profile])
+                          setNewGroupSearch("")
+                          setNewGroupSearchResults([])
+                        }}
+                        className="w-full flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-left hover:bg-slate-100 last:border-0"
+                      >
+                        {profile.avatar_url ? (
+                          <img
+                            src={profile.avatar_url}
+                            alt={profile.name || profile.username}
+                            className="h-7 w-7 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-300 text-xs font-semibold text-slate-700">
+                            {(profile.name || profile.username || "?").charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span className="text-sm font-medium text-slate-900">
+                          {profile.name || profile.username}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Selected Users */}
+              {newGroupSelectedUsers.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {newGroupSelectedUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      className="inline-flex items-center gap-2 rounded-full bg-yellow-100 px-3 py-1"
+                    >
+                      <span className="text-sm font-medium text-yellow-900">
+                        {user.name || user.username}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setNewGroupSelectedUsers(
+                            newGroupSelectedUsers.filter((u) => u.id !== user.id)
+                          )
+                        }
+                        className="text-yellow-700 hover:text-yellow-900"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Buttons */}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  setShowNewGroupModal(false)
+                  setNewGroupName("")
+                  setNewGroupSelectedUsers([])
+                  setNewGroupSearch("")
+                }}
+                className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateGroup}
+                disabled={creatingGroup || !newGroupName.trim() || newGroupSelectedUsers.length === 0}
+                className="px-4 py-2 text-sm font-medium text-yellow-900 bg-yellow-400 hover:bg-yellow-500 disabled:bg-slate-300 rounded-lg transition-colors disabled:cursor-not-allowed"
+              >
+                {creatingGroup ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ReactionModal

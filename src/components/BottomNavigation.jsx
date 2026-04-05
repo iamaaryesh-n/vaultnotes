@@ -8,8 +8,9 @@ export default function BottomNavigation() {
   const [profile, setProfile] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [currentUserId, setCurrentUserId] = useState(null)
-  const [unreadConversationIds, setUnreadConversationIds] = useState([])
-  const unreadChatCount = unreadConversationIds.length
+  const [unreadDirectCount, setUnreadDirectCount] = useState(0)
+  const [unreadGroupCount, setUnreadGroupCount] = useState(0)
+  const unreadChatCount = unreadDirectCount + unreadGroupCount
 
   useEffect(() => {
     fetchProfile()
@@ -51,7 +52,7 @@ export default function BottomNavigation() {
       }
 
       const uniqueConversationIds = [...new Set((data || []).map((item) => item.conversation_id).filter(Boolean))]
-      setUnreadConversationIds(uniqueConversationIds)
+      setUnreadDirectCount(uniqueConversationIds.length)
     } catch (err) {
       console.error("[BottomNav] Exception fetching unread chat count:", err)
     }
@@ -68,18 +69,26 @@ export default function BottomNavigation() {
     const handleUnreadRefresh = (event) => {
       const detail = event?.detail || {}
 
+      if (typeof detail.unreadDirectCount === "number") {
+        setUnreadDirectCount(detail.unreadDirectCount)
+      }
+
+      if (typeof detail.unreadGroupCount === "number") {
+        setUnreadGroupCount(detail.unreadGroupCount)
+      }
+
       if (detail.unreadCountsByConversation) {
         const conversationIds = Object.entries(detail.unreadCountsByConversation)
           .filter(([, count]) => count > 0)
           .map(([conversationId]) => conversationId)
 
-        setUnreadConversationIds(conversationIds)
+        setUnreadDirectCount(conversationIds.length)
         return
       }
 
       if (typeof detail.totalUnreadConversations === "number") {
         if (detail.totalUnreadConversations === 0) {
-          setUnreadConversationIds([])
+          setUnreadDirectCount(0)
         } else {
           fetchUnreadChatCount(currentUserId)
         }
@@ -90,7 +99,11 @@ export default function BottomNavigation() {
     }
 
     window.addEventListener("chatUnreadChanged", handleUnreadRefresh)
-    return () => window.removeEventListener("chatUnreadChanged", handleUnreadRefresh)
+    window.addEventListener("totalChatUnreadChanged", handleUnreadRefresh)
+    return () => {
+      window.removeEventListener("chatUnreadChanged", handleUnreadRefresh)
+      window.removeEventListener("totalChatUnreadChanged", handleUnreadRefresh)
+    }
   }, [currentUserId])
 
   useEffect(() => {
@@ -111,13 +124,7 @@ export default function BottomNavigation() {
           if (!message) return
 
           if (message.receiver_id === currentUserId && message.is_read === false) {
-            setUnreadConversationIds((prev) => {
-              if (prev.includes(message.conversation_id)) {
-                return prev
-              }
-
-              return [...prev, message.conversation_id]
-            })
+            fetchUnreadChatCount(currentUserId)
           }
         }
       )
@@ -174,11 +181,11 @@ export default function BottomNavigation() {
     <>
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 bg-white/95 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="flex h-[72px] justify-around items-end">
+        <div className="flex h-[62px] items-center justify-around">
           {/* Explore */}
           <button
             onClick={() => handleNavigation("/explore")}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/explore") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -201,7 +208,7 @@ export default function BottomNavigation() {
           {/* Workspaces */}
           <button
             onClick={() => handleNavigation("/workspaces")}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/workspaces") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -224,7 +231,7 @@ export default function BottomNavigation() {
           {/* Chat */}
           <button
             onClick={() => handleNavigation("/chat")}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/chat") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -261,7 +268,7 @@ export default function BottomNavigation() {
                 handleNavigation(`/profile/${profile.username}`)
               }
             }}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 transition-colors ${
+            className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/profile") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -286,7 +293,7 @@ export default function BottomNavigation() {
       {/* Floating Create Button */}
       <button
         onClick={handleCreateClick}
-        className="fixed bottom-[84px] right-5 z-[60] h-12 w-12 rounded-full bg-yellow-500 text-white shadow-md transition-all duration-200 hover:bg-yellow-400 hover:shadow-lg active:scale-95 flex items-center justify-center"
+        className="fixed bottom-[72px] right-5 z-[60] h-12 w-12 rounded-full bg-yellow-500 text-white shadow-md transition-all duration-200 hover:bg-yellow-400 hover:shadow-lg active:scale-95 flex items-center justify-center"
       >
         {menuOpen ? (
           <svg
@@ -318,7 +325,7 @@ export default function BottomNavigation() {
       {/* Create Menu */}
       {menuOpen && (
         <div
-          className="fixed bottom-[84px] right-5 z-[60] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fadeIn"
+          className="fixed bottom-[72px] right-5 z-[60] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fadeIn"
           onClick={(e) => e.stopPropagation()}
         >
           <button
