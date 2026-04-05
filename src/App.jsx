@@ -1,8 +1,9 @@
 import { Routes, Route, useLocation } from "react-router-dom"
 import { useEffect, useState } from "react"
-import { supabase } from "./lib/supabase"
 import { useScrollToTop } from "./hooks/useScrollToTop"
+import { useAuth } from "./hooks/useAuth"
 import { ToastProvider } from "./context/ToastContext"
+import { AuthProvider } from "./context/AuthContext"
 import LoadingBar from "./components/LoadingBar"
 import ToastContainer from "./components/ToastContainer"
 import BottomNavigation from "./components/BottomNavigation"
@@ -11,43 +12,26 @@ import Navbar from "./components/Navbar"
 
 import Dashboard from "./pages/Dashboard"
 import WorkspaceDetail from "./pages/WorkspaceDetail"
+import PublicWorkspaceLanding from "./pages/PublicWorkspaceLanding"
+import DiscoverWorkspaces from "./pages/DiscoverWorkspaces"
 import MemoryView from "./pages/MemoryView"
 import MemoryEditor from "./pages/MemoryEditor"
 import Explore from "./pages/Explore"
 import Profile from "./pages/Profile"
 import PublicProfile from "./pages/PublicProfile"
 import Chat from "./pages/Chat"
+import GroupChat from "./pages/GroupChat"
 import Login from "./pages/Login"
 import { Notifications } from "./pages/Notifications"
 
-export default function App() {
+function AppContent() {
   const location = useLocation()
-
-  const [session, setSession] = useState(null)
-  const [authLoading, setAuthLoading] = useState(true)
+  const { user, session, authLoading, logout } = useAuth()
   const [createPostOpen, setCreatePostOpen] = useState(false)
   useScrollToTop()
 
+  // Listen for Create Post event from floating action button
   useEffect(() => {
-
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setAuthLoading(false)
-    })
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session)
-        setAuthLoading(false)
-      }
-    )
-
-    return () => listener.subscription.unsubscribe()
-
-  }, [])
-
-  useEffect(() => {
-    // Listen for Create Post event from floating action button
     const handleOpenCreatePostModal = () => {
       console.log("Create Post clicked")
       setCreatePostOpen(true)
@@ -56,18 +40,6 @@ export default function App() {
     window.addEventListener('openCreatePostModal', handleOpenCreatePostModal)
     return () => window.removeEventListener('openCreatePostModal', handleOpenCreatePostModal)
   }, [])
-
-  const handleLogout = async () => {
-    // Clear all cached encryption keys and decrypted memory data
-    localStorage.clear()
-    sessionStorage.clear()
-    await supabase.auth.signOut()
-    setSession(null)
-  }
-
-  const handleNavbarLogout = () => {
-    setSession(null)
-  }
 
   if (authLoading) {
     return (
@@ -88,94 +60,119 @@ export default function App() {
     )
   }
 
-  const isChatRoute = location.pathname === "/chat"
+  const isChatRoute = location.pathname === "/chat" || location.pathname === "/groups"
 
   return (
-    <ToastProvider>
-      <div className="min-h-screen bg-gray-50">
-        {session && <Navbar onLogout={handleNavbarLogout} />}
-        <ToastContainer />
-        <LoadingBar />
-        {session && <BottomNavigation />}
-        {session && (
-          <CreatePostModal
-            isOpen={createPostOpen}
-            onClose={() => setCreatePostOpen(false)}
-            user={session.user}
-            onPostCreated={() => {
-              // Dispatch event to refresh posts if on profile page
-              window.dispatchEvent(new CustomEvent('postCreated'))
-            }}
-          />
-        )}
-        <main
-          className={session
-            ? `${isChatRoute ? "h-[100dvh] overflow-hidden" : "min-h-screen"} pt-[64px] pb-20`
-            : "min-h-screen"}
-        >
-          <Routes>
+    <div className="min-h-screen bg-gray-50">
+      {user && <Navbar onLogout={logout} />}
+      <ToastContainer />
+      <LoadingBar />
+      {user && <BottomNavigation />}
+      {user && (
+        <CreatePostModal
+          isOpen={createPostOpen}
+          onClose={() => setCreatePostOpen(false)}
+          user={user}
+          onPostCreated={() => {
+            // Dispatch event to refresh posts if on profile page
+            window.dispatchEvent(new CustomEvent('postCreated'))
+          }}
+        />
+      )}
+      <main
+        className={user
+          ? isChatRoute
+            ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
+            : "min-h-screen pt-[64px] pb-20"
+          : "min-h-screen"}
+      >
+        <Routes>
           <Route
             path="/login"
-            element={!session ? <Login /> : <Explore />}
+            element={!user ? <Login /> : <Explore />}
           />
 
           <Route
             path="/"
-            element={session ? <Explore /> : <Login />}
+            element={user ? <Explore /> : <Login />}
           />
 
           <Route
             path="/explore"
-            element={session ? <Explore /> : <Login />}
+            element={user ? <Explore /> : <Login />}
           />
 
           <Route
             path="/workspaces"
-            element={session ? <Dashboard session={session} /> : <Login />}
+            element={user ? <Dashboard session={session} /> : <Login />}
           />
 
           <Route
             path="/profile"
-            element={session ? <Profile /> : <Login />}
+            element={user ? <Profile /> : <Login />}
           />
 
           <Route
             path="/profile/:username"
-            element={session ? <PublicProfile /> : <Login />}
+            element={user ? <PublicProfile /> : <Login />}
           />
 
           <Route
             path="/chat"
-            element={session ? <Chat /> : <Login />}
+            element={user ? <Chat /> : <Login />}
+          />
+
+          <Route
+            path="/groups"
+            element={user ? <GroupChat /> : <Login />}
           />
 
           <Route
             path="/workspace/:id"
-            element={session ? <WorkspaceDetail /> : <Login />}
+            element={user ? <WorkspaceDetail /> : <Login />}
+          />
+
+          <Route
+            path="/workspace-preview/:id"
+            element={user ? <PublicWorkspaceLanding /> : <Login />}
+          />
+
+          <Route
+            path="/discover-workspaces"
+            element={user ? <DiscoverWorkspaces /> : <Login />}
           />
 
           <Route
             path="/workspace/:id/new"
-            element={session ? <MemoryEditor /> : <Login />}
+            element={user ? <MemoryEditor /> : <Login />}
           />
 
           <Route
             path="/workspace/:id/memory/:memoryId"
-            element={session ? <MemoryView /> : <Login />}
+            element={user ? <MemoryView /> : <Login />}
           />
 
           <Route
             path="/workspace/:id/memory/:memoryId/edit"
-            element={session ? <MemoryEditor /> : <Login />}
+            element={user ? <MemoryEditor /> : <Login />}
           />
 
           <Route
             path="/notifications"
-            element={session ? <Notifications /> : <Login />}
+            element={user ? <Notifications /> : <Login />}
           />
-          </Routes>
-        </main>
-      </div>
-    </ToastProvider>
+        </Routes>
+      </main>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
+    </AuthProvider>
   )
 }
