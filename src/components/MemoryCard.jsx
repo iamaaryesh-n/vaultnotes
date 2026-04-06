@@ -1,10 +1,10 @@
-import { useState } from "react"
+import { useState, memo } from "react"
 import { useNavigate } from "react-router-dom"
 import { canDelete } from "../utils/rolePermissions"
 import { handleNavigationClick } from "../utils/navigation"
 import Modal from "./Modal"
 
-export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "", isDeleting = false, userRole = "viewer" }) {
+function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm = "", isDeleting = false, userRole = "viewer", isEncrypted = false }) {
 
   const navigate = useNavigate()
   const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -121,7 +121,11 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
 
       {/* Content Preview */}
       <p className="text-slate-600 text-sm leading-relaxed flex-1 line-clamp-2">
-        {plainContent
+        {isEncrypted || plainContent?.includes("Join workspace to view") ? (
+          <span className="text-slate-500 italic flex items-center gap-2">
+            🔒 <span>Content encrypted • Join workspace to view</span>
+          </span>
+        ) : plainContent
           ? (searchTerm && !searchTerm.startsWith('#')
               ? highlight(getPreview(plainContent), searchTerm).map((seg, i) =>
                   seg.isMatch
@@ -171,3 +175,18 @@ export default function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagCl
 
   )
 }
+
+// Memoize to prevent rerenders when parent rerenders but data hasn't changed
+export default memo(MemoryCard, (prevProps, nextProps) => {
+  // Return true if props are equal (skip rerender), false if different (rerender)
+  return (
+    prevProps.memory.id === nextProps.memory.id &&
+    prevProps.memory.title === nextProps.memory.title &&
+    prevProps.memory.is_favorite === nextProps.memory.is_favorite &&
+    prevProps.memory.content === nextProps.memory.content &&
+    prevProps.isDeleting === nextProps.isDeleting &&
+    prevProps.userRole === nextProps.userRole &&
+    prevProps.searchTerm === nextProps.searchTerm &&
+    prevProps.isEncrypted === nextProps.isEncrypted
+  )
+})

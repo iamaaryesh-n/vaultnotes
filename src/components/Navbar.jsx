@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { useNotifications } from "../hooks/useNotifications"
 import { NotificationDropdown } from "./NotificationDropdown"
+import { globalSearch } from "../lib/globalSearch"
+import { SearchDropdown } from "./SearchDropdown"
 
 export default function Navbar({ onLogout }) {
   const navigate = useNavigate()
@@ -58,14 +60,14 @@ export default function Navbar({ onLogout }) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Debounced search for users
+  // Debounced global search across all content
   useEffect(() => {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current)
     }
 
     if (!searchQuery.trim()) {
-      setSearchResults([])
+      setSearchResults({ users: [], posts: [], workspaces: [], notes: [], isEmpty: true })
       setSearchOpen(false)
       return
     }
@@ -75,25 +77,21 @@ export default function Navbar({ onLogout }) {
 
     debounceTimer.current = setTimeout(async () => {
       try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, username, name, avatar_url")
-          .ilike("username", `%${searchQuery}%`)
-          .limit(8)
-
-        if (error) {
-          console.error("[Navbar] Search error:", error)
-          setSearchResults([])
-        } else {
-          setSearchResults(data || [])
-        }
+        const results = await globalSearch(searchQuery)
+        setSearchResults(results)
+        console.log("[Navbar] Global search completed:", {
+          users: results.users.length,
+          posts: results.posts.length,
+          workspaces: results.workspaces.length,
+          notes: results.notes.length
+        })
       } catch (err) {
-        console.error("[Navbar] Search exception:", err)
-        setSearchResults([])
+        console.error("[Navbar] Global search error:", err)
+        setSearchResults({ users: [], posts: [], workspaces: [], notes: [], isEmpty: true, error: err.message })
       } finally {
         setSearchLoading(false)
       }
-    }, 300)
+    }, 300) // 300ms debounce
 
     return () => {
       if (debounceTimer.current) {
@@ -196,7 +194,7 @@ export default function Navbar({ onLogout }) {
               {/* Search Input */}
               <input
                 type="text"
-                placeholder="Search users..."
+                placeholder="Search users, posts, notes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => searchQuery.trim() && setSearchOpen(true)}
@@ -204,53 +202,23 @@ export default function Navbar({ onLogout }) {
               />
             </div>
 
-            {/* Search Results Dropdown */}
-            {searchOpen && (
-              <div className="absolute top-full left-0 right-0 mt-3 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fadeIn max-h-96 overflow-y-auto z-50">
-                {searchLoading ? (
-                  <div className="px-4 py-8 text-center text-slate-500">
-                    <svg className="animate-spin h-5 w-5 m-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </div>
-                ) : searchResults.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-slate-500 text-sm">
-                    {searchQuery.trim() ? "No users found" : "Type to search..."}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {searchResults.map((result) => (
-                      <button
-                        key={result.id}
-                        onClick={() => {
-                          navigate(`/profile/${result.username}`)
-                          setSearchQuery("")
-                          setSearchResults([])
-                          setSearchOpen(false)
-                        }}
-                        className="w-full px-4 py-3 hover:bg-gray-50 transition-colors duration-150 text-left flex items-center gap-3"
-                      >
-                        {result.avatar_url ? (
-                          <img
-                            src={result.avatar_url}
-                            alt={result.username}
-                            className="w-8 h-8 rounded-full object-cover border border-yellow-200"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-200 to-yellow-100 flex items-center justify-center text-xs font-semibold text-yellow-700 border border-yellow-300">
-                            {result.name?.charAt(0) || result.username?.charAt(0) || "?"}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-gray-900 truncate">@{result.username}</p>
-                          <p className="text-xs text-slate-500 truncate">{result.name || "No name"}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Global Search Results Dropdown */}
+            <SearchDropdown
+              searchOpen={searchOpen}
+              searchLoading={searchLoading}
+              searchResults={searchResults}
+              searchQuery={searchQuery}
+              onClose={() => {
+                setSearchQuery("")
+                setSearchResults({ users: [], posts: [], workspaces: [], notes: [], isEmpty: true })
+                setSearchOpen(false)
+              }}
+              onResultClick={() => {
+                setSearchQuery("")
+                setSearchResults({ users: [], posts: [], workspaces: [], notes: [], isEmpty: true })
+                setSearchOpen(false)
+              }}
+            />
           </div>
 
           {/* Right: Notification Bell and Avatar */}

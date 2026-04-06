@@ -33,3 +33,11 @@ dist-ssr
 # Misc
 coverage
 .cache
+
+# Supabase local temp / generated files
+supabase/.temp/
+.supabase/
+
+# Optional local dumps / debug exports
+*.txt
+*.bak

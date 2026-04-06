@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate, useParams } from "react-router-dom"
 import Modal from "../components/Modal"
@@ -8,6 +8,7 @@ import { PostListSkeleton } from "../components/PostSkeleton"
 import { usePostsRealtime } from "../hooks/usePostsRealtime"
 import { useToast } from "../hooks/useToast"
 import { createNotification } from "../lib/notificationHelpers"
+import VisibilityBadge from "../components/VisibilityBadge"
 
 export default function PublicProfile() {
   const navigate = useNavigate()
@@ -40,7 +41,7 @@ export default function PublicProfile() {
       
       const { data, error } = await supabase
         .from("posts")
-        .select("id, user_id, content, image_url, created_at, profiles(username)")
+        .select("id, user_id, content, image_url, created_at, visibility, profiles(username)")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
 
@@ -105,7 +106,7 @@ export default function PublicProfile() {
             message: `User "@${username}" not found.`,
             onConfirm: () => {
               setModalConfig({ ...modalConfig, open: false })
-              navigate("/")
+              navigate(-1)
             }
           })
         } else {
@@ -116,7 +117,7 @@ export default function PublicProfile() {
             message: "Failed to load profile.",
             onConfirm: () => {
               setModalConfig({ ...modalConfig, open: false })
-              navigate("/")
+              navigate(-1)
             }
           })
         }
@@ -447,6 +448,29 @@ export default function PublicProfile() {
     return date.toLocaleString()
   }
 
+  // Filter posts based on visibility settings and follow status
+  const visiblePosts = useMemo(() => {
+    return posts.filter((post) => {
+      // Show public posts to everyone
+      if (post.visibility === 'public') {
+        return true
+      }
+
+      // Private posts: visible to author and their followers
+      if (post.visibility === 'private') {
+        // Show to author (if viewing own profile through public page)
+        if (currentUser?.id === profile?.id) {
+          return true
+        }
+        // Show to followers of the profile owner
+        return isFollowing
+      }
+
+      // Default: show public posts
+      return post.visibility === 'public'
+    })
+  }, [posts, isFollowing, currentUser?.id, profile?.id])
+
   if (loading) {
     return (
       <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
@@ -468,7 +492,7 @@ export default function PublicProfile() {
         <div className="card p-8 text-center">
           <p className="text-gray-600">Unable to load profile data.</p>
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate(-1)}
             className="btn btn-primary mt-4"
           >
             Back to Dashboard
@@ -566,7 +590,7 @@ export default function PublicProfile() {
           )}
           
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate(-1)}
             className="flex-1 px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 font-semibold hover:bg-gray-50"
           >
             Back
@@ -586,9 +610,13 @@ export default function PublicProfile() {
           <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
             No posts yet
           </div>
+        ) : visiblePosts.length === 0 ? (
+          <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
+            No visible posts
+          </div>
         ) : (
           <div className="space-y-4">
-            {posts.map((post) => (
+            {visiblePosts.map((post) => (
               <article
                 key={post.id}
                 className="border border-slate-200 rounded-xl p-5 bg-white hover:shadow-md transition-shadow duration-200"
@@ -605,7 +633,11 @@ export default function PublicProfile() {
                     >
                       @{post.profiles?.username || "unknown"}
                     </button>
-                    <p className="text-xs text-slate-500">{formatPostTime(post.created_at)}</p>
+                    <p className="text-xs text-slate-500 flex items-center gap-2">
+                      <span>{formatPostTime(post.created_at)}</span>
+                      <span>·</span>
+                      <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
+                    </p>
                   </div>
                 </div>
 

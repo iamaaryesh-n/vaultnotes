@@ -4,7 +4,8 @@ import InviteUserModal from "../components/InviteUserModal"
 import RemoveUserModal from "../components/RemoveUserModal"
 import { canCreate, canDelete, canShare, getUserRole, isViewer } from "../utils/rolePermissions"
 import { verifyWorkspaceAccess } from "../lib/workspaceMembers"
-import { useEffect, useState, useRef } from "react"
+import { isWorkspacePublic, getMemoryViewMode, debugAccessDecision } from "../lib/workspaceAccess"
+import { useEffect, useState, useRef, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { handleNavigationClick } from "../utils/navigation"
@@ -30,9 +31,12 @@ export default function WorkspaceDetail() {
   const [deletingId, setDeletingId] = useState(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showRemoveUserModal, setShowRemoveUserModal] = useState(false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [userRole, setUserRole] = useState(null) // "owner", "editor", or "viewer"
   const [showQuickMemoryModal, setShowQuickMemoryModal] = useState(false)
   const [quickMemoryContent, setQuickMemoryContent] = useState("")
+  const [isMember, setIsMember] = useState(null) // Track if user is member (for read-only access UI)
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false)
 
   // Track initialization to prevent duplicate loads
   const initializeControllerRef = useRef(null)
@@ -62,8 +66,13 @@ export default function WorkspaceDetail() {
     return () => {
       if (initializeControllerRef.current) {
         initializeControllerRef.current.abort()
+        initializeControllerRef.current = null
         console.log("[WorkspaceDetail] Cancelled pending initialization on unmount")
       }
+      // Reset initialization refs to allow re-fetch when navigating back
+      isInitializedRef.current = false
+      isInitializingRef.current = false
+      console.log("[WorkspaceDetail] Reset initialization refs for next visit")
     }
   }, [])
 
@@ -80,13 +89,11 @@ export default function WorkspaceDetail() {
   }
 
   const initialize = async () => {
-    if (isInitializingRef.current) {
-      console.log("[WorkspaceDetail] Initialization already in progress, skipping duplicate request")
-      return
-    }
-
+    // Forcefully reset all refs to clean state at the start
     isInitializingRef.current = true
+    isInitializedRef.current = false
     initializeControllerRef.current = new AbortController()
+
     const startTime = Date.now()
     
     // Set loading state immediately to show skeleton
@@ -106,57 +113,98 @@ export default function WorkspaceDetail() {
         return
       }
 
-      // Step 2: Verify workspace access (membership + key)
-      console.log("[WorkspaceDetail] Step 2: Verifying workspace access (membership + key)...")
-      const accessVerification = await verifyWorkspaceAccess(user.id, id)
+      // Abort check
+      if (initializeControllerRef.current?.signal?.aborted) {
+        console.log("[WorkspaceDetail] ⚠️  Initialization was aborted, exiting cleanly")
+        return
+      }
 
-      if (!accessVerification.isMember) {
-        console.error("[WorkspaceDetail] ❌ User is not a member of this workspace")
+      // Step 2-4: Parallelize independent API calls
+      // - Verify workspace access
+      // - Load user role
+      // - Fetch workspace details & validate schema
+      // - Load sort preference from cache or database
+      console.log("[WorkspaceDetail] Steps 2-4: Running parallel API calls...")
+
+      const [accessVerification, role, workspaceData, cachedSortOrder] = await Promise.all([
+        verifyWorkspaceAccess(user.id, id),
+        getUserRole(id).catch(() => "viewer"), // Non-critical, default to viewer
+        fetchWorkspaceWithCache(), // New function with caching
+        loadSortPreferenceAsync(), // New async function for sort preference
+      ])
+
+      // Abort check
+      if (initializeControllerRef.current?.signal?.aborted) {
+        console.log("[WorkspaceDetail] ⚠️  Initialization was aborted during Steps 2-4, exiting cleanly")
+        return
+      }
+
+      // Track if user is a member
+      setIsMember(accessVerification.isMember)
+      setUserRole(role)
+
+      // Apply cached sort order
+      if (cachedSortOrder) {
+        console.log("[WorkspaceDetail] Applied cached sort order:", cachedSortOrder)
+        setSortOrder(cachedSortOrder)
+      }
+
+      // Check if user can access this workspace
+      // Block ONLY non-members trying to access private workspaces
+      const isPublicWorkspace = accessVerification.workspace?.is_public === true
+      const isMemberOfWorkspace = accessVerification.isMember === true
+      
+      if (!isMemberOfWorkspace && !isPublicWorkspace) {
+        console.error("[WorkspaceDetail] ❌ User cannot access this private workspace")
         showError("You are not a member of this workspace")
         setLoading(false)
         isInitializingRef.current = false
-        setTimeout(() => navigate("/"), 1500)
+        setTimeout(() => navigate(-1), 1500)
         return
       }
 
-      if (!accessVerification.hasKey) {
-        console.error("[WorkspaceDetail] ❌ Encryption key not found for this workspace")
-        showError("Encryption key not found. Cannot access this workspace.")
+      console.log(`[WorkspaceDetail] ✅ Access verified - isMember: ${isMemberOfWorkspace}, is_public: ${isPublicWorkspace}`)
+
+      if (!workspaceData) {
+        console.error("[WorkspaceDetail] ❌ Workspace data not returned from fetch")
         setLoading(false)
         isInitializingRef.current = false
-        setTimeout(() => navigate("/"), 1500)
         return
       }
 
-      console.log("[WorkspaceDetail] ✅ Access verified - user is member with encryption key")
-
-      // Step 3: Load user's role
-      console.log("[WorkspaceDetail] Step 3: Loading user's workspace role...")
-      try {
-        const role = await getUserRole(id)
-        setUserRole(role)
-        console.log(`[WorkspaceDetail] Step 3: User role loaded: ${role}`)
-      } catch (err) {
-        console.warn("[WorkspaceDetail] Failed to load user role, defaulting to viewer:", err)
-        setUserRole("viewer")
+      // Step 5: Determine memory access and fetch based on workspace state
+      console.log("[WorkspaceDetail] Step 5: Determining memory access based on workspace state...")
+      
+      // Single source of truth: workspace data from Step 4 (not state)
+      const workspaceVisibility = workspaceData.visibility ?? (workspaceData.is_public ? "public" : "private")
+      const canViewMemories = accessVerification.isMember || workspaceVisibility === "public"
+      
+      console.log("workspace fetched:", workspaceData)
+      console.log("visibility resolved:", workspaceVisibility)
+      console.log("canViewMemories:", canViewMemories)
+      
+      debugAccessDecision(workspaceData, accessVerification.isMember, "Step 5 - Memory Access Decision")
+      
+      if (canViewMemories && accessVerification.isMember) {
+        // Member: load encryption key and decrypt memories
+        console.log(`[WorkspaceDetail]   → User is member, loading encrypted key and decrypting memories...`)
+        await loadWorkspaceKey()
+      } else if (canViewMemories && !accessVerification.isMember) {
+        // Non-member but public workspace: fetch memory metadata only
+        console.log(`[WorkspaceDetail]   → User is non-member viewing public workspace, fetching memory metadata...`)
+        await fetchMemoriesPublic()
+      } else {
+        // No access
+        console.log("[WorkspaceDetail] ❌ User has no memory access")
+        setMemories([])
+        setLoading(false)
       }
-
-      // Step 4: Fetch workspace details and validate schema (can run in parallel)
-      console.log("[WorkspaceDetail] Step 4: Fetching workspace details and validating schema...")
-      await Promise.all([
-        validateSchema(),
-        fetchWorkspace(),
-      ])
-
-      // Step 5: Load workspace key
-      console.log("[WorkspaceDetail] Step 5: Loading encryption key...")
-      await loadWorkspaceKey()
 
       const elapsed = Date.now() - startTime
       console.log(`[WorkspaceDetail] ✅ Initialization completed in ${elapsed}ms`)
       isInitializedRef.current = true
 
-      // Sort preference is loaded via separate useEffect for proper dependency handling
+      // Sort preference is now loaded in parallel during Step 2-4
     } catch (err) {
       console.error("[WorkspaceDetail] ❌ Initialization error:", err)
       showError("Failed to load workspace")
@@ -168,6 +216,110 @@ export default function WorkspaceDetail() {
     isInitializingRef.current = false
   }
 
+  const fetchWorkspaceWithCache = async () => {
+    // Try to get cached workspace data from sessionStorage
+    const cacheKey = `workspace_cache_${id}`
+    const cachedData = sessionStorage.getItem(cacheKey)
+    
+    if (cachedData) {
+      try {
+        const cached = JSON.parse(cachedData)
+        const cacheAge = Date.now() - cached.timestamp
+        // Use cache if less than 5 minutes old
+        if (cacheAge < 5 * 60 * 1000) {
+          console.log("[WorkspaceDetail/fetchWorkspaceWithCache] Using cached workspace data")
+          setWorkspace(cached.data)
+          return cached.data
+        }
+      } catch (err) {
+        console.error("[WorkspaceDetail/fetchWorkspaceWithCache] Failed to parse cache:", err)
+      }
+    }
+
+    // Cache miss or expired, fetch from database
+    console.log("[WorkspaceDetail/fetchWorkspaceWithCache] Fetching fresh workspace data from database")
+    const { data } = await supabase
+      .from("workspaces")
+      .select("id, name, created_at, created_by, is_public")
+      .eq("id", id)
+      .maybeSingle()
+
+    if (!data) {
+      showError("Workspace not found or access denied")
+      navigate(-1)
+      return null
+    }
+
+    // Cache the data
+    sessionStorage.setItem(cacheKey, JSON.stringify({
+      data,
+      timestamp: Date.now()
+    }))
+
+    setWorkspace(data)
+    return data
+  }
+
+  const loadSortPreferenceAsync = async () => {
+    try {
+      // Try to get from window sessionStorage first (faster than DB)
+      const cacheKey = `sort_preference_${id}`
+      const cached = sessionStorage.getItem(cacheKey)
+      if (cached) {
+        console.log("[loadSortPreferenceAsync] Using cached sort preference:", cached)
+        return cached
+      }
+
+      // Verify workspace ID
+      if (!id) return null
+
+      const {
+        data: { user },
+        error: userError
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        return null
+      }
+
+      // Step 1: Try to get user-specific preference
+      const { data, error } = await supabase
+        .from("user_workspace_preferences")
+        .select("sort_order")
+        .eq("user_id", user.id)
+        .eq("workspace_id", id)
+        .maybeSingle()
+
+      if (error) {
+        // Silently fail - table may not exist or other issue
+        return null
+      }
+
+      // If user has a preference, cache and return it
+      if (data && data.sort_order) {
+        sessionStorage.setItem(cacheKey, data.sort_order)
+        return data.sort_order
+      }
+
+      // Step 2: No user preference found, fetch workspace default_sort as fallback
+      const { data: workspaceData, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("default_sort")
+        .eq("id", id)
+        .maybeSingle()
+
+      if (workspaceError || !workspaceData?.default_sort) {
+        return null
+      }
+
+      sessionStorage.setItem(cacheKey, workspaceData.default_sort)
+      return workspaceData.default_sort
+    } catch (err) {
+      console.error("[loadSortPreferenceAsync] Exception:", err)
+      return null
+    }
+  }
+
   const loadUserRole = async () => {
     try {
       const role = await getUserRole(id)
@@ -177,26 +329,12 @@ export default function WorkspaceDetail() {
     }
   }
 
-  const fetchWorkspace = async () => {
-    const { data } = await supabase
-      .from("workspaces")
-      .select("id, name, created_at, created_by")
-      .eq("id", id)
-      .maybeSingle()
-
-    if (!data) {
-      showError("Workspace not found or access denied")
-      navigate("/")
-      return
-    }
-
-    setWorkspace(data)
-  }
-
   const loadWorkspaceKey = async () => {
 
     // 1️⃣ Try localStorage first
+    console.log(`[WorkspaceDetail/loadWorkspaceKey] Attempting to read key from localStorage with key: workspace_key_${id}`)
     let storedKey = localStorage.getItem(`workspace_key_${id}`)
+    console.log(`[WorkspaceDetail/loadWorkspaceKey] Retrieved from localStorage: ${storedKey ? 'KEY FOUND' : 'NO KEY FOUND'}`, storedKey)
     
     if (storedKey) {
       debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKey - localStorage")
@@ -217,31 +355,61 @@ export default function WorkspaceDetail() {
         return
       }
 
-      const { data, error: keyError } = await supabase
+      let memberKeyFound = false
+      let publicKeyFound = false
+
+      // Try to fetch member key first
+      const { data: memberKey, error: memberKeyError } = await supabase
         .from("workspace_keys")
         .select("encrypted_key")
         .eq("workspace_id", id)
         .eq("user_id", user.id)
+        .eq("key_scope", "member")
         .maybeSingle()
 
-      if (keyError) {
-        console.error("[WorkspaceDetail/loadWorkspaceKey] Database error fetching key:", JSON.stringify(keyError, null, 2))
+      if (memberKey?.encrypted_key) {
+        storedKey = memberKey.encrypted_key
+        memberKeyFound = true
+        console.log("[WorkspaceDetail/loadWorkspaceKey] ✅ Fetched member key from database")
+      } else if (memberKeyError) {
+        console.error("[WorkspaceDetail/loadWorkspaceKey] Database error fetching member key:", JSON.stringify(memberKeyError, null, 2))
+      }
+
+      // If not a member, try public_read key for public workspaces
+      if (!storedKey) {
+        console.log("[WorkspaceDetail/loadWorkspaceKey] Not a member, attempting public read key...")
+        const { data: publicKey, error: publicKeyError } = await supabase
+          .from("workspace_keys")
+          .select("encrypted_key")
+          .eq("workspace_id", id)
+          .is("user_id", null)
+          .eq("key_scope", "public_read")
+          .maybeSingle()
+
+        if (publicKey?.encrypted_key) {
+          storedKey = publicKey.encrypted_key
+          publicKeyFound = true
+          console.log("[WorkspaceDetail/loadWorkspaceKey] ✅ Fetched public read key from database")
+        } else if (publicKeyError) {
+          console.error("[WorkspaceDetail/loadWorkspaceKey] Database error fetching public key:", JSON.stringify(publicKeyError, null, 2))
+        }
       }
       
-      if (!data?.encrypted_key) {
+      // Only show error if BOTH member and public keys failed
+      if (!memberKeyFound && !publicKeyFound) {
         console.error(`[WorkspaceDetail/loadWorkspaceKey] ❌ No encryption key found for workspace ${id} (user: ${user.id})`)
-        console.error("[WorkspaceDetail/loadWorkspaceKey] This workspace is inaccessible without a key. Redirecting to dashboard...")
+        console.error("[WorkspaceDetail/loadWorkspaceKey]   Tried: member key (failed), public_read key (failed)")
+        console.error("[WorkspaceDetail/loadWorkspaceKey] This workspace is inaccessible without a key. Redirecting back...")
         showError("Cannot access this workspace - encryption key not found. Please ensure you have been granted access.")
         setLoading(false)
         
-        // Redirect to dashboard after a short delay to allow user to see the error message
+        // Redirect back after a short delay to allow user to see the error message
         setTimeout(() => {
-          navigate("/")
+          navigate(-1)
         }, 2000)
         return
       }
 
-      storedKey = data.encrypted_key
       debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKey - database")
       
       // Cache locally for fast future loads
@@ -273,86 +441,10 @@ export default function WorkspaceDetail() {
       setLoading(false)
       
       setTimeout(() => {
-        navigate("/")
+        navigate(-1)
       }, 2000)
     }
   }
-
-  const loadSortPreference = async () => {
-    try {
-      // Verify workspace ID
-      
-      if (!id) {
-        return
-      }
-
-      const {
-        data: { user },
-        error: userError
-      } = await supabase.auth.getUser()
-
-      if (userError || !user) {
-        return
-      }
-
-
-      // Step 1: Try to get user-specific preference
-      const { data, error } = await supabase
-        .from("user_workspace_preferences")
-        .select("sort_order")
-        .eq("user_id", user.id)
-        .eq("workspace_id", id)
-        .maybeSingle()
-
-      if (error) {
-        if (error.code === "PGRST204" || error.status === 404) {
-          console.error("[loadSortPreference] TABLE NOT FOUND (404). Table 'user_workspace_preferences' may not exist in Supabase.")
-          console.error("[loadSortPreference] Full error:", error)
-        } else {
-          console.error("[loadSortPreference] Unexpected error:", error)
-        }
-        return
-      }
-
-      // If user has a preference, use it
-      if (data && data.sort_order) {
-        setSortOrder(data.sort_order)
-        return
-      }
-
-      // Step 2: No user preference found, fetch workspace default_sort as fallback
-
-      const { data: workspaceData, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("default_sort")
-        .eq("id", id)
-        .maybeSingle()
-
-      if (workspaceError) {
-        console.warn("[loadSortPreference] Failed to fetch workspace default_sort:", workspaceError)
-        return
-      }
-
-      if (workspaceData && workspaceData.default_sort) {
-        setSortOrder(workspaceData.default_sort)
-      }
-    } catch (err) {
-      console.error("[loadSortPreference] Exception:", err)
-      // Silently fail - UI already has default "newest"
-    }
-  }
-
-  // Load sort preference when workspace ID changes
-  // This ensures preferences are loaded for each new workspace
-  useEffect(() => {
-    if (id) {
-      loadSortPreference()
-    }
-  }, [id])
-
-  // Log whenever sortOrder state changes (for verification)
-  useEffect(() => {
-  }, [sortOrder])
 
   const saveSortPreference = async (newSortOrder) => {
     try {
@@ -404,6 +496,16 @@ export default function WorkspaceDetail() {
   }
 
   const fetchMemories = async (key) => {
+    console.log("[WorkspaceDetail/fetchMemories] Starting memory fetch...")
+    console.log(`[WorkspaceDetail/fetchMemories] Encryption key received:`, key ? 'KEY PRESENT' : 'KEY IS NULL')
+
+    if (!key) {
+      console.error("[WorkspaceDetail/fetchMemories] ❌ No encryption key provided! Cannot decrypt memories.")
+      showError("Encryption key missing. Cannot load memories.")
+      setMemories([])
+      setLoading(false)
+      return
+    }
 
     const { data, error } = await supabase
       .from("memories")
@@ -421,39 +523,195 @@ export default function WorkspaceDetail() {
       .order("updated_at", { ascending: false });
 
     if (error) {
+      console.error("[WorkspaceDetail/fetchMemories] ❌ Database error:", error)
+      console.error("[WorkspaceDetail/fetchMemories]   Error code:", error.code)
+      console.error("[WorkspaceDetail/fetchMemories]   Error message:", error.message)
       showError("Failed to load memories")
       setMemories([])
       setLoading(false)
       return
     }
 
+    console.log(`[WorkspaceDetail/fetchMemories] Retrieved ${data?.length || 0} memories from database`)
+
     if (data && data.length > 0) {
 
-      const decrypted = await Promise.all(
-        data.map(async (memory) => {
+      try {
+        const decrypted = await Promise.all(
+          data.map(async (memory) => {
 
-          const text = await decrypt(
-            memory.encrypted_content,
-            memory.iv,
-            key
-          )
+            const text = await decrypt(
+              memory.encrypted_content,
+              memory.iv,
+              key
+            )
 
-          return {
-            ...memory,
-            content: text
-          }
+            return {
+              ...memory,
+              content: text
+            }
 
-        })
-      )
+          })
+        )
 
-      setMemories(decrypted)
+        console.log(`[WorkspaceDetail/fetchMemories] ✅ Successfully decrypted ${decrypted.length} memories`)
+        setMemories(decrypted)
+      } catch (decryptErr) {
+        console.error("[WorkspaceDetail/fetchMemories] ❌ Decryption failed:", decryptErr)
+        showError("Failed to decrypt memories")
+        setMemories([])
+      }
 
     } else {
+      console.log("[WorkspaceDetail/fetchMemories] ℹ️  No memories found in workspace")
       setMemories([])
     }
 
     setLoading(false)
 
+  }
+
+  const fetchMemoriesPublic = async () => {
+    // For public workspace viewers: fetch and decrypt using public_read key
+    console.log("[WorkspaceDetail/fetchMemoriesPublic] Fetching full content for public workspace viewer...")
+    console.log("[WorkspaceDetail/fetchMemoriesPublic]   Workspace ID:", id)
+
+    // 1️⃣ Fetch the public read key
+    console.log("[WorkspaceDetail/fetchMemoriesPublic] Step 1: Fetching public read encryption key...")
+    const { data: keyData, error: keyError } = await supabase
+      .from("workspace_keys")
+      .select("encrypted_key")
+      .eq("workspace_id", id)
+      .is("user_id", null)
+      .eq("key_scope", "public_read")
+      .maybeSingle()
+
+    if (keyError || !keyData?.encrypted_key) {
+      console.warn("[WorkspaceDetail/fetchMemoriesPublic] ⚠️  No public key available - showing metadata only")
+      // Fallback to metadata-only view
+      await fetchMemoriesPublicMetadataOnly()
+      return
+    }
+
+    console.log("[WorkspaceDetail/fetchMemoriesPublic] ✅ Public read key fetched")
+
+    // 2️⃣ Validate the key
+    const keyValidation = validateKey(keyData.encrypted_key)
+    if (!keyValidation.isValid) {
+      console.error("[WorkspaceDetail/fetchMemoriesPublic] ❌ Public key validation failed:", keyValidation.error)
+      await fetchMemoriesPublicMetadataOnly()
+      return
+    }
+
+    try {
+      // 3️⃣ Import the key
+      const publicKey = await importKey(keyData.encrypted_key)
+      console.log("[WorkspaceDetail/fetchMemoriesPublic] ✅ Public key imported successfully")
+
+      // 4️⃣ Fetch memories
+      const { data, error } = await supabase
+        .from("memories")
+        .select(`
+          id,
+          title,
+          encrypted_content,
+          iv,
+          created_at,
+          updated_at,
+          workspace_id,
+          tags,
+          is_favorite
+        `)
+        .eq("workspace_id", id)
+        .order("updated_at", { ascending: false })
+
+      if (error) {
+        console.error("[WorkspaceDetail/fetchMemoriesPublic] ❌ Error fetching memories:", error)
+        await fetchMemoriesPublicMetadataOnly()
+        setLoading(false)
+        return
+      }
+
+      // 5️⃣ Decrypt memories
+      if (data && data.length > 0) {
+        console.log("[WorkspaceDetail/fetchMemoriesPublic] Decrypting " + data.length + " memories...")
+        
+        const decrypted = await Promise.all(
+          data.map(async (memory) => {
+            try {
+              const text = await decrypt(
+                memory.encrypted_content,
+                memory.iv,
+                publicKey
+              )
+              return {
+                ...memory,
+                content: text,
+                isEncrypted: false
+              }
+            } catch (err) {
+              console.error("[WorkspaceDetail/fetchMemoriesPublic] Decryption failed for memory " + memory.id, err)
+              return {
+                ...memory,
+                content: "[Unable to decrypt]",
+                isEncrypted: true
+              }
+            }
+          })
+        )
+
+        console.log(`[WorkspaceDetail/fetchMemoriesPublic] ✅ Successfully decrypted ${decrypted.length} memories for public viewer`)
+        setMemories(decrypted)
+      } else {
+        console.log("[WorkspaceDetail/fetchMemoriesPublic] No memories found in this workspace")
+        setMemories([])
+      }
+
+    } catch (err) {
+      console.error("[WorkspaceDetail/fetchMemoriesPublic] ❌ Decryption error:", err)
+      await fetchMemoriesPublicMetadataOnly()
+    }
+
+    setLoading(false)
+  }
+
+  const fetchMemoriesPublicMetadataOnly = async () => {
+    // Fallback: fetch metadata only when key not available
+    console.log("[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] Fetching memory metadata (no decryption)...")
+
+    const { data, error } = await supabase
+      .from("memories")
+      .select(`
+        id,
+        title,
+        created_at,
+        updated_at,
+        workspace_id,
+        tags,
+        is_favorite
+      `)
+      .eq("workspace_id", id)
+      .order("updated_at", { ascending: false })
+
+    if (error) {
+      console.error("[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] ❌ Error:", error)
+      setMemories([])
+      return
+    }
+
+    if (data && data.length > 0) {
+      const memories = data.map((memory) => ({
+        ...memory,
+        content: "[Content encrypted - not available]",
+        isEncrypted: true,
+      }))
+
+      console.log(`[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] ✅ Loaded ${memories.length} memory titles (encrypted)`)
+      setMemories(memories)
+    } else {
+      console.log("[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] No memories found")
+      setMemories([])
+    }
   }
 
   const addMemory = async () => {
@@ -550,32 +808,124 @@ export default function WorkspaceDetail() {
     }
   }
 
-  const filteredMemories = memories
-    .filter((memory) => {
-      if (showFavoritesOnly && !memory.is_favorite) return false
-      const term = searchTerm.toLowerCase()
-      if (!term) return true
-      // Tag-specific search
-      if (term.startsWith("#")) {
-        const tagQuery = term.slice(1).trim()
-        if (!tagQuery) return true
-        return memory.tags?.some(tag => tag.toLowerCase().includes(tagQuery))
+  const handleToggleVisibility = async () => {
+    if (!workspace || !canShare(userRole)) {
+      showError("Only workspace owner can change visibility")
+      return
+    }
+
+    setIsTogglingVisibility(true)
+    try {
+      const newIsPublic = !workspace.is_public
+      console.log(`[WorkspaceDetail/toggleVisibility] Toggling workspace visibility from ${workspace.is_public} to ${newIsPublic}`)
+
+      // Update workspace visibility in database
+      const { error: updateError } = await supabase
+        .from("workspaces")
+        .update({ is_public: newIsPublic })
+        .eq("id", id)
+
+      if (updateError) {
+        console.error("[WorkspaceDetail/toggleVisibility] ❌ Failed to update workspace:", updateError)
+        showError("Failed to update workspace visibility")
+        setIsTogglingVisibility(false)
+        return
       }
-      // Full text search (case-insensitive)
-      const matchTitle = memory.title?.toLowerCase().includes(term)
-      const matchContent = memory.content?.toLowerCase().replace(/<[^>]+>/g, ' ').includes(term)
-      const matchTags = memory.tags?.some(tag => tag.toLowerCase().includes(term))
-      return matchTitle || matchContent || matchTags
-    })
-    // Client-side sort: favorites on top, then by created_at based on sortOrder
-    .sort((a, b) => {
-      if (a.is_favorite === b.is_favorite) {
-        const dateA = new Date(a.created_at)
-        const dateB = new Date(b.created_at)
-        return sortOrder === "newest" ? dateB - dateA : dateA - dateB
+
+      // Handle key scope changes
+      if (!workspace.is_public && newIsPublic) {
+        // Switching to public: create public_read key
+        console.log("[WorkspaceDetail/toggleVisibility] Creating public_read key...")
+        
+        // Get the member key to use as the foundation
+        const { data: memberKeyData, error: memberKeyError } = await supabase
+          .from("workspace_keys")
+          .select("encrypted_key")
+          .eq("workspace_id", id)
+          .eq("key_scope", "member")
+          .maybeSingle()
+
+        if (memberKeyError || !memberKeyData) {
+          console.error("[WorkspaceDetail/toggleVisibility] ❌ Could not fetch member key:", memberKeyError)
+          showError("Warning: Could not create public access key")
+        } else {
+          // Insert public_read key
+          const { error: publicKeyError } = await supabase
+            .from("workspace_keys")
+            .insert({
+              workspace_id: id,
+              user_id: null,
+              encrypted_key: memberKeyData.encrypted_key,
+              key_scope: 'public_read'
+            })
+
+          if (publicKeyError) {
+            console.error("[WorkspaceDetail/toggleVisibility] ⚠️  Failed to create public key:", publicKeyError)
+            showError("Warning: Could not create public access key")
+          } else {
+            console.log("[WorkspaceDetail/toggleVisibility] ✅ Public read key created")
+          }
+        }
+      } else if (workspace.is_public && !newIsPublic) {
+        // Switching to private: remove public_read key
+        console.log("[WorkspaceDetail/toggleVisibility] Deleting public_read key...")
+        
+        const { error: deleteError } = await supabase
+          .from("workspace_keys")
+          .delete()
+          .eq("workspace_id", id)
+          .is("user_id", null)
+          .eq("key_scope", "public_read")
+
+        if (deleteError) {
+          console.error("[WorkspaceDetail/toggleVisibility] ⚠️  Failed to delete public key:", deleteError)
+          console.warn("[WorkspaceDetail/toggleVisibility] This is non-critical - public viewers simply won't have access")
+        } else {
+          console.log("[WorkspaceDetail/toggleVisibility] ✅ Public read key deleted")
+        }
       }
-      return a.is_favorite ? -1 : 1
-    })
+
+      // Update local state
+      setWorkspace({ ...workspace, is_public: newIsPublic })
+      success(`Workspace is now ${newIsPublic ? 'public' : 'private'}`)
+      setShowSettingsModal(false)
+
+    } catch (err) {
+      console.error("[WorkspaceDetail/toggleVisibility] ❌ Unexpected error:", err)
+      showError("Failed to toggle visibility")
+    } finally {
+      setIsTogglingVisibility(false)
+    }
+  }
+
+  const filteredMemories = useMemo(() => {
+    return memories
+      .filter((memory) => {
+        if (showFavoritesOnly && !memory.is_favorite) return false
+        const term = searchTerm.toLowerCase()
+        if (!term) return true
+        // Tag-specific search
+        if (term.startsWith("#")) {
+          const tagQuery = term.slice(1).trim()
+          if (!tagQuery) return true
+          return memory.tags?.some(tag => tag.toLowerCase().includes(tagQuery))
+        }
+        // Full text search (case-insensitive)
+        const matchTitle = memory.title?.toLowerCase().includes(term)
+        const matchContent = memory.content?.toLowerCase().replace(/<[^>]+>/g, ' ').includes(term)
+        const matchTags = memory.tags?.some(tag => tag.toLowerCase().includes(term))
+        return matchTitle || matchContent || matchTags
+      })
+      // Client-side sort: favorites on top, then by created_at based on sortOrder
+      .sort((a, b) => {
+        if (a.is_favorite === b.is_favorite) {
+          const dateA = new Date(a.created_at)
+          const dateB = new Date(b.created_at)
+          return sortOrder === "newest" ? dateB - dateA : dateA - dateB
+        }
+        return a.is_favorite ? -1 : 1
+      })
+  }, [memories, searchTerm, showFavoritesOnly, sortOrder])
 
   if (loading) {
     return (
@@ -600,6 +950,17 @@ export default function WorkspaceDetail() {
         >
           ← Back to Workspaces
         </button>
+
+        {/* Non-Member Viewing Public Workspace Banner */}
+        {!isMember && workspace && isWorkspacePublic(workspace) && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
+            <div className="text-xl">👁️</div>
+            <div className="flex-1">
+              <p className="font-semibold text-blue-900">Viewing as Guest</p>
+              <p className="text-sm text-blue-700 mt-1">You're viewing this public workspace with read-only access. Join to create and edit memories.</p>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 mb-8">
           {/* Row 1: Title and Buttons */}
@@ -630,6 +991,17 @@ export default function WorkspaceDetail() {
                   title="Invite users to workspace - Owner only"
                 >
                   📤 Share
+                </button>
+              )}
+
+              {/* Settings Button - Owner Only */}
+              {canShare(userRole) && (
+                <button
+                  onClick={() => setShowSettingsModal(true)}
+                  className="bg-slate-600 hover:bg-slate-500 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                  title="Workspace settings - Owner only"
+                >
+                  ⚙️ Settings
                 </button>
               )}
               
@@ -720,7 +1092,13 @@ export default function WorkspaceDetail() {
           emptyMessage={
             showFavoritesOnly 
               ? "No favorite memories yet ⭐\nStar a memory to pin it here"
-              : (searchTerm ? "No results found 🔍" : "No memories yet ✨\nStart capturing your thoughts")
+              : (searchTerm 
+                  ? "No results found 🔍" 
+                  : (!isMember && workspace && isWorkspacePublic(workspace)
+                      ? "No memories shared yet 📝\nJoin workspace to create memories"
+                      : "No memories yet ✨\nStart capturing your thoughts"
+                    )
+                )
           }
         />
 
@@ -747,6 +1125,53 @@ export default function WorkspaceDetail() {
             loadUserRole()
           }}
         />
+      )}
+
+      {/* Workspace Settings Modal */}
+      {showSettingsModal && (
+        <Modal
+          open={true}
+          title="Workspace Settings"
+          onCancel={() => setShowSettingsModal(false)}
+        >
+          <div className="p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-semibold mb-4 text-gray-900">Visibility</h3>
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <div>
+                  <p className="font-medium text-gray-900">
+                    {workspace?.is_public ? '🌐 Public' : '🔒 Private'}
+                  </p>
+                  <p className="text-sm text-slate-600 mt-1">
+                    {workspace?.is_public 
+                      ? 'Anyone can view memories in this workspace' 
+                      : 'Only members can access this workspace'}
+                  </p>
+                </div>
+                <button
+                  onClick={handleToggleVisibility}
+                  disabled={isTogglingVisibility}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    workspace?.is_public
+                      ? 'bg-red-500 hover:bg-red-600 text-white'
+                      : 'bg-green-500 hover:bg-green-600 text-white'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {isTogglingVisibility ? 'Updating...' : workspace?.is_public ? 'Make Private' : 'Make Public'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-gray-900 font-medium transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       <Modal

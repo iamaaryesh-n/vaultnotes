@@ -1,11 +1,19 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate } from "react-router-dom"
+import { motion, AnimatePresence } from "framer-motion"
 import Modal from "../components/Modal"
 import PostInteractions from "../components/PostInteractions"
 import { useSmartFetchPosts } from "../hooks/useSmartFetchPosts"
 import { PostListSkeleton } from "../components/PostSkeleton"
 import { usePostsRealtime } from "../hooks/usePostsRealtime"
+import { EditProfileModal } from "../components/EditProfileModal"
+import { FollowersModal } from "../components/FollowersModal"
+import { FollowingModal } from "../components/FollowingModal"
+import { useToast } from "../hooks/useToast"
+import { fetchUserPublicWorkspaces } from "../lib/globalSearch"
+import VisibilityBadge from "../components/VisibilityBadge"
+import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 
 export default function Profile() {
   const navigate = useNavigate()
@@ -23,6 +31,15 @@ export default function Profile() {
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "", onConfirm: null })
   const [editMode, setEditMode] = useState(false)
+  const [editProfileModalOpen, setEditProfileModalOpen] = useState(false)
+  const [followersModalOpen, setFollowersModalOpen] = useState(false)
+  const [followingModalOpen, setFollowingModalOpen] = useState(false)
+  const [followersCount, setFollowersCount] = useState(0)
+  const [followingCount, setFollowingCount] = useState(0)
+  const [activeTab, setActiveTab] = useState("posts")
+  const [isFollowing, setIsFollowing] = useState(false)
+  const [workspaces, setWorkspaces] = useState([])
+  const [workspacesLoading, setWorkspacesLoading] = useState(false)
   
   // Smart fetch posts with caching
   const {
@@ -40,7 +57,7 @@ export default function Profile() {
       
       const { data, error } = await supabase
         .from("posts")
-        .select("id, user_id, content, image_url, created_at, profiles(username)")
+        .select("id, user_id, content, image_url, created_at, visibility, profiles(username)")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
 
@@ -58,6 +75,18 @@ export default function Profile() {
   useEffect(() => {
     fetchUserAndProfile()
   }, [])
+
+  useEffect(() => {
+    if (profile) {
+      fetchFollowCounts()
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    if (profile) {
+      fetchWorkspaces()
+    }
+  }, [profile?.id, user?.id])
 
   const fetchUserAndProfile = async () => {
     try {
@@ -151,6 +180,96 @@ export default function Profile() {
       })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchFollowCounts = async () => {
+    if (!profile?.id) return
+
+    try {
+      // Fetch followers count
+      const { count: followers, error: followersError } = await supabase
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("following_id", profile.id)
+
+      if (!followersError) {
+        setFollowersCount(followers || 0)
+      }
+
+      // Fetch following count
+      const { count: following, error: followingError } = await supabase
+        .from("follows")
+        .select("*", { count: "exact", head: true })
+        .eq("follower_id", profile.id)
+
+      if (!followingError) {
+        setFollowingCount(following || 0)
+      }
+
+      console.log("[Profile] Follow counts:", { followers, following })
+    } catch (err) {
+      console.error("[Profile] Error fetching follow counts:", err)
+    }
+  }
+
+  const fetchWorkspaces = async () => {
+    if (!profile?.id || !user?.id) return
+
+    try {
+      setWorkspacesLoading(true)
+      const isOwnProfile = user.id === profile.id
+
+      if (isOwnProfile) {
+        // Own profile: fetch all workspaces (public + private)
+        const { data: memberData, error: memberError } = await supabase
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("user_id", profile.id)
+
+        if (memberError) {
+          console.error("[Profile] Error fetching workspace memberships:", memberError)
+          setWorkspaces([])
+          return
+        }
+
+        const workspaceIds = (memberData || []).map(m => m.workspace_id)
+        
+        if (workspaceIds.length === 0) {
+          setWorkspaces([])
+          return
+        }
+
+        const { data: workspaceData, error: workspaceError } = await supabase
+          .from("workspaces")
+          .select("id, name, created_at, is_public")
+          .in("id", workspaceIds)
+          .order("created_at", { ascending: false })
+
+        if (workspaceError) {
+          console.error("[Profile] Error fetching workspaces:", workspaceError)
+          setWorkspaces([])
+          return
+        }
+
+        setWorkspaces(workspaceData || [])
+      } else {
+        // Other user's profile: fetch only their public workspaces
+        console.log("[Profile] Fetching public workspaces for user:", profile.id, "name:", profile.name)
+        const publicWorkspaces = await fetchUserPublicWorkspaces(profile.id)
+        console.log("[Profile] Found", publicWorkspaces.length, "public workspaces for this user")
+        if (publicWorkspaces.length > 0) {
+          console.log("[Profile] Workspaces:", publicWorkspaces.map(w => ({ id: w.id, name: w.name, is_public: w.is_public })))
+        } else {
+          console.log("[Profile] This user has no public workspaces")
+        }
+        setWorkspaces(publicWorkspaces)
+      }
+    } catch (err) {
+      console.error("[Profile] Exception fetching workspaces:", err)
+      setWorkspaces([])
+    } finally {
+      setWorkspacesLoading(false)
     }
   }
 
@@ -253,9 +372,9 @@ export default function Profile() {
       return false
     }
 
-    // Check format (lowercase letters and numbers only)
-    if (!/^[a-z0-9]+$/.test(username)) {
-      setUsernameError("Username can only contain lowercase letters and numbers")
+    // Check format (lowercase letters, numbers, and underscore only)
+    if (!/^[a-z0-9_]+$/.test(username)) {
+      setUsernameError("Username can only contain lowercase letters, numbers, and underscore")
       return false
     }
 
@@ -352,6 +471,56 @@ export default function Profile() {
       })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleEditProfileSave = async (updateData) => {
+    if (!user) return
+
+    // Validate username if changed
+    if (updateData.username !== profile?.username) {
+      // Check if username is taken
+      const { data: existingUser, error: checkError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("username", updateData.username)
+        .neq("id", user.id)
+        .single()
+
+      if (existingUser) {
+        throw new Error("Username is already taken")
+      }
+
+      if (checkError && checkError.code !== "PGRST116") {
+        throw new Error(checkError.message)
+      }
+    }
+
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update(updateData)
+        .eq("id", user.id)
+
+      if (error) {
+        throw new Error(error.message)
+      }
+
+      setProfile({ ...profile, ...updateData })
+      setNameInput(updateData.name)
+      setUsernameInput(updateData.username)
+      setBioInput(updateData.bio)
+
+      window.dispatchEvent(new CustomEvent("profileUpdated", { detail: updateData }))
+
+      setModalConfig({
+        open: true,
+        title: "Success",
+        message: "Profile updated!",
+        onConfirm: () => setModalConfig({ ...modalConfig, open: false })
+      })
+    } catch (err) {
+      throw err
     }
   }
 
@@ -499,13 +668,19 @@ export default function Profile() {
 
   if (loading) {
     return (
-      <div style={{ maxWidth: "500px" }} className="mx-auto px-6 py-12">
-        <h1 className="text-4xl text-yellow-500 font-bold mb-8">Profile</h1>
-        <div className="card p-8 animate-pulse">
-          <div className="h-32 bg-slate-200 rounded-full mx-auto mb-6 w-32"></div>
-          <div className="h-6 bg-slate-200 rounded mb-4 w-3/4 mx-auto"></div>
-          <div className="h-4 bg-slate-200 rounded mb-4 w-1/2 mx-auto"></div>
-          <div className="h-10 bg-slate-200 rounded mt-6"></div>
+      <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-12">
+        <div className="animate-pulse space-y-6">
+          <div className="text-center space-y-4">
+            <div className="w-32 h-32 rounded-full bg-slate-200 mx-auto"></div>
+            <div className="h-8 bg-slate-200 rounded w-3/4 mx-auto"></div>
+            <div className="h-4 bg-slate-200 rounded w-1/2 mx-auto"></div>
+          </div>
+          <div className="h-10 bg-slate-200 rounded"></div>
+          <div className="space-y-4">
+            {Array(3).fill(0).map((_, i) => (
+              <div key={i} className="h-24 bg-slate-200 rounded-lg"></div>
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -513,257 +688,375 @@ export default function Profile() {
 
   if (!user || !profile) {
     return (
-      <div style={{ maxWidth: "500px" }} className="mx-auto px-6 py-12">
-        <h1 className="text-4xl text-yellow-500 font-bold mb-8">Profile</h1>
-        <div className="card p-8 text-center">
-          <p className="text-gray-600">Unable to load profile data.</p>
-          <button
-            onClick={() => navigate("/")}
-            className="btn btn-primary mt-4"
-          >
-            Back to Dashboard
-          </button>
-        </div>
+      <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-12 text-center">
+        <p className="text-slate-600 mb-4">Unable to load profile data.</p>
+        <button
+          onClick={() => navigate(-1)}
+          className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors"
+        >
+          Back to Home
+        </button>
       </div>
     )
   }
 
   return (
-    <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
-      <h1 className="text-4xl text-yellow-500 font-bold mb-8">Profile</h1>
+    <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-8">
+      {/* ========== Premium Profile Header ========== */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden mb-8"
+      >
+        {/* Cover / Header Area */}
+        <div className="h-24 md:h-32 bg-gradient-to-r from-blue-500 to-cyan-500"></div>
 
-      {/* ============ SECTION 1: PROFILE HEADER ============ */}
-      <div className="card p-8 mb-8">
-        {/* Avatar Section (always visible) */}
-        <div className="text-center mb-8">
-          {avatarUrl ? (
-            <img
-              src={avatarUrl}
-              alt="Avatar"
-              className="w-32 h-32 rounded-full mx-auto object-cover border-4 border-yellow-200 mb-4"
-            />
-          ) : (
-            <div className="w-32 h-32 rounded-full mx-auto bg-gradient-to-br from-yellow-100 to-yellow-50 border-4 border-yellow-200 flex items-center justify-center mb-4">
-              <svg
-                className="w-16 h-16 text-yellow-400"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-              </svg>
-            </div>
-          )}
-
-          <label
-            htmlFor="avatar-upload"
-            className={`block w-full px-4 py-3 rounded-lg font-semibold transition-all duration-200 shadow-sm cursor-pointer text-center ${
-              uploading
-                ? "bg-gray-400 text-gray-700 cursor-not-allowed opacity-50"
-                : "bg-yellow-500 hover:bg-yellow-400 text-gray-900 hover:shadow-md"
-            }`}
-          >
-            {uploading ? "Uploading..." : avatarUrl ? "Change Avatar" : "Upload Avatar"}
-          </label>
-          <input
-            id="avatar-upload"
-            type="file"
-            accept="image/*"
-            onChange={handleAvatarUpload}
-            disabled={uploading}
-            className="hidden"
-          />
-        </div>
-
-        {editMode ? (
-          /* ===== EDIT MODE ===== */
-          <>
-            {/* Name Input */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Name</label>
-              <input
-                type="text"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                placeholder="Enter your name"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent"
-              />
-            </div>
-
-            {/* Username Input */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Username</label>
-              <input
-                type="text"
-                value={usernameInput}
-                onChange={handleUsernameChange}
-                placeholder="Enter your username (lowercase, numbers only)"
-                className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:border-transparent ${
-                  usernameError
-                    ? "border-red-300 focus:ring-red-400"
-                    : "border-gray-300 focus:ring-yellow-400"
-                }`}
-              />
-              {usernameError && (
-                <p className="text-xs text-red-600 mt-1">{usernameError}</p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">3-20 characters, lowercase letters and numbers only</p>
-            </div>
-
-            {/* Bio Input */}
-            <div className="mb-8">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Bio</label>
-              <textarea
-                value={bioInput}
-                onChange={(e) => setBioInput(e.target.value)}
-                placeholder="Write a short bio..."
-                rows={3}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent resize-none"
-              />
-            </div>
-
-            {/* Edit Mode Buttons */}
-            <div className="flex gap-3 mb-6">
-              <button
-                onClick={() => {
-                  setEditMode(false)
-                  setNameInput(profile?.name || "")
-                  setUsernameInput(profile?.username || "")
-                  setBioInput(profile?.bio || "")
-                  setUsernameError("")
-                }}
-                disabled={saving}
-                className="flex-1 px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 font-semibold hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveChanges}
-                disabled={saving || !nameInput.trim() || !usernameInput.trim()}
-                className="flex-1 px-4 py-3 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-bold disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save Changes"}
-              </button>
-            </div>
-
-            <button
-              onClick={() => navigate("/")}
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 font-semibold hover:bg-gray-50"
-            >
-              Back to Dashboard
-            </button>
-          </>
-        ) : (
-          /* ===== VIEW MODE ===== */
-          <>
-            {/* Profile Info Display */}
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-gray-900">{profile?.name || "User"}</h2>
-              <p className="text-slate-500">@{profile?.username || "username"}</p>
-              {profile?.bio ? (
-                <p className="text-sm text-slate-600 mt-2 max-w-xl mx-auto">{profile.bio}</p>
+        {/* Profile Content */}
+        <div className="relative px-6 md:px-8 pb-6">
+          {/* Avatar */}
+          <div className="flex flex-col md:flex-row md:items-end md:gap-6 -mt-16 md:-mt-12 mb-6">
+            <div className="relative mb-4 md:mb-0">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Avatar"
+                  className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg"
+                />
               ) : (
-                <p className="text-sm text-slate-400 mt-2">No bio added yet.</p>
+                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 border-4 border-white flex items-center justify-center text-4xl font-bold text-white shadow-lg">
+                  {profile?.name?.charAt(0)?.toUpperCase() || "?"}
+                </div>
+              )}
+              <label className="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 cursor-pointer transition-colors shadow-lg">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {/* Profile Info */}
+            <div className="flex-1">
+              <h1 className="text-3xl md:text-4xl font-bold text-slate-900">{profile?.name || "User"}</h1>
+              <p className="text-lg text-slate-600">@{profile?.username || "username"}</p>
+              {profile?.bio && (
+                <p className="text-slate-700 mt-2 max-w-2xl">{profile.bio}</p>
               )}
             </div>
 
-            {/* View Mode Buttons */}
-            <div className="flex gap-3 mb-3">
-              <button
-                onClick={() => setEditMode(true)}
-                className="flex-1 px-4 py-3 rounded-lg bg-blue-500 hover:bg-blue-400 text-white font-bold"
+            {/* Edit Button */}
+            <div className="md:ml-auto">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setEditProfileModalOpen(true)}
+                className="w-full md:w-auto px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors shadow-sm"
               >
                 Edit Profile
-              </button>
-              <button
-                onClick={handleLogout}
-                className="flex-1 px-4 py-3 rounded-lg bg-red-500 hover:bg-red-400 text-white font-bold"
-              >
-                Logout
-              </button>
-              <button
-                onClick={() => navigate("/")}
-                className="flex-1 px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 font-semibold hover:bg-gray-50"
-              >
-                Back
-              </button>
+              </motion.button>
             </div>
-          </>
-        )}
-      </div>
-
-      {/* ============ SECTION 2: POSTS LIST ============ */}
-      <div className="card p-8">
-        <div className="mb-6">
-          <h3 className="text-2xl font-bold text-gray-900">Posts</h3>
-        </div>
-
-        {postsLoading ? (
-          <PostListSkeleton count={3} />
-        ) : posts.length === 0 ? (
-          <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
-            No posts yet
           </div>
-        ) : (
-          <div className="space-y-4">
-            {posts.map((post) => {
-              const isOwner = user?.id === post.user_id
 
-              return (
-                <article
-                  key={post.id}
-                  className="border border-slate-200 rounded-xl p-5 bg-white hover:shadow-md transition-shadow duration-200"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div className="flex flex-col gap-1">
-                      <button
-                        onClick={() => {
-                          if (post.profiles?.username) {
-                            navigate(`/profile/${post.profiles.username}`)
-                          }
-                        }}
-                        className="text-xs text-blue-500 hover:text-blue-700 hover:underline cursor-pointer font-medium text-left"
-                      >
-                        @{post.profiles?.username || "unknown"}
-                      </button>
-                      <p className="text-xs text-slate-500">{formatPostTime(post.created_at)}</p>
-                    </div>
-                    {isOwner && (
+          {/* Stats */}
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-4 pt-6 border-t border-slate-200">
+            {[
+              { label: "Posts", value: posts.length },
+              { label: "Followers", value: followersCount, onClick: () => setFollowersModalOpen(true), clickable: true },
+              { label: "Following", value: followingCount, onClick: () => setFollowingModalOpen(true), clickable: true },
+              { label: "Notes", value: 0 },
+              { label: "Workspaces", value: 0 }
+            ].map((stat, i) => (
+              <motion.button
+                key={i}
+                whileHover={stat.clickable ? { backgroundColor: "#f1f5f9" } : {}}
+                onClick={stat.onClick}
+                disabled={!stat.clickable}
+                className={`text-center py-3 rounded-lg transition-colors ${stat.clickable ? "hover:bg-slate-100 cursor-pointer" : ""}`}
+              >
+                <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+                <p className="text-xs text-slate-600 mt-1">{stat.label}</p>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* ========== Tabs ========== */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1 }}
+        className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200"
+      >
+        {["posts", "notes", "workspaces", "media"].map((tab) => (
+          <motion.button
+            key={tab}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 font-semibold rounded-lg transition-all whitespace-nowrap ${
+              activeTab === tab
+                ? "bg-blue-500 text-white shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+          </motion.button>
+        ))}
+      </motion.div>
+
+      {/* ========== Tab Content ========== */}
+      <AnimatePresence mode="wait">
+        {activeTab === "posts" && (
+          <motion.div
+            key="posts"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {postsLoading ? (
+              <PostListSkeleton count={3} />
+            ) : posts.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+                <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v12a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-slate-500 font-medium">No posts yet</p>
+                <p className="text-slate-400 text-sm">Share your first post with the community!</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {posts.map((post, index) => (
+                  <motion.article
+                    key={post.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="border border-slate-200/60 rounded-xl bg-white p-5 hover:shadow-md transition-all duration-200"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex flex-col gap-1">
+                        <button
+                          onClick={() => {
+                            if (post.profiles?.username) {
+                              navigate(`/profile/${post.profiles.username}`)
+                            }
+                          }}
+                          className="text-sm font-medium text-blue-500 hover:text-blue-700 hover:underline text-left"
+                        >
+                          @{post.profiles?.username || "unknown"}
+                        </button>
+                        <p className="text-xs text-slate-500 flex items-center gap-2">
+                          <span>{formatPostTime(post.created_at)}</span>
+                          <span>·</span>
+                          <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
+                        </p>
+                      </div>
                       <button
                         onClick={() => handleDeletePost(post.id)}
                         disabled={deletingPostId === post.id}
-                        className="text-xs px-3 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50"
+                        className="text-xs px-3 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors"
                       >
                         {deletingPostId === post.id ? "Deleting..." : "Delete"}
                       </button>
+                    </div>
+
+                    {post.content && (
+                      <p className="text-gray-800 whitespace-pre-wrap leading-relaxed mb-3">{post.content}</p>
                     )}
-                  </div>
 
-                  {post.content && (
-                    <p className="text-gray-800 whitespace-pre-wrap leading-relaxed mb-3">{post.content}</p>
-                  )}
+                    {post.image_url && (
+                      <img
+                        src={post.image_url}
+                        alt="Post"
+                        className="w-full rounded-lg border border-slate-200 object-cover max-h-96 mb-3"
+                      />
+                    )}
 
-                  {post.image_url && (
-                    <img
-                      src={post.image_url}
-                      alt="Post"
-                      className="w-full rounded-lg border border-slate-200 object-cover max-h-96"
+                    <PostInteractions
+                      post={post}
+                      initialComments={commentsByPost[post.id] || []}
+                      initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
                     />
-                  )}
-
-                  {/* Post Interactions */}
-                  <PostInteractions
-                    post={post}
-                    initialComments={commentsByPost[post.id] || []}
-                    initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
-                  />
-                </article>
-              )
-            })}
-          </div>
+                  </motion.article>
+                ))}
+              </div>
+            )}
+          </motion.div>
         )}
-      </div>
 
-      {/* Modal for messages */}
+        {activeTab === "notes" && (
+          <motion.div
+            key="notes"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50"
+          >
+            <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <p className="text-slate-500 font-medium">Notes feature coming soon</p>
+          </motion.div>
+        )}
+
+        {activeTab === "workspaces" && (
+          <motion.div
+            key="workspaces"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {workspacesLoading ? (
+              <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+                <p className="text-slate-500 font-medium">Loading workspaces...</p>
+              </div>
+            ) : workspaces.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
+                <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 5a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2zm0 0a2 2 0 012 2v12a2 2 0 01-2 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2zm6 0v2M7 9h2" />
+                </svg>
+                <p className="text-slate-500 font-medium">No workspaces yet</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {(() => {
+                  const isOwnProfile = user?.id === profile?.id
+                  const publicWorkspaces = workspaces.filter(ws => ws.is_public)
+                  const privateWorkspaces = workspaces.filter(ws => !ws.is_public)
+
+                  return (
+                    <>
+                      {/* Public Workspaces Section */}
+                      {publicWorkspaces.length > 0 && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                            <span>🌍</span> Public Workspaces
+                          </h3>
+                          <div className="space-y-2">
+                            {publicWorkspaces.map((workspace) => (
+                              <motion.div
+                                key={workspace.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className="border border-slate-200 rounded-lg bg-white p-4 hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-0.5"
+                                onClick={() => navigate(`/workspace/${workspace.id}`)}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <p className="font-medium text-gray-900">{workspace.name}</p>
+                                      <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                      Created {new Date(workspace.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                    </p>
+                                  </div>
+                                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Private Workspaces Section (Own profile only) */}
+                      {isOwnProfile && privateWorkspaces.length > 0 && (
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                            <span>🔒</span> Private Workspaces
+                          </h3>
+                          <div className="space-y-2">
+                            {privateWorkspaces.map((workspace) => (
+                              <motion.div
+                                key={workspace.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                className="border border-slate-200 rounded-lg bg-white p-4 hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-0.5"
+                                onClick={() => navigate(`/workspace/${workspace.id}`)}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <p className="font-medium text-gray-900">{workspace.name}</p>
+                                      <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                      Created {new Date(workspace.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                                    </p>
+                                  </div>
+                                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === "media" && (
+          <motion.div
+            key="media"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+            className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50"
+          >
+            <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-slate-500 font-medium">Media gallery coming soon</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ========== Modals ========== */}
+      <EditProfileModal
+        isOpen={editProfileModalOpen}
+        onClose={() => setEditProfileModalOpen(false)}
+        profile={profile}
+        avatarUrl={avatarUrl}
+        onSave={handleEditProfileSave}
+        onAvatarUpload={handleAvatarUpload}
+        uploading={uploading}
+      />
+
+      <FollowersModal
+        isOpen={followersModalOpen}
+        onClose={() => setFollowersModalOpen(false)}
+        userId={profile?.id}
+        currentUserId={user?.id}
+      />
+
+      <FollowingModal
+        isOpen={followingModalOpen}
+        onClose={() => setFollowingModalOpen(false)}
+        userId={profile?.id}
+        currentUserId={user?.id}
+      />
+
+      {/* Standard Modal */}
       <Modal
         isOpen={modalConfig.open}
         title={modalConfig.title}
