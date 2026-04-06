@@ -8,7 +8,10 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
 import { WorkspaceListSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
+import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 import { useWorkspaceCacheStore } from "../stores/workspaceCacheStore"
+import { fetchAllPublicWorkspaces } from "../lib/globalSearch"
+import { motion } from "framer-motion"
 
 export default function Dashboard({ session }) {
 
@@ -30,7 +33,14 @@ export default function Dashboard({ session }) {
   const [ownerCounts, setOwnerCounts] = useState(cachedData?.ownerCounts || {}) // {workspaceId: ownerCount}
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
   const [workspaceName, setWorkspaceName] = useState("")
+  const [workspaceIsPublic, setWorkspaceIsPublic] = useState(false)
   const [workspaceDeleteTarget, setWorkspaceDeleteTarget] = useState(null)
+  const [editVisibilityId, setEditVisibilityId] = useState(null)
+  const [currentVisibilityState, setCurrentVisibilityState] = useState(false)
+  const [editVisibilityValue, setEditVisibilityValue] = useState(false)
+  const [updatingVisibility, setUpdatingVisibility] = useState(false)
+  const [publicWorkspaces, setPublicWorkspaces] = useState([])
+  const [publicWorkspacesLoading, setPublicWorkspacesLoading] = useState(false)
 
   // Track fetch state to prevent duplicate calls
   const fetchControllerRef = useRef(null)
@@ -107,7 +117,7 @@ export default function Dashboard({ session }) {
       // Step 2: Fetch workspace details
       const { data: workspaceData, error: workspaceError } = await supabase
         .from("workspaces")
-        .select("id, name, created_at, created_by")
+        .select("id, name, created_at, created_by, is_public")
         .in("id", workspaceIds)
         .order("created_at", { ascending: false })
 
@@ -164,94 +174,235 @@ export default function Dashboard({ session }) {
     setCreating(true)
     setShowCreateWorkspaceModal(false)
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      showError("Not authenticated")
-      setCreating(false)
-      return
-    }
-
     try {
-      const key = await generateKey()
-      const exportedKey = await exportKey(key)
+      // ===== STEP 0: AUTH CHECK =====
+      console.log("[Dashboard/createWorkspace] Starting workspace creation flow...")
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-      const keyValidation = validateKey(exportedKey)
-      debugLogKey(exportedKey, "Dashboard/createWorkspace")
-      if (!keyValidation.isValid) {
-        console.error("[Dashboard/createWorkspace] exported key is invalid:", keyValidation.error)
-        showError("Failed to generate valid encryption key")
+      if (userError) {
+        console.error("[Dashboard/createWorkspace] Auth error:", userError)
+        showError(`Authentication error: ${userError.message}`)
         setCreating(false)
         return
       }
 
-      const { data: workspace, error } = await supabase
-        .from("workspaces")
-        .insert({
-          name,
-          created_by: user.id,
-        })
-        .select()
-        .single()
-
-      if (error) {
-        console.error("Workspace creation error:", error)
-        showError("Failed to create workspace")
+      if (!user) {
+        console.error("[Dashboard/createWorkspace] No authenticated user")
+        showError("Not authenticated. Please log in again.")
         setCreating(false)
         return
       }
 
+      console.log(`[Dashboard/createWorkspace] User authenticated: ${user.id}`)
 
-      localStorage.setItem(`workspace_key_${workspace.id}`, exportedKey)
-
-      const { data: memberRow } = await supabase
-        .from("workspace_members")
-        .select("id")
-        .eq("workspace_id", workspace.id)
-        .eq("user_id", user.id)
-        .single()
-
-      if (!memberRow) {
-        console.warn("Owner trigger did not fire - inserting member row manually")
-        const { error: memberError } = await supabase
-          .from("workspace_members")
-          .insert({ workspace_id: workspace.id, user_id: user.id, role: "owner" })
-        if (memberError) {
-          console.error("Failed to add owner membership:", JSON.stringify(memberError, null, 2))
-          showError("Workspace created but access could not be established")
+      // ===== STEP 1: GENERATE ENCRYPTION KEY =====
+      console.log("[Dashboard/createWorkspace] Step 1: Generating encryption key...")
+      let key, exportedKey
+      try {
+        key = await generateKey()
+        exportedKey = await exportKey(key)
+        
+        const keyValidation = validateKey(exportedKey)
+        debugLogKey(exportedKey, "Dashboard/createWorkspace")
+        
+        if (!keyValidation.isValid) {
+          console.error("[Dashboard/createWorkspace] Key validation failed:", keyValidation.error)
+          showError(`Encryption key generation failed: ${keyValidation.error}`)
           setCreating(false)
           return
         }
+        console.log("[Dashboard/createWorkspace] ✅ Encryption key generated and validated")
+      } catch (keyErr) {
+        console.error("[Dashboard/createWorkspace] Key generation exception:", keyErr)
+        showError(`Failed to generate encryption key: ${keyErr.message}`)
+        setCreating(false)
+        return
       }
 
+      // ===== STEP 2: INSERT WORKSPACE =====
+      console.log("[Dashboard/createWorkspace] Step 2: Inserting workspace row...")
+      const createPayload = {
+        name,
+        created_by: user.id,
+        is_public: workspaceIsPublic,
+      }
+      console.log("[Dashboard/createWorkspace]   Payload:", createPayload)
 
-      setWorkspaces((prev) => [workspace, ...prev])
+      const { data: workspace, error: workspaceError } = await supabase
+        .from("workspaces")
+        .insert(createPayload)
+        .select()
+        .single()
 
-      supabase
+      if (workspaceError) {
+        console.error("[Dashboard/createWorkspace] ❌ Workspace insert failed:", workspaceError)
+        console.error("[Dashboard/createWorkspace]   Error code:", workspaceError.code)
+        console.error("[Dashboard/createWorkspace]   Error message:", workspaceError.message)
+        console.error("[Dashboard/createWorkspace]   Full error:", JSON.stringify(workspaceError, null, 2))
+        showError(`Failed to create workspace: ${workspaceError.message}`)
+        setCreating(false)
+        return
+      }
+
+      if (!workspace?.id) {
+        console.error("[Dashboard/createWorkspace] ❌ Workspace inserted but no ID returned")
+        showError("Workspace created but ID not returned. Please refresh.")
+        setCreating(false)
+        return
+      }
+
+      console.log(`[Dashboard/createWorkspace] ✅ Workspace created: ${workspace.id}`)
+      console.log(`[Dashboard/createWorkspace]   is_public in DB: ${workspace.is_public}`)
+
+      // Cache key in localStorage immediately
+      localStorage.setItem(`workspace_key_${workspace.id}`, exportedKey)
+      console.log(`[Dashboard/createWorkspace] ✅ Encryption key cached in localStorage`)
+
+      // ===== STEP 3: INSERT OWNER MEMBERSHIP =====
+      console.log(`[Dashboard/createWorkspace] Step 3: Establishing owner membership (workspace: ${workspace.id}, user: ${user.id})...`)
+      
+      // First, check if membership already exists (might have been created by a trigger)
+      const { data: existingMember, error: checkError } = await supabase
+        .from("workspace_members")
+        .select("id, role")
+        .eq("workspace_id", workspace.id)
+        .eq("user_id", user.id)
+        .maybeSingle()
+
+      if (checkError) {
+        console.warn("[Dashboard/createWorkspace] ⚠️  Error checking membership:", checkError)
+        // Don't fail here - will try insert anyway
+      }
+
+      if (existingMember) {
+        console.log(`[Dashboard/createWorkspace] ✅ Membership already exists (role: ${existingMember.role}) - likely created by database trigger`)
+      } else {
+        // Membership doesn't exist, insert it
+        console.log("[Dashboard/createWorkspace]   Membership not found, inserting...")
+        const { error: memberError } = await supabase
+          .from("workspace_members")
+          .insert({
+            workspace_id: workspace.id,
+            user_id: user.id,
+            role: "owner"
+          })
+
+        if (memberError) {
+          // Check if it's a duplicate key error (race condition - trigger beat us)
+          if (memberError.code === '23505' || memberError.message?.includes('duplicate key')) {
+            console.warn("[Dashboard/createWorkspace] ⚠️  Duplicate key error (trigger likely created the row) - this is normal")
+            console.log("[Dashboard/createWorkspace]   Verifying membership was created...")
+            
+            // Verify it was created
+            const { data: verifyMember, error: verifyError } = await supabase
+              .from("workspace_members")
+              .select("id, role")
+              .eq("workspace_id", workspace.id)
+              .eq("user_id", user.id)
+              .maybeSingle()
+            
+            if (verifyError) {
+              console.error("[Dashboard/createWorkspace] ❌ Could not verify membership after duplicate key error:", verifyError)
+              showError(`Membership verification failed: ${verifyError.message}`)
+              setCreating(false)
+              return
+            }
+
+            if (verifyMember) {
+              console.log("[Dashboard/createWorkspace] ✅ Membership verified (role: " + verifyMember.role + ")")
+            } else {
+              console.error("[Dashboard/createWorkspace] ❌ Membership not found after insert attempt")
+              showError("Failed to establish workspace ownership")
+              setCreating(false)
+              return
+            }
+          } else {
+            // Unknown error
+            console.error("[Dashboard/createWorkspace] ❌ Membership insert failed:", memberError)
+            console.error("[Dashboard/createWorkspace]   Error code:", memberError.code)
+            console.error("[Dashboard/createWorkspace]   Error message:", memberError.message)
+            console.error("[Dashboard/createWorkspace]   Full error:", JSON.stringify(memberError, null, 2))
+            showError(`Failed to establish ownership: ${memberError.message}`)
+            setCreating(false)
+            return
+          }
+        } else {
+          console.log("[Dashboard/createWorkspace] ✅ Owner membership inserted successfully")
+        }
+      }
+
+      // ===== STEP 4: INSERT WORKSPACE KEY =====
+      console.log("[Dashboard/createWorkspace] Step 4: Storing encryption key in database...")
+      
+      // Insert member key (user-specific)
+      const { error: keyError } = await supabase
         .from("workspace_keys")
         .insert({
           workspace_id: workspace.id,
           user_id: user.id,
           encrypted_key: exportedKey,
-        })
-        .then(({ error: keyError }) => {
-          if (keyError) {
-            console.error("[Dashboard/createWorkspace] Key storage error:", keyError)
-          }
+          key_scope: 'member'
         })
 
-      success("Workspace created")
+      if (keyError) {
+        console.error("[Dashboard/createWorkspace] ⚠️  Workspace key storage failed:", keyError)
+        console.error("[Dashboard/createWorkspace]   Error code:", keyError.code)
+        console.error("[Dashboard/createWorkspace]   Error message:", keyError.message)
+        console.error("[Dashboard/createWorkspace]   Full error:", JSON.stringify(keyError, null, 2))
+        // Don't fail the whole flow - key is cached in localStorage anyway
+        console.warn("[Dashboard/createWorkspace] Continuing despite key storage issue (localStorage backup available)")
+      } else {
+        console.log("[Dashboard/createWorkspace] ✅ Member encryption key stored in database")
+      }
+
+      // If public workspace, also insert a public read key (shared, no user_id)
+      if (workspaceIsPublic) {
+        console.log("[Dashboard/createWorkspace] Step 4b: Storing public read key for shared access...")
+        const { error: publicKeyError } = await supabase
+          .from("workspace_keys")
+          .insert({
+            workspace_id: workspace.id,
+            user_id: null,  // No user - shared for all public viewers
+            encrypted_key: exportedKey,
+            key_scope: 'public_read'
+          })
+
+        if (publicKeyError) {
+          console.error("[Dashboard/createWorkspace] ⚠️  Public read key storage failed:", publicKeyError)
+          console.error("[Dashboard/createWorkspace]   Error code:", publicKeyError.code)
+          console.error("[Dashboard/createWorkspace]   Error message:", publicKeyError.message)
+          console.warn("[Dashboard/createWorkspace] Continuing - public read key optional")
+        } else {
+          console.log("[Dashboard/createWorkspace] ✅ Public read key stored for shared access")
+        }
+      }
+
+      // ===== STEP 5: UPDATE LOCAL STATE AND NAVIGATE =====
+      console.log("[Dashboard/createWorkspace] Step 5: Updating UI and navigating...")
+      
+      setWorkspaces((prev) => [workspace, ...prev])
+      success(`Workspace "${name}" created!`)
+      
       await fetchWorkspaces()
       window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: workspace.id } }))
+      
       setCreating(false)
+      
+      // Navigate to the new workspace
+      console.log(`[Dashboard/createWorkspace] ✅ Navigating to /workspace/${workspace.id}`)
+      setTimeout(() => {
+        navigate(`/workspace/${workspace.id}`)
+      }, 500)
+
     } catch (err) {
-      console.error("Workspace creation failed:", err)
-      showError("Something went wrong")
+      console.error("[Dashboard/createWorkspace] ❌ Unexpected error during workspace creation:", err)
+      console.error("[Dashboard/createWorkspace]   Error type:", err.constructor.name)
+      console.error("[Dashboard/createWorkspace]   Error message:", err.message)
+      console.error("[Dashboard/createWorkspace]   Stack:", err.stack)
+      showError(`Failed to create workspace: ${err.message}`)
       setCreating(false)
     }
-  }, [workspaceName, success, showError, fetchWorkspaces])
+  }, [workspaceName, workspaceIsPublic, success, showError, fetchWorkspaces, navigate])
 
   useKeyboardShortcuts({
     onNewWorkspace: createWorkspace,
@@ -383,6 +534,103 @@ export default function Dashboard({ session }) {
     return runWorkspaceAction(workspaceId, "leave")
   }, [runWorkspaceAction])
 
+  const openEditVisibility = useCallback((workspaceId, currentIsPublic) => {
+    console.log("[Dashboard] Opening visibility editor. Current is_public:", currentIsPublic)
+    setEditVisibilityId(workspaceId)
+    setCurrentVisibilityState(currentIsPublic) // Store current state for display
+    setEditVisibilityValue(currentIsPublic) // Initialize desired state to current state
+  }, [])
+
+  const handleUpdateVisibility = useCallback(async () => {
+    if (!editVisibilityId) return
+
+    console.log("[Dashboard] Starting visibility update...")
+    console.log("[Dashboard] Workspace ID:", editVisibilityId)
+    console.log("[Dashboard] New visibility value:", editVisibilityValue, "type:", typeof editVisibilityValue)
+
+    setUpdatingVisibility(true)
+    try {
+      // Prepare update payload
+      const updatePayload = { is_public: editVisibilityValue }
+      console.log("[Dashboard] Update payload:", updatePayload)
+      console.log("[Dashboard] Executing update query with condition: id = ", editVisibilityId)
+
+      const { data: updatedData, error } = await supabase
+        .from("workspaces")
+        .update(updatePayload)
+        .eq("id", editVisibilityId)
+        .select("id, is_public, name")
+
+      console.log("[Dashboard] Update response - data:", updatedData, "error:", error)
+
+      if (error) {
+        console.error("[Dashboard] Error updating visibility:", error)
+        console.error("[Dashboard] Error details:", error.message, error.code, error.status)
+        showError("Failed to update workspace visibility")
+      } else {
+        console.log("[Dashboard] ✅ Update executed. Response:", updatedData)
+        
+        // Verify the change by querying the workspace directly
+        const { data: verifyData } = await supabase
+          .from("workspaces")
+          .select("id, is_public, name")
+          .eq("id", editVisibilityId)
+          .single()
+        
+        if (verifyData) {
+          console.log("[Dashboard] 🔍 VERIFICATION: Workspace", verifyData.id, "now has is_public =", verifyData.is_public)
+        }
+
+        // Update the workspace in the state
+        setWorkspaces(prev =>
+          prev.map(ws =>
+            ws.id === editVisibilityId ? { ...ws, is_public: editVisibilityValue } : ws
+          )
+        )
+        success(editVisibilityValue ? "Workspace is now public" : "Workspace is now private")
+        setEditVisibilityId(null)
+        setCurrentVisibilityState(false)
+        setEditVisibilityValue(false)
+      }
+    } catch (err) {
+      console.error("[Dashboard] Exception updating visibility:", err)
+      showError("Something went wrong")
+    } finally {
+      setUpdatingVisibility(false)
+    }
+  }, [editVisibilityId, editVisibilityValue, success, showError, workspaces, currentVisibilityState])
+
+  const fetchPublicWorkspaces = useCallback(async () => {
+    setPublicWorkspacesLoading(true)
+    try {
+      console.log("[Dashboard] Fetching public workspaces for discovery section...")
+      const { workspaces: data, error } = await fetchAllPublicWorkspaces(6)
+      if (error) {
+        console.error("[Dashboard] Error fetching public workspaces:", error)
+        setPublicWorkspaces([])
+      } else {
+        console.log("[Dashboard] Fetched", data?.length || 0, "total public workspaces")
+        console.log("[Dashboard] User's own workspaces count:", workspaces.length)
+        // Filter out workspaces user is already a member of
+        const filtered = (data || []).filter(ws => !workspaces.find(uw => uw.id === ws.id))
+        console.log("[Dashboard] After filtering user's workspaces:", filtered.length, "public workspaces to discover")
+        if (filtered.length > 0) {
+          console.log("[Dashboard] Discover workspaces:", filtered.map(w => ({ id: w.id, name: w.name })))
+        }
+        setPublicWorkspaces(filtered)
+      }
+    } catch (err) {
+      console.error("[Dashboard] Exception fetching public workspaces:", err)
+      setPublicWorkspaces([])
+    } finally {
+      setPublicWorkspacesLoading(false)
+    }
+  }, [workspaces])
+
+  useEffect(() => {
+    fetchPublicWorkspaces()
+  }, [fetchPublicWorkspaces])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
@@ -438,8 +686,13 @@ export default function Dashboard({ session }) {
               className="card p-6 mb-4 hover:shadow-lg hover:-translate-y-1 cursor-pointer group transition-all duration-200 bg-white border border-slate-200"
             >
               <div className="flex justify-between items-center">
-                <div className="text-lg font-semibold text-gray-900 group-hover:text-yellow-500 transition-colors">
-                  {workspace.name}
+                <div>
+                  <div className="text-lg font-semibold text-gray-900 group-hover:text-yellow-500 transition-colors">
+                    {workspace.name}
+                  </div>
+                  <div className="mt-2">
+                    <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="sm" />
+                  </div>
                 </div>
 
                 {(() => {
@@ -450,6 +703,19 @@ export default function Dashboard({ session }) {
 
                   return (
                     <div className="flex items-center gap-2">
+                      {isOwner && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openEditVisibility(workspace.id, workspace.is_public)
+                          }}
+                          className="opacity-60 group-hover:opacity-100 transition-all duration-200 px-3 py-1.5 rounded text-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                          title="Change workspace visibility"
+                        >
+                          Settings
+                        </button>
+                      )}
+
                       {isOwner && (
                         <button
                           onClick={(e) => {
@@ -484,6 +750,50 @@ export default function Dashboard({ session }) {
             </div>
           ))
         )}
+
+        {/* Discover Public Workspaces Section */}
+        {publicWorkspaces.length > 0 && (
+          <div className="mt-16 pt-8 border-t border-slate-200">
+            <h2 className="text-2xl text-slate-700 font-bold mb-2">🌍 Discover Public Workspaces</h2>
+            <p className="text-slate-500 text-sm mb-6">Join public workspaces from the community</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {publicWorkspaces.map((workspace) => (
+                <motion.div
+                  key={workspace.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="card p-5 border border-slate-200 hover:shadow-lg transition-all duration-200 cursor-pointer group"
+                  onClick={() => navigate(`/workspace-preview/${workspace.id}`)}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-slate-900 truncate group-hover:text-yellow-500 transition-colors">
+                        {workspace.name}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Created {new Date(workspace.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="ml-2">
+                      <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/workspace-preview/${workspace.id}`)
+                    }}
+                    className="w-full mt-3 px-3 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    View Workspace
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <Modal
@@ -501,8 +811,28 @@ export default function Dashboard({ session }) {
         onCancel={() => {
           setShowCreateWorkspaceModal(false)
           setWorkspaceName("")
+          setWorkspaceIsPublic(false)
         }}
-      />
+      >
+        <div className="mt-5 space-y-3 border-t border-slate-200 pt-5">
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <div className="relative flex items-center">
+              <input
+                type="checkbox"
+                checked={workspaceIsPublic}
+                onChange={(e) => setWorkspaceIsPublic(e.target.checked)}
+                className="h-5 w-5 rounded cursor-pointer accent-yellow-500"
+              />
+            </div>
+            <span className="text-sm font-medium text-slate-900 group-hover:text-slate-700">
+              Public workspace
+            </span>
+          </label>
+          <p className="text-xs text-slate-500 pl-8">
+            Visible to everyone, editable only by owner and members
+          </p>
+        </div>
+      </Modal>
 
       <Modal
         open={Boolean(workspaceDeleteTarget)}
@@ -520,6 +850,46 @@ export default function Dashboard({ session }) {
           setWorkspaceDeleteTarget(null)
         }}
       />
+
+      <Modal
+        open={Boolean(editVisibilityId)}
+        title="Change Workspace Visibility"
+        message={currentVisibilityState ? "This workspace is currently PUBLIC and visible to everyone." : "This workspace is currently PRIVATE and only visible to members."}
+        confirmText={editVisibilityValue ? "Make Public" : "Make Private"}
+        confirmVariant="primary"
+        isLoading={updatingVisibility}
+        onConfirm={handleUpdateVisibility}
+        onCancel={() => {
+          setEditVisibilityId(null)
+          setCurrentVisibilityState(false)
+          setEditVisibilityValue(false)
+        }}
+      >
+        <div className="mt-5 space-y-3 border-t border-slate-200 pt-5">
+          <label className="flex items-center gap-3 cursor-pointer group">
+            <div className="relative flex items-center">
+              <input
+                type="checkbox"
+                checked={editVisibilityValue}
+                onChange={(e) => {
+                  setEditVisibilityValue(e.target.checked)
+                  console.log("[Dashboard] Visibility toggle changed to:", e.target.checked)
+                }}
+                className="h-5 w-5 rounded cursor-pointer accent-yellow-500"
+              />
+            </div>
+            <span className="text-sm font-medium text-slate-900 group-hover:text-slate-700">
+              Make public
+            </span>
+          </label>
+          <p className="text-xs text-slate-500 pl-8">
+            {editVisibilityValue 
+              ? "✓ Will be visible to everyone, editable only by owner and members"
+              : "✓ Only visible to members, editable only by owner and members"
+            }
+          </p>
+        </div>
+      </Modal>
     </div>
   )
 }

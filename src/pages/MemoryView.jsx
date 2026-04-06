@@ -65,6 +65,8 @@ export default function MemoryView() {
 
       console.log("[MemoryView] Step 2: Ensuring encryption key exists...")
       let storedKey = localStorage.getItem(`workspace_key_${id}`)
+      let memberKeyFound = false
+      let publicKeyFound = false
 
       if (!storedKey) {
         console.log("[MemoryView] Key not in localStorage, fetching from database...")
@@ -79,26 +81,53 @@ export default function MemoryView() {
           return
         }
 
-        const { data: keyData, error: keyError } = await supabase
+        // Try to fetch member key (for workspace members)
+        const { data: memberKeyData, error: memberKeyError } = await supabase
           .from("workspace_keys")
           .select("encrypted_key")
           .eq("workspace_id", id)
           .eq("user_id", user.id)
           .maybeSingle()
 
-        if (keyError) {
-          console.error("[MemoryView] Error fetching key:", keyError)
+        if (memberKeyError) {
+          console.log("[MemoryView] Error fetching member key:", memberKeyError)
         }
 
-        if (!keyData?.encrypted_key) {
-          console.error("[MemoryView] No encryption key found")
+        if (memberKeyData?.encrypted_key) {
+          console.log("[MemoryView] Member key found")
+          storedKey = memberKeyData.encrypted_key
+          memberKeyFound = true
+        } else {
+          console.log("[MemoryView] Member key not found, checking for public_read key...")
+
+          // Try to fetch public_read key (for public workspace viewers)
+          const { data: publicKeyData, error: publicKeyError } = await supabase
+            .from("workspace_keys")
+            .select("encrypted_key")
+            .eq("workspace_id", id)
+            .is("user_id", null)
+            .eq("key_scope", "public_read")
+            .maybeSingle()
+
+          if (publicKeyError) {
+            console.log("[MemoryView] Error fetching public_read key:", publicKeyError)
+          }
+
+          if (publicKeyData?.encrypted_key) {
+            console.log("[MemoryView] Public_read key found")
+            storedKey = publicKeyData.encrypted_key
+            publicKeyFound = true
+          }
+        }
+
+        if (!storedKey) {
+          console.error("[MemoryView] No encryption key found (tried: member key, public_read key)")
           showError("No encryption key found for this workspace")
           navigate(`/workspace/${id}`)
           setLoading(false)
           return
         }
 
-        storedKey = keyData.encrypted_key
         localStorage.setItem(`workspace_key_${id}`, storedKey)
         console.log("[MemoryView] Key retrieved and cached")
       } else {

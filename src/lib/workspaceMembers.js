@@ -1,4 +1,5 @@
 import { supabase } from "./supabase"
+import { canAccessWorkspaceKey } from "./workspaceAccess"
 
 /**
  * Add a user to a workspace with a specified role
@@ -200,10 +201,23 @@ export async function verifyWorkspaceAccess(userId, workspaceId) {
   if (!userId || !workspaceId) {
     const error = "Missing required parameters: user_id and workspace_id are required"
     console.error("[verifyWorkspaceAccess] Error:", error)
-    return { success: false, isMember: false, hasKey: false, error }
+    return { success: false, isMember: false, hasKey: false, workspace: null, error }
   }
 
   try {
+    // Fetch workspace (only need is_public for current access model)
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from("workspaces")
+      .select("id, name, is_public")
+      .eq("id", workspaceId)
+      .maybeSingle()
+
+    if (workspaceError || !workspaceData) {
+      console.warn("[verifyWorkspaceAccess] Workspace not found:", workspaceError)
+      return { success: false, isMember: false, hasKey: false, workspace: null, error: "Workspace not found" }
+    }
+
+    const workspace = workspaceData
 
     // Check membership
     const { data: memberData, error: memberError } = await supabase
@@ -213,11 +227,22 @@ export async function verifyWorkspaceAccess(userId, workspaceId) {
       .eq("workspace_id", workspaceId)
       .maybeSingle()
 
+    if (memberError) {
+      console.error("[verifyWorkspaceAccess] ❌ Error checking membership:", memberError)
+      console.error("[verifyWorkspaceAccess]   Error code:", memberError.code)
+      console.error("[verifyWorkspaceAccess]   Error message:", memberError.message)
+    }
+
     const isMember = !!memberData
     const role = memberData?.role
-
-    if (isMember) {
-    }
+    
+    console.log(`[verifyWorkspaceAccess] Membership check result:`, {
+      userIdQueried: userId,
+      workspaceIdQueried: workspaceId,
+      memberDataFound: !!memberData,
+      isMember,
+      role
+    })
 
     // Check encryption key
     const { data: keyData, error: keyError } = await supabase
@@ -229,22 +254,31 @@ export async function verifyWorkspaceAccess(userId, workspaceId) {
 
     const hasKey = !!keyData
 
-    if (hasKey) {
-    }
+    // Use centralized access control
+    const canAccessKey = canAccessWorkspaceKey(workspace, isMember)
+    const canAccess = canAccessKey
 
-    const allGood = isMember && hasKey
+    console.log(`[verifyWorkspaceAccess] Access check for workspace ${workspaceId}:`, {
+      isMember,
+      hasKey,
+      is_public: workspace.is_public,
+      canAccessKey,
+      canAccess
+    })
 
     return { 
       success: true, 
       isMember, 
       hasKey,
+      workspace,
       role,
-      allGood
+      canAccessKey,
+      canAccess
     }
 
   } catch (err) {
     console.error("[verifyWorkspaceAccess] Unexpected error:", err)
-    return { success: false, isMember: false, hasKey: false, error: err.message }
+    return { success: false, isMember: false, hasKey: false, workspace: null, error: err.message }
   }
 }
 

@@ -1,6 +1,7 @@
+import { memo } from "react"
 import MemoryCard from "./MemoryCard"
 
-export default function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTagClick, emptyMessage = "No memories yet ✨\nStart capturing your thoughts", searchTerm = "", onCreateMemory = null, deletingId = null, userRole = "viewer" }) {
+function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTagClick, emptyMessage = "No memories yet ✨\nStart capturing your thoughts", searchTerm = "", onCreateMemory = null, deletingId = null, userRole = "viewer" }) {
 
   if (!memories || memories.length === 0) {
     return (
@@ -38,6 +39,7 @@ export default function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTag
           searchTerm={searchTerm}
           isDeleting={deletingId === memory.id}
           userRole={userRole}
+          isEncrypted={memory.isEncrypted}
         />
       ))}
     </div>
@@ -45,3 +47,13 @@ export default function MemoryGrid({ memories, onDelete, onFavoriteToggle, onTag
   )
 
 }
+
+// Memoize to prevent expensive rerenders
+export default memo(MemoryGrid, (prevProps, nextProps) => {
+  return (
+    prevProps.memories.length === nextProps.memories.length &&
+    prevProps.memories.every((m, i) => m.id === nextProps.memories[i]?.id) &&
+    prevProps.deletingId === nextProps.deletingId &&
+    prevProps.searchTerm === nextProps.searchTerm
+  )
+})

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 
 export default function FloatingActionButton() {
   const [isOpen, setIsOpen] = useState(false)
@@ -46,46 +47,63 @@ export default function FloatingActionButton() {
   }
 
   return (
-    <div ref={menuRef} className="fixed bottom-6 right-6 z-40">
+    <div ref={menuRef} className="fixed bottom-8 right-8 z-40">
       {/* Menu Items */}
-      {isOpen && (
-        <div className="absolute bottom-16 right-0 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden mb-2 w-48 animate-in fade-in zoom-in duration-150">
-          <button
-            onClick={handleCreatePost}
-            className="w-full px-4 py-3 text-left hover:bg-yellow-50 transition-colors text-sm font-medium text-gray-900 flex items-center gap-2 border-b border-slate-100"
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            transition={{ duration: 0.2 }}
+            className="absolute bottom-20 right-0 bg-white border border-slate-200/80 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.15)] overflow-hidden mb-2 w-56 backdrop-blur-xl bg-white/95"
           >
-            <span className="text-lg">✨</span>
-            Create Post
-          </button>
-          {!isDashboard && (
-            <button
-              onClick={handleNewMemory}
-              className="w-full px-4 py-3 text-left hover:bg-yellow-50 transition-colors text-sm font-medium text-gray-900 flex items-center gap-2 border-b border-slate-100"
+            <motion.button
+              whileHover={{ backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
+              onClick={handleCreatePost}
+              className="w-full px-5 py-4 text-left transition-colors text-sm font-semibold text-slate-900 flex items-center gap-3 border-b border-slate-100 hover:text-blue-600"
             >
-              <span className="text-lg">📝</span>
-              New Memory
-            </button>
-          )}
-          <button
-            onClick={handleNewWorkspace}
-            className="w-full px-4 py-3 text-left hover:bg-yellow-50 transition-colors text-sm font-medium text-gray-900 flex items-center gap-2"
-          >
-            <span className="text-lg">🧠</span>
-            New Workspace
-          </button>
-        </div>
-      )}
+              <span className="text-xl">✨</span>
+              <span>Create Post</span>
+              <span className="text-xs text-slate-400 ml-auto">Ctrl+P</span>
+            </motion.button>
+            {!isDashboard && (
+              <motion.button
+                whileHover={{ backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
+                onClick={handleNewMemory}
+                className="w-full px-5 py-4 text-left transition-colors text-sm font-semibold text-slate-900 flex items-center gap-3 border-b border-slate-100 hover:text-blue-600"
+              >
+                <span className="text-xl">📝</span>
+                <span>New Memory</span>
+              </motion.button>
+            )}
+            <motion.button
+              whileHover={{ backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
+              onClick={handleNewWorkspace}
+              className="w-full px-5 py-4 text-left transition-colors text-sm font-semibold text-slate-900 flex items-center gap-3 hover:text-blue-600"
+            >
+              <span className="text-xl">🧠</span>
+              <span>New Workspace</span>
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Main Button */}
-      <button
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-yellow-500 text-2xl text-white shadow-[0_18px_40px_rgba(234,179,8,0.35)] transition-all duration-200 hover:bg-yellow-400 hover:shadow-[0_22px_50px_rgba(234,179,8,0.42)] ${
-          isOpen ? 'scale-110' : 'hover:scale-110'
-        }`}
+        className="flex h-16 w-16 cursor-pointer items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-3xl text-white shadow-[0_20px_50px_rgba(59,130,246,0.4)] transition-all duration-300 hover:shadow-[0_25px_60px_rgba(59,130,246,0.5)]"
         title="Quick actions"
       >
-        +
-      </button>
+        <motion.div
+          animate={{ rotate: isOpen ? 45 : 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          +
+        </motion.div>
+      </motion.button>
     </div>
   )
 }

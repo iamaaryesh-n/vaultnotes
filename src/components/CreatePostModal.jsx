@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import VisibilitySelector from './VisibilitySelector'
+import VisibilityBadge from './VisibilityBadge'
 
 export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }) {
   const [postContent, setPostContent] = useState('')
   const [postImageFile, setPostImageFile] = useState(null)
+  const [visibility, setVisibility] = useState('public')
   const [posting, setPosting] = useState(false)
   const [modalConfig, setModalConfig] = useState({ open: false, title: '', message: '', onConfirm: null })
 
@@ -62,14 +65,14 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
         console.log('[CreatePostModal] Image public URL:', uploadedImageUrl)
       }
 
-      // Create post (public by default)
+      // Create post
       const { data, error } = await supabase
         .from('posts')
         .insert([
           {
             user_id: user.id,
             content: trimmedContent || null,
-            visibility: 'public',
+            visibility: visibility,
             image_url: uploadedImageUrl || null
           }
         ])
@@ -99,6 +102,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
       // Reset form and close modal
       setPostContent('')
       setPostImageFile(null)
+      setVisibility('public')
       onClose()
 
       setModalConfig({
@@ -124,7 +128,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
     <>
       {isOpen && (
         <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-visible">
             <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
               <h4 className="text-lg font-bold text-slate-900">Create Post</h4>
             </div>
@@ -150,6 +154,33 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
                   <p className="text-xs text-slate-500 mt-2">Selected: {postImageFile.name}</p>
                 )}
               </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-3">Who can see this?</label>
+                <VisibilitySelector 
+                  value={visibility}
+                  onChange={setVisibility}
+                />
+              </div>
+
+              {/* Post Preview */}
+              <div className="mt-6 p-4 border border-slate-200 rounded-lg bg-slate-50">
+                <p className="text-xs font-semibold text-slate-600 mb-3">PREVIEW</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-sm font-medium text-slate-700">Visibility:</span>
+                  <VisibilityBadge visibility={visibility} size="sm" />
+                </div>
+                {postContent && (
+                  <div className="mt-2 p-3 bg-white rounded border border-slate-200">
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{postContent}</p>
+                  </div>
+                )}
+                {postImageFile && (
+                  <div className="mt-2 text-xs text-slate-500">
+                    📷 Image will be included
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
@@ -158,6 +189,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
                   if (posting) return
                   setPostContent('')
                   setPostImageFile(null)
+                  setVisibility('public')
                   onClose()
                 }}
                 disabled={posting}
