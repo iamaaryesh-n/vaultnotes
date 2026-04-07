@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import { supabase } from "../lib/supabase"
-import { addUserToWorkspace, getWorkspaceMembers } from "../lib/workspaceMembers"
+import { getWorkspaceMembers } from "../lib/workspaceMembers"
 
 // Helper to get initials
 function getInitials(name, username) {
@@ -274,160 +274,102 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
 
       console.log("[InviteUserModal] ✅ Step 2b: User not yet a member")
 
-      // Step 3: Fetch an existing workspace encryption key by workspace_id.
-      // We do not depend on currentUser.id so owners/editors can invite reliably.
-      console.log("[InviteUserModal] Step 3: Fetching workspace encryption key by workspace...")
-      const { data: keyData, error: keyError } = await supabase
-        .from("workspace_keys")
-        .select("encrypted_key")
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: true })
-        .limit(1)
-        .maybeSingle()
+      // Step 3: Check for existing pending invite (non-blocking)
+      console.log("[InviteUserModal] Step 3: Checking existing pending invite...")
+      let existingInvite = null
+      try {
+        const { data, error } = await supabase
+          .from("workspace_invites")
+          .select("id, status")
+          .eq("workspace_id", workspaceId)
+          .eq("invitee_id", selectedUser.id)
+          .eq("status", "pending")
+          .limit(1)
+          .maybeSingle()
 
-      if (keyError || !keyData?.encrypted_key) {
-        console.error("[InviteUserModal] ❌ Key fetch error:", keyError)
-        setMessage("Failed to fetch workspace encryption key")
-        setMessageType("error")
-        setLoading(false)
-        console.log("[InviteUserModal] ========== INVITE SUBMIT END (KEY FETCH ERROR) ==========")
-        return
+        if (error) {
+          console.warn("[InviteUserModal] ⚠️ Existing invite check failed (will proceed anyway):", error)
+        } else if (data?.id) {
+          existingInvite = data
+          console.warn("[InviteUserModal] Found existing pending invite:", data.id)
+          setMessage(`@${selectedUser.username} already has a pending invite`)
+          setMessageType("error")
+          setLoading(false)
+          return
+        }
+      } catch (err) {
+        console.warn("[InviteUserModal] ⚠️ Exception checking existing invite (will proceed):", err)
       }
 
-      console.log("[InviteUserModal] ✅ Step 3: Source encryption key fetched successfully")
-      const workspaceKey = keyData.encrypted_key
-
-      // Step 4: Insert user into workspace_members
-      console.log("[InviteUserModal] Step 4: Inserting into workspace_members...")
-      console.log("[InviteUserModal] Insert data:", {
-        user_id: selectedUser.id,
-        workspace_id: workspaceId,
-        role: "viewer"
-      })
-
-      const { data: insertData, error: insertError } = await supabase
-        .from("workspace_members")
+      // Step 4: Create invite instead of directly adding membership.
+      console.log("[InviteUserModal] Step 4: Creating workspace invite...")
+      const { data: inviteData, error: inviteError } = await supabase
+        .from("workspace_invites")
         .insert({
-          user_id: selectedUser.id,
           workspace_id: workspaceId,
-          role: "viewer"
+          inviter_id: currentUser.id,
+          invitee_id: selectedUser.id,
+          status: "pending"
         })
-        .select()
-
-      if (insertError) {
-        console.error("[InviteUserModal] ❌ Insert error:", insertError)
-        console.error("[InviteUserModal] Error details:", {
-          code: insertError.code,
-          message: insertError.message,
-          details: insertError.details,
-          hint: insertError.hint
-        })
-        setMessage(insertError.message || "Failed to add user to workspace")
-        setMessageType("error")
-        setLoading(false)
-        console.log("[InviteUserModal] ========== INVITE SUBMIT END (INSERT ERROR) ==========")
-        return
-      }
-
-      console.log("[InviteUserModal] ✅ Step 4: User successfully added to workspace_members")
-      console.log("[InviteUserModal] Insert response:", insertData)
-
-      // Step 5: CRITICAL - create/update key for invited user.
-      // Use schema-safe insert/update flow (works even if ON CONFLICT constraint is missing).
-      console.log("[InviteUserModal] Step 5: Ensuring workspace key for invited user...")
-
-      const { data: existingInvitedKey, error: existingInvitedKeyError } = await supabase
-        .from("workspace_keys")
         .select("id")
-        .eq("workspace_id", workspaceId)
-        .eq("user_id", selectedUser.id)
-        .maybeSingle()
 
-      if (existingInvitedKeyError) {
-        console.error("[InviteUserModal] ❌ Failed checking invited user key:", existingInvitedKeyError)
-
-        const { error: rollbackError } = await supabase
-          .from("workspace_members")
-          .delete()
-          .eq("workspace_id", workspaceId)
-          .eq("user_id", selectedUser.id)
-
-        if (rollbackError) {
-          console.error("[InviteUserModal] ❌ Rollback failed after key check error:", rollbackError)
-        }
-
-        setMessage("Failed to complete invite: could not verify encryption key")
-        setMessageType("error")
-        setLoading(false)
-        console.log("[InviteUserModal] ========== INVITE SUBMIT END (KEY CHECK ERROR) ==========")
-        return
-      }
-
-      let keyWriteError = null
-
-      if (existingInvitedKey?.id) {
-        console.log("[InviteUserModal] Step 5b: Key exists, updating encrypted_key...")
-        const { error: updateKeyError } = await supabase
-          .from("workspace_keys")
-          .update({ encrypted_key: workspaceKey })
-          .eq("workspace_id", workspaceId)
-          .eq("user_id", selectedUser.id)
-
-        keyWriteError = updateKeyError
-      } else {
-        console.log("[InviteUserModal] Step 5b: Key missing, inserting new key row...")
-        const { error: insertKeyError } = await supabase
-          .from("workspace_keys")
-          .insert({
-            user_id: selectedUser.id,
-            workspace_id: workspaceId,
-            encrypted_key: workspaceKey,
-          })
-
-        // If another concurrent action inserted first, recover with update.
-        if (insertKeyError?.code === "23505") {
-          const { error: recoverUpdateError } = await supabase
-            .from("workspace_keys")
-            .update({ encrypted_key: workspaceKey })
-            .eq("workspace_id", workspaceId)
-            .eq("user_id", selectedUser.id)
-          keyWriteError = recoverUpdateError
+      if (inviteError) {
+        console.error("[InviteUserModal] Invite insert error:", inviteError)
+        // Check if it's a duplicate error (already exists)
+        if (inviteError.code === "23505") {
+          setMessage(`@${selectedUser.username} already has a pending invite`)
+          setMessageType("error")
         } else {
-          keyWriteError = insertKeyError
+          setMessage(inviteError.message || "Failed to send workspace invite")
+          setMessageType("error")
         }
-      }
-
-      if (keyWriteError) {
-        console.error("[InviteUserModal] ❌ Failed to write encryption key:", keyWriteError)
-        console.error("[InviteUserModal] Key write error details:", {
-          code: keyWriteError.code,
-          message: keyWriteError.message,
-          details: keyWriteError.details,
-          hint: keyWriteError.hint
-        })
-
-        // Roll back membership so we never leave a member without a key.
-        const { error: rollbackError } = await supabase
-          .from("workspace_members")
-          .delete()
-          .eq("workspace_id", workspaceId)
-          .eq("user_id", selectedUser.id)
-
-        if (rollbackError) {
-          console.error("[InviteUserModal] ❌ Rollback failed after key write error:", rollbackError)
-        }
-
-        setMessage("Failed to complete invite: encryption key setup failed")
-        setMessageType("error")
         setLoading(false)
-        console.log("[InviteUserModal] ========== INVITE SUBMIT END (KEY WRITE ERROR) ==========")
         return
       }
 
-      // Success - both workspace_members and workspace_keys are guaranteed.
-      console.log("[InviteUserModal] ✅ Step 5: Workspace key ensured for invited user")
-      console.log("[InviteUserModal] ✅ INVITE PROCESS COMPLETED - User can now access workspace")
-      setMessage(`✓ @${selectedUser.username} has been added to the workspace!`)
+      console.log("[InviteUserModal] Step 4 complete: invite created", inviteData)
+
+      // Step 5: Create workspace invite notification (with retry logic)
+      console.log("[InviteUserModal] Step 5: Creating notification...")
+      let notificationCreated = false
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const { error: notificationError } = await supabase
+            .from("notifications")
+            .insert({
+              recipient_id: selectedUser.id,
+              actor_id: currentUser.id,
+              type: "workspace_invite",
+              workspace_id: workspaceId,
+              is_read: false,
+              post_id: null,
+              comment_id: null
+            })
+
+          if (!notificationError) {
+            console.log("[InviteUserModal] ✅ Notification created on attempt", attempt)
+            notificationCreated = true
+            break
+          } else {
+            console.warn(`[InviteUserModal] Notification creation failed attempt ${attempt}:`, notificationError)
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 500))
+            }
+          }
+        } catch (err) {
+          console.warn(`[InviteUserModal] Exception creating notification attempt ${attempt}:`, err)
+          if (attempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }
+      }
+
+      if (!notificationCreated) {
+        console.warn("[InviteUserModal] Failed to create notification after 3 attempts")
+      }
+
+      console.log("[InviteUserModal] Invite process completed")
+      setMessage(`${selectedUser.name || selectedUser.username} has been invited!`)
       setMessageType("success")
 
       // Clear form after success
@@ -436,10 +378,6 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
       setSelectedUser(null)
       setSuggestions([])
       setShowDropdown(false)
-
-      // Notify parent about membership change
-      console.log("[InviteUserModal] Dispatching workspaceMembershipChanged event...")
-      window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId } }))
 
       // Close modal after success
       setTimeout(() => {
@@ -467,7 +405,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
         {/* Header - Fixed */}
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white flex-shrink-0">
           <h2 className="text-lg font-bold text-gray-900">Invite User</h2>
-          <p className="text-slate-500 text-xs mt-1">Search and add users by username</p>
+          <p className="text-slate-500 text-xs mt-1">Search and invite users by username</p>
         </div>
 
         {/* Search Box & Suggestions Container - Wraps both */}
@@ -525,6 +463,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
                             src={user.avatar_url}
                             alt={user.username}
                             className="w-full h-full rounded-full object-cover"
+                            loading="lazy"
                           />
                         ) : (
                           getInitials(user.name, user.username)
@@ -636,14 +575,14 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
             {loading ? (
               <>
                 <span className="animate-spin">⏳</span>
-                Adding...
+                Sending...
               </>
             ) : (
               <>
                 <svg className="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
                 </svg>
-                Add User
+                Send Invite
               </>
             )}
           </button>

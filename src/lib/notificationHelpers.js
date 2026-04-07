@@ -8,7 +8,9 @@ export async function createNotification({
   actorId,
   type, // 'like', 'comment', 'follow'
   postId = null,
-  commentId = null
+  commentId = null,
+  workspaceId = null,
+  message = null
 }) {
   if (!recipientId || !actorId || !type) {
     console.error("[notificationHelpers] Missing required fields for notification")
@@ -24,6 +26,8 @@ export async function createNotification({
         type,
         post_id: postId,
         comment_id: commentId,
+        workspace_id: workspaceId,
+        message,
         is_read: false,
         created_at: new Date().toISOString()
       })

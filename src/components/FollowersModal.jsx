@@ -160,6 +160,7 @@ export function FollowersModal({ isOpen, onClose, userId, currentUserId }) {
                           src={follower.avatar_url}
                           alt={follower.username}
                           className="w-10 h-10 rounded-full object-cover ring-2 ring-slate-100"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-xs font-bold text-white">

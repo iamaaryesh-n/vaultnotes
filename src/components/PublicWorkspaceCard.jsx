@@ -1,8 +1,9 @@
+import { memo } from "react"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import WorkspaceVisibilityBadge from "./WorkspaceVisibilityBadge"
 
-export default function PublicWorkspaceCard({ workspace }) {
+function PublicWorkspaceCard({ workspace }) {
   const navigate = useNavigate()
 
   const handleWorkspaceClick = () => {
@@ -48,3 +49,13 @@ export default function PublicWorkspaceCard({ workspace }) {
     </motion.button>
   )
 }
+
+// Memoize presentational component to prevent rerenders during list refresh
+export default memo(PublicWorkspaceCard, (prevProps, nextProps) => {
+  return (
+    prevProps.workspace.id === nextProps.workspace.id &&
+    prevProps.workspace.name === nextProps.workspace.name &&
+    prevProps.workspace.is_public === nextProps.workspace.is_public &&
+    prevProps.workspace.owner_username === nextProps.workspace.owner_username
+  )
+})

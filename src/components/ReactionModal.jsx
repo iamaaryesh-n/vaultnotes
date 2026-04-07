@@ -73,7 +73,7 @@ export default function ReactionModal({
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         {user.avatarUrl ? (
-                          <img src={user.avatarUrl} alt={user.name} className="h-6 w-6 rounded-full object-cover" />
+                          <img src={user.avatarUrl} alt={user.name} loading="lazy" className="h-6 w-6 rounded-full object-cover" />
                         ) : (
                           <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600">
                             {(user.name || "?").charAt(0).toUpperCase()}

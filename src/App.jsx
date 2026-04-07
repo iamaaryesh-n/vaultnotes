@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation } from "react-router-dom"
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense, lazy } from "react"
 import { useScrollToTop } from "./hooks/useScrollToTop"
 import { useAuth } from "./hooks/useAuth"
 import { ToastProvider } from "./context/ToastContext"
@@ -10,19 +10,22 @@ import BottomNavigation from "./components/BottomNavigation"
 import CreatePostModal from "./components/CreatePostModal"
 import Navbar from "./components/Navbar"
 
+// Eagerly load lightweight pages
 import Dashboard from "./pages/Dashboard"
-import WorkspaceDetail from "./pages/WorkspaceDetail"
+import Login from "./pages/Login"
+import Explore from "./pages/Explore"
 import PublicWorkspaceLanding from "./pages/PublicWorkspaceLanding"
 import DiscoverWorkspaces from "./pages/DiscoverWorkspaces"
-import MemoryView from "./pages/MemoryView"
-import MemoryEditor from "./pages/MemoryEditor"
-import Explore from "./pages/Explore"
-import Profile from "./pages/Profile"
-import PublicProfile from "./pages/PublicProfile"
-import Chat from "./pages/Chat"
-import GroupChat from "./pages/GroupChat"
-import Login from "./pages/Login"
 import { Notifications } from "./pages/Notifications"
+
+// Lazy load heavy routes (code splitting for better performance)
+const WorkspaceDetail = lazy(() => import("./pages/WorkspaceDetail"))
+const MemoryView = lazy(() => import("./pages/MemoryView"))
+const MemoryEditor = lazy(() => import("./pages/MemoryEditor"))
+const Profile = lazy(() => import("./pages/Profile"))
+const PublicProfile = lazy(() => import("./pages/PublicProfile"))
+const Chat = lazy(() => import("./pages/Chat"))
+const GroupChat = lazy(() => import("./pages/GroupChat"))
 
 function AppContent() {
   const location = useLocation()
@@ -109,27 +112,57 @@ function AppContent() {
 
           <Route
             path="/profile"
-            element={user ? <Profile /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <Profile />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
             path="/profile/:username"
-            element={user ? <PublicProfile /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <PublicProfile />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
             path="/chat"
-            element={user ? <Chat /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                <Chat />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
             path="/groups"
-            element={user ? <GroupChat /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                <GroupChat />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
             path="/workspace/:id"
-            element={user ? <WorkspaceDetail /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <WorkspaceDetail />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
@@ -144,17 +177,35 @@ function AppContent() {
 
           <Route
             path="/workspace/:id/new"
-            element={user ? <MemoryEditor /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <MemoryEditor />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
             path="/workspace/:id/memory/:memoryId"
-            element={user ? <MemoryView /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <MemoryView />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route
             path="/workspace/:id/memory/:memoryId/edit"
-            element={user ? <MemoryEditor /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <MemoryEditor />
+              </Suspense>
+            ) : (
+              <Login />
+            )}
           />
 
           <Route

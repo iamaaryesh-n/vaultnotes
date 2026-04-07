@@ -554,7 +554,30 @@ export async function leaveWorkspace(userId, workspaceId) {
     if (keyRowsDeleted > 0) {
     }
 
-    return { success: true, data: { userId, workspaceId, userRole, memberRowsDeleted: deletedMembers.length, keyRowsDeleted } }
+    // Step 4: Update latest accepted invite to "left" status (for clean re-invite support)
+    let inviteRowsUpdated = 0
+    try {
+      const { data: updatedInvites, error: inviteError } = await supabase
+        .from("workspace_invites")
+        .update({ status: "left" })
+        .eq("workspace_id", workspaceId)
+        .eq("invitee_id", userId)
+        .eq("status", "accepted")
+        .select("*")
+
+      if (inviteError) {
+        console.warn("[leaveWorkspace] Warning - failed to update workspace_invites:", inviteError.message)
+        // Don't fail here - user successfully left workspace_members
+      } else if (updatedInvites && updatedInvites.length > 0) {
+        inviteRowsUpdated = updatedInvites.length
+        console.log("[leaveWorkspace] Updated", inviteRowsUpdated, "invite(s) to status=left")
+      }
+    } catch (err) {
+      console.warn("[leaveWorkspace] Exception updating workspace_invites:", err)
+      // Don't fail here - user successfully left
+    }
+
+    return { success: true, data: { userId, workspaceId, userRole, memberRowsDeleted: deletedMembers.length, keyRowsDeleted, inviteRowsUpdated } }
 
   } catch (err) {
     console.error("[leaveWorkspace] Unexpected error:", err)
@@ -615,6 +638,83 @@ export async function deleteWorkspaceCompletely(userId, workspaceId) {
   } catch (err) {
     console.error("[deleteWorkspaceCompletely] Unexpected error:", err)
     return { success: false, error: err.message }
+  }
+}
+
+/**
+ * Get pending workspace invites for a workspace (owner only)
+ * @param {string} workspaceId - The workspace's UUID
+ * @returns {Promise<{success: boolean, data?: array, error?: string}>}
+ */
+export async function getPendingWorkspaceInvites(workspaceId) {
+  if (!workspaceId) {
+    const error = "Missing required parameter: workspaceId"
+    console.error("[getPendingWorkspaceInvites] Error:", error)
+    return { success: false, error, data: [] }
+  }
+
+  try {
+    console.log("[getPendingWorkspaceInvites] Fetching pending invites for workspace:", workspaceId)
+
+    // Step 1: Get pending invites
+    const { data: invites, error: invitesError } = await supabase
+      .from("workspace_invites")
+      .select("id, invitee_id, inviter_id, status, created_at, responded_at")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+
+    if (invitesError) {
+      console.error("[getPendingWorkspaceInvites] Error fetching invites:", invitesError)
+      return { success: false, error: invitesError.message, data: [] }
+    }
+
+    if (!invites || invites.length === 0) {
+      console.log("[getPendingWorkspaceInvites] No pending invites found")
+      return { success: true, data: [] }
+    }
+
+    // Step 2: Fetch profiles for invited users
+    const userIds = invites.map(i => i.invitee_id)
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, username, name, email, avatar_url")
+      .in("id", userIds)
+
+    if (profileError) {
+      console.warn("[getPendingWorkspaceInvites] Warning fetching profiles:", profileError)
+    }
+
+    // Create profile map
+    const profileMap = {}
+    if (profiles && profiles.length > 0) {
+      profiles.forEach(p => {
+        profileMap[p.id] = {
+          username: p.username || "unknown",
+          name: p.name || "User",
+          email: p.email || "Unknown",
+          avatar_url: p.avatar_url
+        }
+      })
+    }
+
+    // Step 3: Combine invites with profile data
+    const result = invites.map(invite => ({
+      ...invite,
+      user: profileMap[invite.invitee_id] || {
+        username: "unknown",
+        name: "User",
+        email: "Unknown",
+        avatar_url: null
+      }
+    }))
+
+    console.log(`[getPendingWorkspaceInvites] Fetched ${result.length} pending invite(s)`)
+    return { success: true, data: result }
+
+  } catch (err) {
+    console.error("[getPendingWorkspaceInvites] Unexpected error:", err)
+    return { success: false, error: err.message, data: [] }
   }
 }
 

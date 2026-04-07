@@ -64,12 +64,13 @@ export default function MemoryView() {
       console.log("[MemoryView] Step 1: Fetching fresh memory data...")
 
       console.log("[MemoryView] Step 2: Ensuring encryption key exists...")
+      // OPTIMIZATION: Check localStorage first to avoid DB query if key is cached
       let storedKey = localStorage.getItem(`workspace_key_${id}`)
-      let memberKeyFound = false
-      let publicKeyFound = false
-
-      if (!storedKey) {
-        console.log("[MemoryView] Key not in localStorage, fetching from database...")
+      
+      if (storedKey) {
+        console.log("[MemoryView] ✅ Using key from localStorage (cached)")
+      } else {
+        console.log("[MemoryView] Key not cached, fetching from database...")
         const { data: authData, error: authError } = await supabase.auth.getUser()
         const user = authData?.user
 
@@ -81,26 +82,29 @@ export default function MemoryView() {
           return
         }
 
-        // Try to fetch member key (for workspace members)
+        let memberKeyFound = false
+        let publicKeyFound = false
+
+        // OPTIMIZATION: Try member key first with specific key_scope
         const { data: memberKeyData, error: memberKeyError } = await supabase
           .from("workspace_keys")
           .select("encrypted_key")
           .eq("workspace_id", id)
           .eq("user_id", user.id)
+          .eq("key_scope", "member")
           .maybeSingle()
 
-        if (memberKeyError) {
-          console.log("[MemoryView] Error fetching member key:", memberKeyError)
-        }
-
         if (memberKeyData?.encrypted_key) {
-          console.log("[MemoryView] Member key found")
+          console.log("[MemoryView] ✅ Member key found")
           storedKey = memberKeyData.encrypted_key
           memberKeyFound = true
-        } else {
-          console.log("[MemoryView] Member key not found, checking for public_read key...")
+        } else if (memberKeyError) {
+          console.log("[MemoryView] Member key fetch error:", memberKeyError)
+        }
 
-          // Try to fetch public_read key (for public workspace viewers)
+        // If no member key, try public_read key (for public workspace viewers)
+        if (!storedKey) {
+          console.log("[MemoryView] Checking for public_read key...")
           const { data: publicKeyData, error: publicKeyError } = await supabase
             .from("workspace_keys")
             .select("encrypted_key")
@@ -109,29 +113,26 @@ export default function MemoryView() {
             .eq("key_scope", "public_read")
             .maybeSingle()
 
-          if (publicKeyError) {
-            console.log("[MemoryView] Error fetching public_read key:", publicKeyError)
-          }
-
           if (publicKeyData?.encrypted_key) {
-            console.log("[MemoryView] Public_read key found")
+            console.log("[MemoryView] ✅ Public_read key found")
             storedKey = publicKeyData.encrypted_key
             publicKeyFound = true
+          } else if (publicKeyError) {
+            console.log("[MemoryView] Public key fetch error:", publicKeyError)
           }
         }
 
         if (!storedKey) {
-          console.error("[MemoryView] No encryption key found (tried: member key, public_read key)")
+          console.error("[MemoryView] ❌ No encryption key found")
           showError("No encryption key found for this workspace")
           navigate(`/workspace/${id}`)
           setLoading(false)
           return
         }
 
+        // Cache key for future loads in this session
         localStorage.setItem(`workspace_key_${id}`, storedKey)
-        console.log("[MemoryView] Key retrieved and cached")
-      } else {
-        console.log("[MemoryView] Using key from localStorage")
+        console.log("[MemoryView] Key cached in localStorage")
       }
 
       console.log("[MemoryView] Step 3: Validating encryption key...")

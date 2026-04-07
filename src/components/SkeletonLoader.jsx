@@ -167,3 +167,63 @@ export function withShimmer(Component) {
     )
   }
 }
+
+/**
+ * Notification list skeleton loader
+ * Shows placeholder notification items with shimmer effect
+ */
+export function NotificationListSkeleton() {
+  return (
+    <>
+      <style>{shimmerStyle}</style>
+      <div className="divide-y divide-gray-100">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="w-full px-4 py-3 bg-white">
+            <div className="flex gap-3">
+              {/* Avatar skeleton */}
+              <div className="h-8 w-8 flex-shrink-0 rounded-full bg-slate-200 skeleton-shimmer"></div>
+              
+              {/* Content skeleton */}
+              <div className="min-w-0 flex-1">
+                <div className="h-4 bg-slate-200 rounded mb-2 w-3/4 skeleton-shimmer"></div>
+                <div className="h-3 bg-slate-200 rounded w-1/3 skeleton-shimmer"></div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
+
+/**
+ * Chat list skeleton loader
+ * Shows placeholder chat items with shimmer effect
+ */
+export function ChatListSkeleton() {
+  return (
+    <>
+      <style>{shimmerStyle}</style>
+      <div className="space-y-2">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
+          >
+            {/* Avatar skeleton */}
+            <div className="h-10 w-10 flex-shrink-0 rounded-full bg-slate-200 skeleton-shimmer"></div>
+            
+            {/* Content skeleton */}
+            <div className="flex-1 min-w-0">
+              <div className="h-4 bg-slate-200 rounded mb-2 w-2/3 skeleton-shimmer"></div>
+              <div className="h-3 bg-slate-200 rounded w-4/5 skeleton-shimmer"></div>
+            </div>
+            
+            {/* Timestamp skeleton */}
+            <div className="h-3 bg-slate-200 rounded w-12 skeleton-shimmer flex-shrink-0"></div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}

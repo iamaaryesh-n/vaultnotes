@@ -278,6 +278,49 @@ In pages (Explore.jsx, Profile.jsx):
 ### Issue: Cache not being used
 **Solution**: Check browser console for cache logs, verify cache key is consistent
 
+## Image Lazy Loading
+
+### Implementation
+All 13 user-facing images across the application have been configured with HTML5 lazy loading:
+- Profile avatars (Explore, Notifications, Profile page)
+- Post images (in feed and modal views)
+- User avatars in reactions and invite modals
+- Notification actor avatars
+
+### Benefits
+- **Faster initial page load** - Images load only when needed
+- **Reduced bandwidth** - Off-screen images not downloaded initially
+- **Improved LCP metric** - Largest Contentful Paint improves as non-critical images load later
+- **Better scroll performance** - Fewer simultaneous image downloads
+
+### Implementation Details
+```html
+<!-- Before -->
+<img src={imageUrl} alt="description" className="..." />
+
+<!-- After -->
+<img src={imageUrl} alt="description" loading="lazy" className="..." />
+```
+
+### Tagged Components
+1. **InviteUserModal.jsx** - User avatar when inviting
+2. **NotificationDropdown.jsx** - Notification actor avatars
+3. **Chat.jsx** - Message attachment images
+4. **FollowingModal.jsx** - Followed user avatars
+5. **Explore.jsx** - Post preview and modal images (4 tags)
+6. **Profile.jsx** - User profile avatar
+7. **ReactionModal.jsx** - User avatars in reaction list
+8. **Notifications.jsx** - Notification actor avatars
+9. **FollowersModal.jsx** - Follower avatars
+
+### Browser Support
+- Chrome/Edge 76+
+- Firefox 75+
+- Safari 15.1+
+- Mobile browsers (99%+ coverage)
+
+Older browsers gracefully degrade, loading images immediately (no functionality loss).
+
 ## Summary
 
 The optimization transforms page navigation from a 1-2 second delay to near-instant response by:

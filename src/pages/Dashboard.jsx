@@ -10,8 +10,6 @@ import { WorkspaceListSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
 import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 import { useWorkspaceCacheStore } from "../stores/workspaceCacheStore"
-import { fetchAllPublicWorkspaces } from "../lib/globalSearch"
-import { motion } from "framer-motion"
 
 export default function Dashboard({ session }) {
 
@@ -31,6 +29,7 @@ export default function Dashboard({ session }) {
   const [deletingId, setDeletingId] = useState(null)
   const [userRoles, setUserRoles] = useState(cachedData?.userRoles || {}) // {workspaceId: role}
   const [ownerCounts, setOwnerCounts] = useState(cachedData?.ownerCounts || {}) // {workspaceId: ownerCount}
+  const [workspaceAttributionById, setWorkspaceAttributionById] = useState({}) // {workspaceId: { invitedBy, invitedAt, invitedByUsername }}
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
   const [workspaceName, setWorkspaceName] = useState("")
   const [workspaceIsPublic, setWorkspaceIsPublic] = useState(false)
@@ -39,8 +38,8 @@ export default function Dashboard({ session }) {
   const [currentVisibilityState, setCurrentVisibilityState] = useState(false)
   const [editVisibilityValue, setEditVisibilityValue] = useState(false)
   const [updatingVisibility, setUpdatingVisibility] = useState(false)
-  const [publicWorkspaces, setPublicWorkspaces] = useState([])
-  const [publicWorkspacesLoading, setPublicWorkspacesLoading] = useState(false)
+  const [authReadyForWorkspaceCreate, setAuthReadyForWorkspaceCreate] = useState(false)
+  const [authReadyUserId, setAuthReadyUserId] = useState(null)
 
   // Track fetch state to prevent duplicate calls
   const fetchControllerRef = useRef(null)
@@ -83,7 +82,7 @@ export default function Dashboard({ session }) {
       // Step 1: Fetch user's workspace memberships
       const { data: userMemberData, error: userMemberError } = await supabase
         .from("workspace_members")
-        .select("workspace_id, role")
+        .select("workspace_id, role, invited_by, invited_at")
         .eq("user_id", user.id)
 
       if (userMemberError) {
@@ -95,18 +94,52 @@ export default function Dashboard({ session }) {
 
       const userRolesMap = {}
       const workspaceIds = []
+      const attributionBaseMap = {}
       ;(userMemberData || []).forEach((m) => {
         userRolesMap[m.workspace_id] = m.role
         workspaceIds.push(m.workspace_id)
+        attributionBaseMap[m.workspace_id] = {
+          invitedBy: m.invited_by || null,
+          invitedAt: m.invited_at || null,
+          invitedByUsername: null
+        }
       })
 
       setUserRoles(userRolesMap)
+
+      const inviterIds = [
+        ...new Set((userMemberData || []).map((m) => m.invited_by).filter(Boolean))
+      ]
+
+      if (inviterIds.length > 0) {
+        const { data: inviterProfiles, error: inviterError } = await supabase
+          .from("profiles")
+          .select("id, username, name")
+          .in("id", inviterIds)
+
+        if (inviterError) {
+          console.warn("[Dashboard] Failed to fetch inviter profiles:", inviterError)
+        } else {
+          const inviterNameById = {}
+          ;(inviterProfiles || []).forEach((profile) => {
+            inviterNameById[profile.id] = profile.username || profile.name || "unknown"
+          })
+
+          Object.keys(attributionBaseMap).forEach((workspaceId) => {
+            const inviterId = attributionBaseMap[workspaceId]?.invitedBy
+            attributionBaseMap[workspaceId].invitedByUsername = inviterId ? inviterNameById[inviterId] || "unknown" : null
+          })
+        }
+      }
+
+      setWorkspaceAttributionById(attributionBaseMap)
 
       // If no workspaces, done loading
       if (workspaceIds.length === 0) {
         console.log("[Dashboard] User has no workspace memberships")
         setWorkspaces([])
         setOwnerCounts({})
+        setWorkspaceAttributionById({})
         setLoading(false)
         isFetchingRef.current = false
         return
@@ -162,10 +195,59 @@ export default function Dashboard({ session }) {
     }
   }, [setCachedWorkspaces])
 
+  useEffect(() => {
+    let canceled = false
+
+    const verifyAuthReadiness = async () => {
+      try {
+        const sessionUserId = session?.user?.id || null
+        const { data: { user: freshUser }, error: freshUserError } = await supabase.auth.getUser()
+
+        if (canceled) return
+
+        if (freshUserError || !freshUser?.id) {
+          console.warn("[Dashboard] Auth readiness check failed: fresh user unavailable", freshUserError)
+          setAuthReadyForWorkspaceCreate(false)
+          setAuthReadyUserId(null)
+          return
+        }
+
+        if (sessionUserId && sessionUserId !== freshUser.id) {
+          console.warn("[Dashboard] Auth readiness mismatch:", {
+            sessionUserId,
+            freshUserId: freshUser.id
+          })
+          setAuthReadyForWorkspaceCreate(false)
+          setAuthReadyUserId(freshUser.id)
+          return
+        }
+
+        setAuthReadyForWorkspaceCreate(true)
+        setAuthReadyUserId(freshUser.id)
+      } catch (err) {
+        if (canceled) return
+        console.error("[Dashboard] Auth readiness exception:", err)
+        setAuthReadyForWorkspaceCreate(false)
+        setAuthReadyUserId(null)
+      }
+    }
+
+    verifyAuthReadiness()
+
+    return () => {
+      canceled = true
+    }
+  }, [session?.user?.id])
+
   const createWorkspace = useCallback(async () => {
+    if (!authReadyForWorkspaceCreate) {
+      showError("Authentication is still loading. Please try again.")
+      return
+    }
+
     setWorkspaceName("")
     setShowCreateWorkspaceModal(true)
-  }, [])
+  }, [authReadyForWorkspaceCreate, showError])
 
   const handleCreateWorkspaceConfirm = useCallback(async () => {
     const name = workspaceName.trim()
@@ -175,9 +257,21 @@ export default function Dashboard({ session }) {
     setShowCreateWorkspaceModal(false)
 
     try {
+      if (!authReadyForWorkspaceCreate) {
+        console.warn("[Dashboard/createWorkspace] Auth not ready; blocked create request")
+        showError("Authentication is still loading. Please try again.")
+        setCreating(false)
+        return
+      }
+
       // ===== STEP 0: AUTH CHECK =====
       console.log("[Dashboard/createWorkspace] Starting workspace creation flow...")
       const { data: { user }, error: userError } = await supabase.auth.getUser()
+      console.log("[Dashboard/createWorkspace] Auth check IDs:", {
+        freshAuthUserId: user?.id || null,
+        sessionUserId: session?.user?.id || null,
+        authReadyUserId
+      })
 
       if (userError) {
         console.error("[Dashboard/createWorkspace] Auth error:", userError)
@@ -221,18 +315,23 @@ export default function Dashboard({ session }) {
 
       // ===== STEP 2: INSERT WORKSPACE =====
       console.log("[Dashboard/createWorkspace] Step 2: Inserting workspace row...")
+      const generatedWorkspaceId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+
       const createPayload = {
+        id: generatedWorkspaceId,
         name,
         created_by: user.id,
         is_public: workspaceIsPublic,
       }
-      console.log("[Dashboard/createWorkspace]   Payload:", createPayload)
+      console.log("[Dashboard/createWorkspace] Insert payload:", createPayload)
 
-      const { data: workspace, error: workspaceError } = await supabase
+      const { error: workspaceError } = await supabase
         .from("workspaces")
         .insert(createPayload)
-        .select()
-        .single()
+      
 
       if (workspaceError) {
         console.error("[Dashboard/createWorkspace] ❌ Workspace insert failed:", workspaceError)
@@ -242,6 +341,14 @@ export default function Dashboard({ session }) {
         showError(`Failed to create workspace: ${workspaceError.message}`)
         setCreating(false)
         return
+      }
+
+      const workspace = {
+        id: generatedWorkspaceId,
+        name,
+        created_by: user.id,
+        is_public: workspaceIsPublic,
+        created_at: new Date().toISOString()
       }
 
       if (!workspace?.id) {
@@ -402,7 +509,7 @@ export default function Dashboard({ session }) {
       showError(`Failed to create workspace: ${err.message}`)
       setCreating(false)
     }
-  }, [workspaceName, workspaceIsPublic, success, showError, fetchWorkspaces, navigate])
+  }, [workspaceName, workspaceIsPublic, success, showError, fetchWorkspaces, navigate, authReadyForWorkspaceCreate, session?.user?.id, authReadyUserId])
 
   useKeyboardShortcuts({
     onNewWorkspace: createWorkspace,
@@ -600,37 +707,6 @@ export default function Dashboard({ session }) {
     }
   }, [editVisibilityId, editVisibilityValue, success, showError, workspaces, currentVisibilityState])
 
-  const fetchPublicWorkspaces = useCallback(async () => {
-    setPublicWorkspacesLoading(true)
-    try {
-      console.log("[Dashboard] Fetching public workspaces for discovery section...")
-      const { workspaces: data, error } = await fetchAllPublicWorkspaces(6)
-      if (error) {
-        console.error("[Dashboard] Error fetching public workspaces:", error)
-        setPublicWorkspaces([])
-      } else {
-        console.log("[Dashboard] Fetched", data?.length || 0, "total public workspaces")
-        console.log("[Dashboard] User's own workspaces count:", workspaces.length)
-        // Filter out workspaces user is already a member of
-        const filtered = (data || []).filter(ws => !workspaces.find(uw => uw.id === ws.id))
-        console.log("[Dashboard] After filtering user's workspaces:", filtered.length, "public workspaces to discover")
-        if (filtered.length > 0) {
-          console.log("[Dashboard] Discover workspaces:", filtered.map(w => ({ id: w.id, name: w.name })))
-        }
-        setPublicWorkspaces(filtered)
-      }
-    } catch (err) {
-      console.error("[Dashboard] Exception fetching public workspaces:", err)
-      setPublicWorkspaces([])
-    } finally {
-      setPublicWorkspacesLoading(false)
-    }
-  }, [workspaces])
-
-  useEffect(() => {
-    fetchPublicWorkspaces()
-  }, [fetchPublicWorkspaces])
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
@@ -651,7 +727,7 @@ export default function Dashboard({ session }) {
 
         <button
           onClick={createWorkspace}
-          disabled={creating}
+          disabled={creating || !authReadyForWorkspaceCreate}
           className="bg-yellow-500 hover:bg-yellow-400 hover:shadow-md active:scale-95 text-gray-900 px-6 py-3 rounded-lg mb-8 font-semibold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-yellow-500"
         >
           {creating ? "Creating..." : "+ Create Workspace"}
@@ -663,7 +739,7 @@ export default function Dashboard({ session }) {
             <p className="text-slate-500 text-sm mb-6">Start capturing your thoughts by creating your first workspace</p>
             <button
               onClick={createWorkspace}
-              disabled={creating}
+              disabled={creating || !authReadyForWorkspaceCreate}
               className="bg-yellow-500 hover:bg-yellow-400 text-gray-900 px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? "Creating..." : "Create Your First Workspace"}
@@ -693,6 +769,11 @@ export default function Dashboard({ session }) {
                   <div className="mt-2">
                     <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="sm" />
                   </div>
+                  {workspaceAttributionById[workspace.id]?.invitedByUsername && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Added by {workspaceAttributionById[workspace.id].invitedByUsername}
+                    </p>
+                  )}
                 </div>
 
                 {(() => {
@@ -750,50 +831,6 @@ export default function Dashboard({ session }) {
             </div>
           ))
         )}
-
-        {/* Discover Public Workspaces Section */}
-        {publicWorkspaces.length > 0 && (
-          <div className="mt-16 pt-8 border-t border-slate-200">
-            <h2 className="text-2xl text-slate-700 font-bold mb-2">🌍 Discover Public Workspaces</h2>
-            <p className="text-slate-500 text-sm mb-6">Join public workspaces from the community</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {publicWorkspaces.map((workspace) => (
-                <motion.div
-                  key={workspace.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="card p-5 border border-slate-200 hover:shadow-lg transition-all duration-200 cursor-pointer group"
-                  onClick={() => navigate(`/workspace-preview/${workspace.id}`)}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-slate-900 truncate group-hover:text-yellow-500 transition-colors">
-                        {workspace.name}
-                      </h3>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Created {new Date(workspace.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="ml-2">
-                      <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
-                    </div>
-                  </div>
-                  
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      navigate(`/workspace-preview/${workspace.id}`)
-                    }}
-                    className="w-full mt-3 px-3 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 text-sm font-medium rounded-lg transition-colors"
-                  >
-                    View Workspace
-                  </button>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       <Modal
@@ -805,7 +842,7 @@ export default function Dashboard({ session }) {
         inputPlaceholder="Enter workspace name"
         confirmText="Create"
         confirmVariant="primary"
-        confirmDisabled={!workspaceName.trim() || creating}
+        confirmDisabled={!workspaceName.trim() || creating || !authReadyForWorkspaceCreate}
         isLoading={creating}
         onConfirm={handleCreateWorkspaceConfirm}
         onCancel={() => {
@@ -893,5 +930,7 @@ export default function Dashboard({ session }) {
     </div>
   )
 }
+
+
 
 

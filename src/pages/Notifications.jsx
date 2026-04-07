@@ -1,31 +1,30 @@
-import { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useNotifications } from '../hooks/useNotifications'
-import { useToast } from '../hooks/useToast'
-import { supabase } from '../lib/supabase'
+import { useEffect, useState, useCallback } from "react"
+import { useNavigate } from "react-router-dom"
+import { useNotifications } from "../hooks/useNotifications"
+import { useToast } from "../hooks/useToast"
+import { NotificationListSkeleton } from "../components/SkeletonLoader"
+import { supabase } from "../lib/supabase"
 
-/**
- * Full-page notifications view
- * Shows all user's notifications with filtering and navigation
- */
 export function Notifications() {
   const navigate = useNavigate()
   const { addToast } = useToast()
-  const { notifications: dropdownNotifications, loading: dropdownLoading, refetch, markAsRead: hookMarkAsRead } = useNotifications()
-  
+  const {
+    notifications: dropdownNotifications,
+    loading: dropdownLoading,
+    markAsRead: hookMarkAsRead
+  } = useNotifications()
+
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all') // 'all', 'unread'
+  const [filter, setFilter] = useState("all")
   const [markingAsRead, setMarkingAsRead] = useState(false)
+  const [actionLoadingById, setActionLoadingById] = useState({})
 
-  // Use dropdown notifications if available, otherwise fetch separately
   useEffect(() => {
     if (dropdownNotifications && dropdownNotifications.length > 0) {
-      console.log('[Notifications page] Using dropdown notifications')
       setNotifications(dropdownNotifications)
       setLoading(false)
     } else if (!dropdownLoading) {
-      // If no dropdown notifications and not loading, fetch all
       fetchAllNotifications()
     }
   }, [dropdownNotifications, dropdownLoading])
@@ -34,14 +33,18 @@ export function Notifications() {
     try {
       setLoading(true)
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      const {
+        data: { user },
+        error: authError
+      } = await supabase.auth.getUser()
+
       if (authError || !user) {
-        navigate('/login')
+        navigate("/login")
         return
       }
 
       const { data, error } = await supabase
-        .from('notifications')
+        .from("notifications")
         .select(`
           id,
           recipient_id,
@@ -49,6 +52,7 @@ export function Notifications() {
           type,
           post_id,
           comment_id,
+          workspace_id,
           is_read,
           created_at,
           profiles:actor_id (
@@ -57,76 +61,269 @@ export function Notifications() {
             name
           )
         `)
-        .eq('recipient_id', user.id)
-        .order('created_at', { ascending: false })
+        .eq("recipient_id", user.id)
+        .order("created_at", { ascending: false })
 
       if (error) {
-        console.error('Error fetching notifications:', error)
-        addToast('Failed to load notifications', 'error')
+        addToast("Failed to load notifications", "error")
         return
       }
 
-      // Transform data
-      const transformed = (data || []).map(notif => ({
+      const transformed = (data || []).map((notif) => ({
         ...notif,
-        actor: Array.isArray(notif.profiles) ? notif.profiles[0] : notif.profiles,
+        actor: Array.isArray(notif.profiles) ? notif.profiles[0] : notif.profiles
       }))
 
       setNotifications(transformed)
     } catch (err) {
-      console.error('Exception fetching notifications:', err)
-      addToast('Error loading notifications', 'error')
+      addToast("Error loading notifications", "error")
     } finally {
       setLoading(false)
     }
   }
 
-  // Mark all unread as read
   const handleMarkAllAsRead = useCallback(async () => {
     try {
-      const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id)
-      
+      const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id)
       if (unreadIds.length === 0) {
-        addToast('All notifications already read', 'info')
+        addToast("All notifications already read", "info")
         return
       }
 
       setMarkingAsRead(true)
-
-      // Use hook's markAsRead function
       const success = await hookMarkAsRead(unreadIds)
-
       if (!success) {
-        addToast('Failed to mark as read', 'error')
+        addToast("Failed to mark as read", "error")
         return
       }
 
-      // Update local state
-      setNotifications(prev =>
-        prev.map(notif =>
-          unreadIds.includes(notif.id) ? { ...notif, is_read: true } : notif
-        )
+      setNotifications((prev) =>
+        prev.map((notif) => (unreadIds.includes(notif.id) ? { ...notif, is_read: true } : notif))
       )
-
-      addToast('Marked all as read', 'success')
+      addToast("Marked all as read", "success")
     } catch (err) {
-      console.error('Exception marking all as read:', err)
-      addToast('Error marking as read', 'error')
+      addToast("Error marking as read", "error")
     } finally {
       setMarkingAsRead(false)
     }
   }, [notifications, hookMarkAsRead, addToast])
 
-  // Filter notifications
-  const filteredNotifications = filter === 'unread'
-    ? notifications.filter(n => !n.is_read)
-    : notifications
+  const markNotificationRead = async (notificationId, recipientId) => {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", notificationId)
+      .eq("recipient_id", recipientId)
 
-  // Navigation helper
+    return !error
+  }
+
+  const ensureWorkspaceKeyForUser = async (workspaceId, userId) => {
+    const { data: sourceKey, error: sourceKeyError } = await supabase
+      .from("workspace_keys")
+      .select("encrypted_key")
+      .eq("workspace_id", workspaceId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (sourceKeyError || !sourceKey?.encrypted_key) {
+      return sourceKeyError || new Error("Missing workspace key")
+    }
+
+    const { data: existingUserKey, error: existingUserKeyError } = await supabase
+      .from("workspace_keys")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle()
+
+    if (existingUserKeyError) {
+      return existingUserKeyError
+    }
+
+    if (existingUserKey?.id) {
+      const { error: updateKeyError } = await supabase
+        .from("workspace_keys")
+        .update({ encrypted_key: sourceKey.encrypted_key })
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+
+      return updateKeyError || null
+    }
+
+    const { error: insertKeyError } = await supabase
+      .from("workspace_keys")
+      .insert({
+        workspace_id: workspaceId,
+        user_id: userId,
+        encrypted_key: sourceKey.encrypted_key,
+      })
+
+    if (insertKeyError?.code === "23505") {
+      const { error: recoverUpdateError } = await supabase
+        .from("workspace_keys")
+        .update({ encrypted_key: sourceKey.encrypted_key })
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+      return recoverUpdateError || null
+    }
+
+    return insertKeyError || null
+  }
+
+  const handleInviteAction = async (notif, action) => {
+    if (!notif.workspace_id || !notif.actor_id) return
+
+    setActionLoadingById((prev) => ({ ...prev, [notif.id]: action }))
+
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        console.error("[Notifications] Invite action auth error:", authError)
+        addToast("Authentication error", "error")
+        return
+      }
+
+      const { data: invite, error: inviteFetchError } = await supabase
+        .from("workspace_invites")
+        .select("id, inviter_id")
+        .eq("workspace_id", notif.workspace_id)
+        .eq("invitee_id", user.id)
+        .eq("inviter_id", notif.actor_id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (inviteFetchError) {
+        console.error("[Notifications] Invite fetch error:", inviteFetchError)
+        addToast("Failed to fetch invite", "error")
+        return
+      }
+
+      if (!invite?.id) {
+        await markNotificationRead(notif.id, user.id)
+        addToast("Invite not found", "error")
+        return
+      }
+
+      if (action === "accept") {
+        // Step 1: Insert user into workspace_members FIRST
+        const { error: insertMemberError } = await supabase
+          .from("workspace_members")
+          .insert({
+            workspace_id: notif.workspace_id,
+            user_id: user.id,
+            role: "viewer"
+          })
+
+        if (insertMemberError && insertMemberError.code !== "23505") {
+          console.error("[Notifications] Membership insert error:", insertMemberError)
+          addToast("Failed to join workspace", "error")
+          return
+        }
+
+        // Step 2: Setup encryption key for user
+        const keyError = await ensureWorkspaceKeyForUser(notif.workspace_id, user.id)
+        if (keyError) {
+          console.error("[Notifications] Workspace key setup error:", keyError)
+          addToast("Encryption key setup failed", "error")
+          return
+        }
+
+        // Step 3: ONLY NOW update invite status to accepted
+        const { error: acceptError } = await supabase
+          .from("workspace_invites")
+          .update({
+            status: "accepted",
+            responded_at: new Date().toISOString(),
+          })
+          .eq("id", invite.id)
+
+        if (acceptError) {
+          console.error("[Notifications] Invite accept error:", acceptError)
+          addToast("Failed to accept invite", "error")
+          return
+        }
+
+        await markNotificationRead(notif.id, user.id)
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+        )
+        
+        // Broadcast to sender that invite was accepted
+        const acceptEvent = new CustomEvent("inviteAccepted", {
+          detail: {
+            workspaceId: notif.workspace_id,
+            userId: user.id,
+            username: user.user_metadata?.username || "User",
+            invitedBy: notif.actor_id
+          }
+        })
+        window.dispatchEvent(acceptEvent)
+        
+        // Also dispatch membership changed for other listeners
+        window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: notif.workspace_id } }))
+        addToast("Invite accepted!", "success")
+        return
+      }
+
+      // Decline
+      const { error: declineError } = await supabase
+        .from("workspace_invites")
+        .update({
+          status: "declined",
+          responded_at: new Date().toISOString(),
+        })
+        .eq("id", invite.id)
+
+      if (declineError) {
+        console.error("[Notifications] Invite decline error:", declineError)
+        addToast("Failed to decline invite", "error")
+        return
+      }
+
+      await markNotificationRead(notif.id, user.id)
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+      )
+      
+      // Broadcast to sender that invite was declined
+      const declineEvent = new CustomEvent("inviteDeclined", {
+        detail: {
+          workspaceId: notif.workspace_id,
+          userId: user.id,
+          username: user.user_metadata?.username || "User",
+          invitedBy: notif.actor_id
+        }
+      })
+      window.dispatchEvent(declineEvent)
+      addToast("Invite declined", "success")
+    } catch (error) {
+      console.error("[Notifications] Invite action failed:", error)
+      addToast("Action failed", "error")
+    } finally {
+      setActionLoadingById((prev) => {
+        const next = { ...prev }
+        delete next[notif.id]
+        return next
+      })
+    }
+  }
+
   const handleNotificationClick = (notif) => {
     switch (notif.type) {
       case "follow":
         navigate(`/profile/${notif.actor?.username}`)
+        break
+      case "workspace_invite":
+        if (notif.workspace_id) {
+          navigate(`/workspace/${notif.workspace_id}`)
+        } else {
+          navigate("/workspaces")
+        }
         break
       case "like":
       case "comment":
@@ -145,7 +342,6 @@ export function Notifications() {
     }
   }
 
-  // Format time relative to now
   const formatTime = (created_at) => {
     const date = new Date(created_at)
     const now = new Date()
@@ -156,11 +352,9 @@ export function Notifications() {
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
     if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
     if (seconds < 2592000) return `${Math.floor(seconds / 604800)}w ago`
-
     return date.toLocaleDateString()
   }
 
-  // Get notification icon
   const getNotificationIcon = (type) => {
     switch (type) {
       case "like":
@@ -169,14 +363,20 @@ export function Notifications() {
         return "💬"
       case "follow":
         return "👤"
+      case "workspace_invite":
+        return "👥"
       default:
         return "📢"
     }
   }
 
-  // Get notification text
   const getNotificationText = (notif) => {
     const actor = notif.actor?.username || "User"
+
+    if (notif.type === "workspace_invite") {
+      return `${actor} invited you to workspace`
+    }
+
     switch (notif.type) {
       case "like":
         return `${actor} liked your post`
@@ -189,51 +389,48 @@ export function Notifications() {
     }
   }
 
-  const unreadCount = notifications.filter(n => !n.is_read).length
+  const filteredNotifications = filter === "unread" ? notifications.filter((n) => !n.is_read) : notifications
+  const unreadCount = notifications.filter((n) => !n.is_read).length
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-gray-50">
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
+      <div className="sticky top-0 z-40 border-b border-gray-200 bg-white shadow-sm">
+        <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
+          <div className="mb-4 flex items-center justify-between">
             <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
             <button
               onClick={() => navigate(-1)}
-              className="text-gray-600 hover:text-gray-900 transition-colors"
+              className="text-gray-600 transition-colors hover:text-gray-900"
               aria-label="Go back"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
-          {/* Filter and Actions */}
           <div className="flex items-center justify-between gap-4">
             <div className="flex gap-2">
               <button
-                onClick={() => setFilter('all')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === 'all'
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                onClick={() => setFilter("all")}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  filter === "all" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
                 All
               </button>
               <button
-                onClick={() => setFilter('unread')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                  filter === 'unread'
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                onClick={() => setFilter("unread")}
+                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  filter === "unread"
+                    ? "bg-yellow-100 text-yellow-700"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                 }`}
               >
                 Unread
                 {unreadCount > 0 && (
-                  <span className="bg-yellow-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-500 text-xs text-white">
+                    {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
               </button>
@@ -243,95 +440,101 @@ export function Notifications() {
               <button
                 onClick={handleMarkAllAsRead}
                 disabled={markingAsRead}
-                className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-300 text-white rounded-lg text-sm font-medium transition-colors"
+                className="rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-yellow-600 disabled:bg-gray-300"
               >
-                {markingAsRead ? 'Marking...' : 'Mark all as read'}
+                {markingAsRead ? "Marking..." : "Mark all as read"}
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
+      <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6">
         {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="bg-white rounded-lg p-4 animate-pulse">
-                <div className="flex gap-3">
-                  <div className="w-10 h-10 bg-gray-200 rounded-full" />
-                  <div className="flex-1">
-                    <div className="h-3 bg-gray-200 rounded w-3/4 mb-2" />
-                    <div className="h-2 bg-gray-200 rounded w-1/2" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <NotificationListSkeleton />
         ) : filteredNotifications.length === 0 ? (
-          <div className="bg-white rounded-lg p-8 text-center">
-            <div className="text-4xl mb-3">📭</div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">
-              {filter === 'unread' ? 'All caught up!' : 'No notifications yet'}
+          <div className="rounded-lg bg-white p-8 text-center">
+            <div className="mb-3 text-4xl">📭</div>
+            <h3 className="mb-1 text-lg font-semibold text-gray-900">
+              {filter === "unread" ? "All caught up!" : "No notifications yet"}
             </h3>
             <p className="text-gray-600">
-              {filter === 'unread'
-                ? 'You have read all your notifications.'
-                : 'You will see activity from other users here.'}
+              {filter === "unread" ? "You have read all your notifications." : "You will see activity here."}
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredNotifications.map((notif) => (
-              <button
-                key={notif.id}
-                onClick={() => handleNotificationClick(notif)}
-                className={`w-full text-left p-4 rounded-lg border-2 transition-all duration-200 hover:shadow-md ${
-                  notif.is_read
-                    ? 'bg-white border-gray-200 hover:border-yellow-300'
-                    : 'bg-yellow-50 border-yellow-200 hover:border-yellow-400'
-                }`}
-              >
-                <div className="flex gap-4">
-                  {/* Avatar */}
-                  <div className="flex-shrink-0">
-                    {notif.actor?.avatar_url ? (
-                      <img
-                        src={notif.actor.avatar_url}
-                        alt={notif.actor.username}
-                        className="w-12 h-12 rounded-full object-cover border-2 border-yellow-200"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-300 to-yellow-100 flex items-center justify-center text-lg font-semibold text-yellow-700 border-2 border-yellow-200">
-                        {notif.actor?.username?.charAt(0).toUpperCase() || '?'}
-                      </div>
-                    )}
-                  </div>
+            {filteredNotifications.map((notif) => {
+              const isInvite = notif.type === "workspace_invite"
+              const actionLoading = actionLoadingById[notif.id]
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <p className={`text-sm ${notif.is_read ? 'text-gray-900' : 'font-semibold text-gray-900'}`}>
-                          {getNotificationText(notif)}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {formatTime(notif.created_at)}
-                        </p>
+              return (
+                <div
+                  key={notif.id}
+                  className={`rounded-lg border-2 p-4 transition-all duration-200 ${
+                    notif.is_read ? "border-gray-200 bg-white" : "border-yellow-200 bg-yellow-50"
+                  }`}
+                >
+                  <button
+                    onClick={() => !isInvite && handleNotificationClick(notif)}
+                    disabled={isInvite}
+                    className={`w-full text-left transition-colors ${isInvite ? "cursor-default" : "cursor-pointer hover:opacity-75"}`}
+                  >
+                    <div className="flex gap-4">
+                      <div className="flex-shrink-0">
+                        {notif.actor?.avatar_url ? (
+                          <img
+                            src={notif.actor.avatar_url}
+                            alt={notif.actor.username}
+                            loading="lazy"
+                            className="h-12 w-12 rounded-full border-2 border-yellow-200 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-yellow-200 bg-gradient-to-br from-yellow-300 to-yellow-100 text-lg font-semibold text-yellow-700">
+                            {notif.actor?.username?.charAt(0).toUpperCase() || "?"}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex-shrink-0 text-lg">
-                        {getNotificationIcon(notif.type)}
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <p className={`text-sm ${notif.is_read ? "text-gray-900" : "font-semibold text-gray-900"}`}>
+                              {getNotificationText(notif)}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">{formatTime(notif.created_at)}</p>
+                          </div>
+                          <div className="flex-shrink-0 text-lg">{getNotificationIcon(notif.type)}</div>
+                        </div>
                       </div>
+
+                      {!notif.is_read && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-yellow-500" />}
                     </div>
-                  </div>
+                  </button>
 
-                  {/* Unread Indicator */}
-                  {!notif.is_read && (
-                    <div className="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-500 mt-2" />
+                  {isInvite && !notif.is_read && (
+                    <div className="mt-4 flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleInviteAction(notif, "accept")}
+                        disabled={Boolean(actionLoading)}
+                        className="flex-1 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+                      >
+                        {actionLoading === "accept" ? "Accepting..." : "Accept"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInviteAction(notif, "decline")}
+                        disabled={Boolean(actionLoading)}
+                        className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+                      >
+                        {actionLoading === "decline" ? "Declining..." : "Decline"}
+                      </button>
+                    </div>
                   )}
                 </div>
-              </button>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

@@ -390,3 +390,99 @@ export async function copyToClipboard(text) {
     return { success: false, error: err.message }
   }
 }
+
+/**
+ * Fetch ONLY comment counts for multiple posts (lightweight)
+ * Returns: { [postId]: count }
+ * Used for feed display to reduce payload
+ */
+export async function fetchCommentCountsForPosts(postIds) {
+  if (!postIds || postIds.length === 0) {
+    return {}
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("comments")
+      .select("post_id")
+      .in("post_id", postIds)
+
+    if (error) {
+      console.error("[postInteractions] Fetch comment counts error:", error)
+      throw error
+    }
+
+    // Count comments by post_id
+    const commentCounts = {}
+    postIds.forEach((postId) => {
+      commentCounts[postId] = 0
+    })
+
+    ;(data || []).forEach((comment) => {
+      if (commentCounts[comment.post_id] !== undefined) {
+        commentCounts[comment.post_id]++
+      }
+    })
+
+    console.log("[postInteractions] Fetched comment counts for", postIds.length, "posts")
+    return commentCounts
+  } catch (err) {
+    console.error("[postInteractions] Error fetching comment counts:", err)
+    const result = {}
+    postIds.forEach((postId) => {
+      result[postId] = 0
+    })
+    return result
+  }
+}
+
+/**
+ * Fetch ONLY like counts for multiple posts (lightweight)
+ * Returns: { [postId]: { count, userLiked } }
+ * Used for feed display to reduce payload
+ */
+export async function fetchLikeCountsForPosts(postIds, userId = null) {
+  if (!postIds || postIds.length === 0) {
+    return {}
+  }
+
+  try {
+    // Fetch only post_id and user_id (lightweight query)
+    const { data: allLikes, error } = await supabase
+      .from("likes")
+      .select("post_id, user_id")
+      .in("post_id", postIds)
+
+    if (error) throw error
+
+    // Build result object with counts and user like status
+    const result = {}
+    postIds.forEach((postId) => {
+      result[postId] = {
+        count: 0,
+        userLiked: false
+      }
+    })
+
+    // Count likes per post and check if user liked
+    ;(allLikes || []).forEach((like) => {
+      if (result[like.post_id]) {
+        result[like.post_id].count++
+        if (userId && like.user_id === userId) {
+          result[like.post_id].userLiked = true
+        }
+      }
+    })
+
+    console.log("[postInteractions] Fetched like counts for", postIds.length, "posts")
+    return result
+  } catch (err) {
+    console.error("[postInteractions] Error fetching like counts:", err)
+    // Return empty structure for all posts
+    const result = {}
+    postIds.forEach((postId) => {
+      result[postId] = { count: 0, userLiked: false }
+    })
+    return result
+  }
+}
