@@ -1,9 +1,8 @@
-import { useCallback, useState, useEffect, useMemo } from "react"
+import { useCallback, useState, useEffect, useMemo, useRef } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../hooks/useAuth"
 import PostInteractions from "../components/PostInteractions"
-import { useSmartFetchPosts } from "../hooks/useSmartFetchPosts"
 import { usePrefetchData } from "../hooks/usePrefetchData"
 import { usePrefetchWorkspaces } from "../hooks/usePrefetchWorkspaces"
 import { PostListSkeleton } from "../components/PostSkeleton"
@@ -14,6 +13,18 @@ import VisibilityBadge from "../components/VisibilityBadge"
 import { fetchPublicWorkspaceDiscoverCards } from "../lib/globalSearch"
 import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 import PublicWorkspaceCard from "../components/PublicWorkspaceCard"
+import { getFeedImageUrl, getAvatarImageUrl } from "../utils/imageOptimization"
+import { fetchCommentCountsForPosts, fetchLikeCountsForPosts } from "../lib/postInteractions"
+
+/**
+ * INSTAGRAM-STYLE INFINITE SCROLL
+ * - Load only 3 posts initially
+ * - Load next 3 posts in batches
+ * - Use IntersectionObserver for infinite scroll
+ * - Background preload after initial render
+ */
+const INITIAL_POST_LIMIT = 3
+const BATCH_SIZE = 3
 
 export default function Explore() {
   const navigate = useNavigate()
@@ -25,6 +36,23 @@ export default function Explore() {
   const [modalOpen, setModalOpen] = useState(false)
   const [publicWorkspaces, setPublicWorkspaces] = useState([])
   const [publicWorkspacesLoading, setPublicWorkspacesLoading] = useState(false)
+
+  // PAGINATION STATE
+  const [posts, setPosts] = useState([])
+  const [commentsByPost, setCommentsByPost] = useState({})
+  const [likesByPost, setLikesByPost] = useState({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState(null)
+
+  // REF FOR INFINITE SCROLL
+  const loadMoreRef = useRef(null)
+  const loadedPagesRef = useRef(new Set([0]))
+  const hasMoreRef = useRef(true)
+  const loadingMoreRef = useRef(false)
 
   // Prefetch workspaces in the background for fast navigation to Dashboard
   usePrefetchWorkspaces()
@@ -78,66 +106,265 @@ export default function Explore() {
     fetchFollowedUsers()
   }, [contextUser?.id])
 
-  // Smart fetch with caching
-  const {
-    posts,
-    comments: commentsByPost,
-    likes: likesByPost,
-    loading,
-    error,
-    updateComment,
-    removeComment,
-    removeCommentById,
-    updateLike
-  } = useSmartFetchPosts(
-    async () => {
-      const { data, error: fetchError } = await supabase
+  // Get current user ID
+  useEffect(() => {
+    const getUserId = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setCurrentUserId(user?.id || null)
+    }
+    getUserId()
+  }, [])
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore
+  }, [hasMore])
+
+  /**
+   * Fetch posts with pagination using range()
+   */
+  const fetchPostsBatch = useCallback(async (pageNum) => {
+    try {
+      console.log(`[Explore] Fetching page ${pageNum}...`)
+      const start = pageNum * BATCH_SIZE
+      const end = start + BATCH_SIZE - 1
+
+      const { data, error: fetchError, count } = await supabase
         .from("posts")
-        .select("id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)")
+        .select("id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)", { count: "exact" })
         .order("created_at", { ascending: false })
-        .limit(100)
+        .range(start, end)
 
       if (fetchError) {
         console.error("[Explore] Error fetching posts:", fetchError)
         throw new Error("Failed to load posts")
       }
 
-      return data || []
-    },
-    "explore"
-  )
+      const fetchedPosts = data || []
 
-  // Prefetch data strategy
-  usePrefetchData("explore", {})
+      // Check if we've reached the end
+      if (fetchedPosts.length < BATCH_SIZE) {
+        console.log("[Explore] No more posts available")
+        setHasMore(false)
+      }
 
-  // Memoized realtime handlers - stable across renders
+      // Fetch interaction counts (lightweight)
+      if (fetchedPosts.length > 0) {
+        const postIds = fetchedPosts.map(p => p.id)
+        const [commentCounts, likeData] = await Promise.all([
+          fetchCommentCountsForPosts(postIds),
+          fetchLikeCountsForPosts(postIds, currentUserId)
+        ])
+
+        // Convert counts to comment array format for compatibility
+        const comments = {}
+        Object.keys(commentCounts).forEach(postId => {
+          comments[postId] = new Array(commentCounts[postId]).fill(null)
+        })
+
+        setCommentsByPost(prev => ({ ...prev, ...comments }))
+        setLikesByPost(prev => ({ ...prev, ...likeData }))
+      }
+
+      return fetchedPosts
+    } catch (err) {
+      console.error("[Explore] Error in fetchPostsBatch:", err)
+      setError(err.message || "Failed to fetch posts")
+      return []
+    }
+  }, [currentUserId])
+
+  /**
+   * Load more posts for an explicit page number
+   */
+  const loadMorePosts = useCallback(async (pageNumber) => {
+    // Prevent duplicate fetches
+    if (loadingMoreRef.current || !hasMoreRef.current) {
+      console.log("[Explore] Skipping load more - loadingMore:", loadingMoreRef.current, "hasMore:", hasMoreRef.current)
+      return
+    }
+
+    // Check if page already loaded
+    if (loadedPagesRef.current.has(pageNumber)) {
+      console.log(`[Explore] Page ${pageNumber} already loaded, skipping`)
+      return
+    }
+
+    console.log(`[Explore] Loading page ${pageNumber}...`)
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    try {
+      const newPosts = await fetchPostsBatch(pageNumber)
+
+      if (newPosts.length > 0) {
+        // Mark page as loaded
+        loadedPagesRef.current.add(pageNumber)
+
+        // Filter out duplicates
+        setPosts(prev => {
+          const existingIds = new Set(prev.map(p => p.id))
+          const uniquePosts = newPosts.filter(p => !existingIds.has(p.id))
+          if (uniquePosts.length > 0) {
+            console.log(`[Explore] Loaded page ${pageNumber} with ${uniquePosts.length} new posts (${newPosts.length - uniquePosts.length} duplicates filtered)`)
+            return [...prev, ...uniquePosts]
+          }
+          return prev
+        })
+      } else {
+        console.log("[Explore] No more posts available")
+        setHasMore(false)
+      }
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
+    }
+  }, [fetchPostsBatch])
+
+  const queueNextPageLoad = useCallback(() => {
+    if (loadingMoreRef.current || !hasMoreRef.current) {
+      return
+    }
+
+    setPage((prevPage) => {
+      let nextPage = prevPage + 1
+      while (loadedPagesRef.current.has(nextPage)) {
+        nextPage += 1
+      }
+
+      console.log(`[Explore] Advancing page from ${prevPage} to ${nextPage}`)
+      void loadMorePosts(nextPage)
+      return nextPage
+    })
+  }, [loadMorePosts])
+
+  /**
+   * Initial fetch - load first batch
+   */
+  useEffect(() => {
+    const loadInitialPosts = async () => {
+      setLoading(true)
+      try {
+        const initialPosts = await fetchPostsBatch(0)
+        if (initialPosts.length > 0) {
+          loadedPagesRef.current = new Set([0])
+          setPosts(initialPosts)
+          setPage(0)
+          console.log(`[Explore] Loaded initial ${initialPosts.length} posts`)
+
+
+        }
+      } catch (err) {
+        console.error("[Explore] Error loading initial posts:", err)
+        setError(err.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadInitialPosts()
+
+    return () => {
+      // Cleanup - no preload timeout needed
+    }
+  }, [fetchPostsBatch])
+
+  /**
+   * Infinite scroll with IntersectionObserver
+   */
+  useEffect(() => {
+    if (!loadMoreRef.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          console.log("[Explore] Observer triggered", {
+            isIntersecting: entry.isIntersecting,
+            hasMore,
+            loadingMore,
+            page,
+            currentPostCount: posts.length
+          })
+          if (entry.isIntersecting && hasMore && !loadingMore) {
+            console.log("[Explore] Load more sentinel visible, loading next batch...")
+            queueNextPageLoad()
+          }
+        })
+      },
+      { threshold: 0.1, rootMargin: "300px" }
+    )
+
+    observer.observe(loadMoreRef.current)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [hasMore, loadingMore, page, posts.length, queueNextPageLoad])
+
+  /**
+   * Fallback: Window scroll event listener for infinite scroll
+   * This ensures loading works even if IntersectionObserver doesn't trigger
+   */
+  useEffect(() => {
+    const handleScroll = () => {
+      // Check if user is near bottom of page (300px before end)
+      const isNearBottom =
+        window.innerHeight + window.scrollY >=
+        document.body.offsetHeight - 300
+
+      if (isNearBottom && hasMore && !loadingMore) {
+        console.log("[Explore] Scroll fallback triggered", {
+          scrollY: window.scrollY,
+          innerHeight: window.innerHeight,
+          offsetHeight: document.body.offsetHeight,
+          threshold: document.body.offsetHeight - 300
+        })
+        queueNextPageLoad()
+      }
+    }
+
+    window.addEventListener("scroll", handleScroll)
+    return () => {
+      window.removeEventListener("scroll", handleScroll)
+    }
+  }, [hasMore, loadingMore, queueNextPageLoad])
+
+  // Memoized realtime handlers
   const handleLikesRealtime = useCallback((payload) => {
-    console.log("Realtime event:", payload)
     if (payload.eventType === "DELETE") {
       const postId = payload.old?.post_id
       if (!postId) return
 
-      console.log("DELETE LIKE:", payload.old)
-      console.log("Realtime like received for post_id", postId)
-      console.log("Updating post:", postId)
-      updateLike(postId, "DELETE", payload.old?.user_id)
+      setLikesByPost(prev => {
+        const current = prev[postId] || { count: 0, userLiked: false }
+        return {
+          ...prev,
+          [postId]: {
+            ...current,
+            count: Math.max(0, current.count - 1),
+            userLiked: payload.old?.user_id === currentUserId ? false : current.userLiked
+          }
+        }
+      })
       return
     }
 
     const postId = payload.new?.post_id
     if (!postId) return
 
-    console.log("Realtime like received for post_id", postId)
-    console.log("Updating post:", postId)
-    updateLike(postId, payload.eventType, payload.new?.user_id)
-  }, [updateLike])
+    setLikesByPost(prev => {
+      const current = prev[postId] || { count: 0, userLiked: false }
+      return {
+        ...prev,
+        [postId]: {
+          ...current,
+          count: current.count + 1,
+          userLiked: payload.new?.user_id === currentUserId ? true : current.userLiked
+        }
+      }
+    })
+  }, [currentUserId])
 
   const handleCommentsRealtime = useCallback(async (payload) => {
     if (payload.eventType === "INSERT" && payload.new?.post_id) {
-      console.log("Realtime event:", payload)
-      console.log("Realtime comment received", payload.new)
-      console.log("Updating post:", payload.new.post_id)
-
       const comment = {
         id: payload.new.id,
         user_id: payload.new.user_id,
@@ -146,14 +373,14 @@ export default function Explore() {
         profiles: { username: "unknown", avatar_url: null }
       }
 
-      updateComment(payload.new.post_id, comment)
+      setCommentsByPost(prev => ({
+        ...prev,
+        [payload.new.post_id]: [...(prev[payload.new.post_id] || []), comment]
+      }))
       return
     }
 
     if (payload.eventType === "DELETE") {
-      console.log("DELETE EVENT FULL:", payload)
-      console.log("OLD DATA:", payload.old)
-
       const comment_id = payload.old?.id
       if (!comment_id) return
 
@@ -166,23 +393,19 @@ export default function Explore() {
           .eq("id", comment_id)
           .single()
 
-        if (fetchError) {
-          console.warn("[Explore] Failed to resolve post_id for deleted comment:", fetchError)
+        if (!fetchError) {
+          post_id = data?.post_id
         }
-
-        post_id = data?.post_id
       }
 
-      console.log("DELETE COMMENT:", payload.old)
-      console.log("Realtime DELETE event:", payload)
       if (post_id) {
-        console.log("Updating post:", post_id)
-        removeComment(post_id, comment_id)
-      } else {
-        removeCommentById(comment_id)
+        setCommentsByPost(prev => ({
+          ...prev,
+          [post_id]: (prev[post_id] || []).filter(c => c.id !== comment_id)
+        }))
       }
     }
-  }, [updateComment, removeComment, removeCommentById])
+  }, [])
 
   // Setup realtime subscriptions
   usePostsRealtime(
@@ -222,13 +445,11 @@ export default function Explore() {
       if (!contextUser?.id) return
 
       if (followedUsers.includes(userId)) {
-        // Unfollow
         const result = await unfollowUser(contextUser.id, userId)
         if (result.success) {
           setFollowedUsers((prev) => prev.filter((id) => id !== userId))
         }
       } else {
-        // Follow
         const result = await followUser(contextUser.id, userId)
         if (result.success) {
           setFollowedUsers((prev) => [...prev, userId])
@@ -242,24 +463,19 @@ export default function Explore() {
   const filteredPosts = useMemo(() => {
     let filtered = [...posts]
 
-    // Filter by visibility
+    // Apply visibility filtering
     filtered = filtered.filter((post) => {
-      // Public posts visible to all
       if (post.visibility === 'public') {
         return true
       }
 
-      // Private posts visible only to author and followers
       if (post.visibility === 'private') {
-        // Author can always see their own posts
         if (post.user_id === contextUser?.id) {
           return true
         }
-        // Followers can see private posts
         return followedUsers.includes(post.user_id)
       }
 
-      // Default: show public posts
       return post.visibility === 'public'
     })
 
@@ -269,7 +485,6 @@ export default function Explore() {
         break
 
       case "trending":
-        // Sort by engagement score (likes + comments weighted)
         filtered.sort((a, b) => {
           const aEngagement = (likesByPost[a.id]?.count || 0) * 2 + (commentsByPost[a.id]?.length || 0)
           const bEngagement = (likesByPost[b.id]?.count || 0) * 2 + (commentsByPost[b.id]?.length || 0)
@@ -278,13 +493,11 @@ export default function Explore() {
         break
 
       case "recent":
-        // Already sorted by created_at DESC from fetch, but ensure it's correct
         filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
         break
 
       case "for-you":
       default:
-        // Keep default order (recently created)
         break
     }
 
@@ -299,7 +512,7 @@ export default function Explore() {
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Explore</h1>
             <p className="mt-2 text-base text-slate-600">Discover what's happening</p>
           </div>
-          <PostListSkeleton count={5} />
+          <PostListSkeleton count={3} />
         </div>
       </div>
     )
@@ -337,9 +550,9 @@ export default function Explore() {
             {filteredPosts.map((post, index) => (
               <motion.article
                 key={post.id}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
+                transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.1) }}
                 data-post-id={post.id}
                 onClick={() => openPostModal(post)}
                 className="group cursor-pointer overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-sm transition-all duration-300 hover:border-slate-300 hover:shadow-lg"
@@ -357,9 +570,12 @@ export default function Explore() {
                     >
                       {post.profiles?.avatar_url ? (
                         <img
-                          src={post.profiles.avatar_url}
+                          src={getAvatarImageUrl(post.profiles.avatar_url)}
                           alt={post.profiles?.username}
+                          width={48}
+                          height={48}
                           className="h-12 w-12 rounded-full object-cover ring-2 ring-slate-100 transition-all hover:ring-blue-200"
+                          loading="lazy"
                         />
                       ) : (
                         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 text-sm font-bold text-white ring-2 ring-slate-100">
@@ -390,9 +606,7 @@ export default function Explore() {
                     </div>
 
                     {contextUser?.id && post.user_id !== contextUser.id && (
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                      <button
                         onClick={(e) => {
                           e.stopPropagation()
                           handleToggleFollow(post.user_id)
@@ -404,7 +618,7 @@ export default function Explore() {
                         }`}
                       >
                         {followedUsers.includes(post.user_id) ? "Following" : "Follow"}
-                      </motion.button>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -416,8 +630,15 @@ export default function Explore() {
                 )}
 
                 {post.image_url && (
-                  <div className="mt-4 overflow-hidden">
-                    <img src={post.image_url} alt="Post" className="max-h-96 w-full object-cover" />
+                  <div className="mt-4 overflow-hidden bg-slate-100">
+                    <img 
+                      src={getFeedImageUrl(post.image_url, { width: 400, quality: 60 })} 
+                      alt="Post" 
+                      width={700}
+                      height={400}
+                      className="h-[400px] w-full object-cover" 
+                      loading="lazy"
+                    />
                   </div>
                 )}
 
@@ -431,9 +652,28 @@ export default function Explore() {
               </motion.article>
             ))}
           </AnimatePresence>
+
+          {/* Infinite scroll sentinel */}
+          <div ref={loadMoreRef} className="h-20 w-full" />
+
+          {/* Loading indicator for next batch */}
+          {loadingMore && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex justify-center py-4"
+            >
+              <div className="flex gap-1">
+                <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="h-2 w-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            </motion.div>
+          )}
         </div>
       )}
 
+      {/* POST MODAL */}
       <AnimatePresence>
         {modalOpen && selectedPost && (
           <>
@@ -455,7 +695,12 @@ export default function Explore() {
             >
               <div className="hidden w-1/2 flex-col items-center justify-center overflow-y-auto bg-slate-50 md:flex">
                 {selectedPost.image_url ? (
-                  <img src={selectedPost.image_url} alt="Post" className="h-full w-full object-cover" />
+                  <img 
+                    src={selectedPost.image_url} 
+                    alt="Post" 
+                    className="h-full w-full object-cover" 
+                    loading="lazy"
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100">
                     <p className="text-sm text-slate-500">No image</p>
@@ -478,9 +723,12 @@ export default function Explore() {
                       >
                         {selectedPost.profiles?.avatar_url ? (
                           <img
-                            src={selectedPost.profiles.avatar_url}
+                            src={getAvatarImageUrl(selectedPost.profiles.avatar_url)}
                             alt={selectedPost.profiles?.username}
+                            width={40}
+                            height={40}
                             className="h-10 w-10 rounded-full object-cover ring-2 ring-slate-100 transition-all hover:ring-blue-200"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 text-xs font-bold text-white ring-2 ring-slate-100">
@@ -543,7 +791,7 @@ export default function Explore() {
 
                   {selectedPost.image_url && (
                     <div className="mb-4 overflow-hidden rounded-lg md:hidden">
-                      <img src={selectedPost.image_url} alt="Post" className="max-h-64 w-full object-cover" />
+                      <img src={selectedPost.image_url} alt="Post" loading="lazy" className="max-h-64 w-full object-cover" />
                     </div>
                   )}
 
@@ -573,15 +821,15 @@ export default function Explore() {
                                 <img
                                   src={comment.profiles.avatar_url}
                                   alt={comment.profiles?.username}
-                                  className="h-6 w-6 rounded-full object-cover"
+                                  className="h-8 w-8 rounded-full object-cover"
                                 />
                               ) : (
-                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 text-[10px] font-bold text-white">
-                                  {comment.profiles?.username?.charAt(0) || "?"}
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+                                  {comment.profiles?.username?.charAt(0)?.toUpperCase() || "?"}
                                 </div>
                               )}
                             </button>
-                            <div className="min-w-0 flex-1">
+                            <div className="flex-1 min-w-0">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -590,18 +838,15 @@ export default function Explore() {
                                     navigate(`/profile/${comment.profiles.username}`)
                                   }
                                 }}
-                                className="text-xs font-semibold text-slate-900 transition-colors hover:text-blue-600"
+                                className="text-xs font-semibold text-slate-900 hover:text-blue-600"
                               >
-                                @{comment.profiles?.username || "unknown"}
+                                {comment.profiles?.username || "Unknown"}
                               </button>
-                              <p className="mt-0.5 break-words text-xs text-slate-700">{comment.content}</p>
-                              <p className="mt-1 text-xs text-slate-400">
-                                {new Date(comment.created_at).toLocaleString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit"
-                                })}
+                              <p className="mt-1 break-words text-xs leading-relaxed text-slate-700">
+                                {comment.content}
+                              </p>
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                {formatPostTime(comment.created_at)}
                               </p>
                             </div>
                           </div>
@@ -611,7 +856,7 @@ export default function Explore() {
                   </div>
                 </div>
 
-                <div className="flex-shrink-0 border-t border-slate-200 px-6 py-4">
+                <div className="border-t border-slate-200 px-6 py-4">
                   <PostInteractions
                     post={selectedPost}
                     initialComments={commentsByPost[selectedPost.id] || []}
@@ -626,130 +871,37 @@ export default function Explore() {
     </div>
   )
 
-  const workspacesView = (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-8 flex flex-col gap-2">
-        <p className="text-sm font-semibold uppercase tracking-[0.15em] text-blue-600">Discover</p>
-        <div className="flex items-end justify-between gap-4">
-          <h2 className="text-3xl font-bold text-slate-900">Public Workspaces</h2>
-          <p className="text-sm text-slate-500 whitespace-nowrap">
-            {publicWorkspacesLoading ? "Loading..." : `${publicWorkspaces.length} available`}
-          </p>
-        </div>
-        <p className="text-slate-600">Browse and join public workspaces shared by the community</p>
-      </div>
-
-      {publicWorkspacesLoading ? (
-        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="w-[280px] flex-none snap-start rounded-3xl border border-slate-200/70 bg-white shadow-sm animate-pulse">
-              <div className="border-b border-slate-100 px-6 pt-5 pb-4">
-                <div className="h-3 w-12 rounded-full bg-slate-200 mb-3" />
-                <div className="h-6 w-32 rounded bg-slate-100" />
-              </div>
-              <div className="border-b border-slate-100 px-6 py-4 flex gap-3">
-                <div className="h-10 w-10 rounded-full bg-slate-200 flex-none" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-4 w-20 rounded bg-slate-100" />
-                  <div className="h-3 w-16 rounded bg-slate-100" />
-                </div>
-              </div>
-              <div className="px-6 py-4 grid grid-cols-2 gap-3">
-                <div className="h-20 rounded-2xl bg-slate-100" />
-                <div className="h-20 rounded-2xl bg-slate-100" />
-              </div>
-              <div className="border-t border-slate-100 px-6 py-4">
-                <div className="h-10 w-full rounded-lg bg-slate-100" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : publicWorkspaces.length > 0 ? (
-        <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory">
-          {publicWorkspaces.map((workspace) => (
-            <PublicWorkspaceCard key={workspace.id} workspace={workspace} />
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-gradient-to-br from-slate-50 to-blue-50/30 px-8 py-12 text-center">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 mb-4">
-            <svg className="h-6 w-6 text-blue-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-            </svg>
-          </div>
-          <p className="text-slate-600 font-medium">No public workspaces yet</p>
-          <p className="mt-2 text-sm text-slate-500">Create your first workspace to share with the community</p>
-        </div>
-      )}
-    </div>
-  )
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 pb-20">
-      <div className="sticky top-0 z-40 border-b border-slate-200/50 bg-white/80 backdrop-blur-lg">
-        <div className="mx-auto max-w-2xl px-4 py-8">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Explore</h1>
-          <p className="mt-2 text-base text-slate-600">Discover what's happening in your network</p>
-        </div>
-
-        <div className="border-t border-slate-100 bg-white/50 px-4 py-3 backdrop-blur-sm">
-          <div className="mx-auto max-w-2xl">
-            <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide">
-              {[
-                { id: "for-you", label: "For You", icon: "✨" },
-                { id: "following", label: "Following", icon: "👥" },
-                { id: "trending", label: "Trending", icon: "🔥" },
-                { id: "recent", label: "Recent", icon: "🕐" }
-              ].map((tab) => (
-                <motion.button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors ${
-                    activeTab === tab.id
-                      ? "text-blue-600"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                  }`}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
-                  {activeTab === tab.id && (
-                    <motion.div
-                      layoutId="activeTab"
-                      className="absolute inset-0 -z-10 rounded-full bg-gradient-to-r from-blue-100 to-blue-50"
-                      transition={{ type: "spring", stiffness: 380, damping: 40 }}
-                    />
-                  )}
-                </motion.button>
-              ))}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100">
+      <div className="sticky top-0 z-40 border-b border-slate-200/50 bg-white/80 backdrop-blur shadow-sm">
+        <div className="mx-auto max-w-2xl px-4 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Explore</h1>
+              <p className="text-xs text-slate-600">Discover what's happening</p>
             </div>
+          </div>
 
-            <div className="mt-4 inline-flex rounded-full bg-slate-100 p-1">
+          {/* Tab Navigation */}
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+            {["for-you", "following", "trending", "recent"].map((tab) => (
               <button
-                type="button"
-                onClick={() => setViewMode("posts")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-                  viewMode === "posts" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-all ${
+                  activeTab === tab
+                    ? "bg-blue-500 text-white shadow-md"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
-                Posts
+                {tab.charAt(0).toUpperCase() + tab.slice(1).replace("-", " ")}
               </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("workspaces")}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-                  viewMode === "workspaces" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                Workspaces
-              </button>
-            </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {viewMode === "posts" ? postsView : workspacesView}
+      {postsView}
     </div>
   )
 }

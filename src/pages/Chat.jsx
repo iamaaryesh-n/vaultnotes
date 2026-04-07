@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { useAuth } from "../hooks/useAuth"
+import { ChatListSkeleton } from "../components/SkeletonLoader"
 import ReactionModal from "../components/ReactionModal"
 import { useToast } from "../hooks/useToast"
 import { encrypt, decrypt, importKey, generateKey, exportKey, validateKey, debugLogKey } from "../utils/encryption"
@@ -13,6 +14,11 @@ import utc from "dayjs/plugin/utc"
 
 dayjs.extend(relativeTime)
 dayjs.extend(utc)
+
+const CHAT_LIST_VIEW = {
+  ACTIVE: "active",
+  ARCHIVED: "archived"
+}
 
 export default function Chat() {
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024
@@ -62,6 +68,12 @@ export default function Chat() {
   const [editingMessage, setEditingMessage] = useState(null)
   const [loadedImageUrls, setLoadedImageUrls] = useState({}) // messageId -> signed URL
   const [deleteConfirmationMessage, setDeleteConfirmationMessage] = useState(null)
+  const [directSidebarView, setDirectSidebarView] = useState(CHAT_LIST_VIEW.ACTIVE)
+  const [groupSidebarView, setGroupSidebarView] = useState(CHAT_LIST_VIEW.ACTIVE)
+  const [conversationPreferencesById, setConversationPreferencesById] = useState({})
+  const [groupPreferencesById, setGroupPreferencesById] = useState({})
+  const [openConversationOptionsId, setOpenConversationOptionsId] = useState(null)
+  const [openGroupOptionsId, setOpenGroupOptionsId] = useState(null)
 
   // Group chat state
   const [chatMode, setChatMode] = useState('direct') // 'direct' | 'groups'
@@ -530,6 +542,169 @@ export default function Chat() {
       return new Date(bTime).getTime() - new Date(aTime).getTime()
     })
   }, [])
+
+  const isPreferenceArchived = useCallback((preference) => preference?.is_archived === true, [])
+  const isPreferenceDeleted = useCallback((preference) => preference?.is_deleted === true, [])
+
+  const fetchConversationPreferences = useCallback(async (userId, conversationIds = []) => {
+    if (!userId || conversationIds.length === 0) {
+      setConversationPreferencesById({})
+      return
+    }
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("conversation_preferences")
+        .select("conversation_id, is_archived, is_deleted")
+        .eq("user_id", userId)
+        .is("group_id", null)
+        .in("conversation_id", conversationIds)
+
+      if (fetchError) {
+        console.error("[Chat] Failed to fetch conversation preferences:", fetchError)
+        return
+      }
+
+      const mapped = {}
+      ;(data || []).forEach((row) => {
+        if (!row?.conversation_id) return
+        mapped[row.conversation_id] = {
+          is_archived: row.is_archived === true,
+          is_deleted: row.is_deleted === true
+        }
+      })
+
+      setConversationPreferencesById(mapped)
+    } catch (err) {
+      console.error("[Chat] Exception fetching conversation preferences:", err)
+    }
+  }, [])
+
+  const fetchGroupPreferences = useCallback(async (userId, groupIds = []) => {
+    if (!userId || groupIds.length === 0) {
+      setGroupPreferencesById({})
+      return
+    }
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("conversation_preferences")
+        .select("group_id, is_archived, is_deleted")
+        .eq("user_id", userId)
+        .is("conversation_id", null)
+        .in("group_id", groupIds)
+
+      if (fetchError) {
+        console.error("[Chat] Failed to fetch group preferences:", fetchError)
+        return
+      }
+
+      const mapped = {}
+      ;(data || []).forEach((row) => {
+        if (!row?.group_id) return
+        mapped[row.group_id] = {
+          is_archived: row.is_archived === true,
+          is_deleted: row.is_deleted === true
+        }
+      })
+
+      setGroupPreferencesById(mapped)
+    } catch (err) {
+      console.error("[Chat] Exception fetching group preferences:", err)
+    }
+  }, [])
+
+  const upsertConversationPreference = useCallback(
+    async (conversationId, updates) => {
+      if (!contextUser?.id || !conversationId) return false
+
+      const existingPreference = conversationPreferencesById[conversationId] || {}
+      const nextPreference = {
+        is_archived: updates?.is_archived ?? existingPreference.is_archived ?? false,
+        is_deleted: updates?.is_deleted ?? existingPreference.is_deleted ?? false
+      }
+
+      setConversationPreferencesById((prev) => ({
+        ...prev,
+        [conversationId]: nextPreference
+      }))
+
+      const { error: upsertError } = await supabase.from("conversation_preferences").upsert(
+        {
+          user_id: contextUser.id,
+          conversation_id: conversationId,
+          group_id: null,
+          is_archived: nextPreference.is_archived,
+          is_deleted: nextPreference.is_deleted,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "user_id,conversation_id" }
+      )
+
+      if (upsertError) {
+        console.error("[Chat] Failed to update conversation preference:", upsertError)
+        setConversationPreferencesById((prev) => {
+          const reverted = { ...prev }
+          if (existingPreference && Object.keys(existingPreference).length > 0) {
+            reverted[conversationId] = existingPreference
+          } else {
+            delete reverted[conversationId]
+          }
+          return reverted
+        })
+        return false
+      }
+
+      return true
+    },
+    [contextUser?.id, conversationPreferencesById]
+  )
+
+  const upsertGroupPreference = useCallback(
+    async (groupId, updates) => {
+      if (!contextUser?.id || !groupId) return false
+
+      const existingPreference = groupPreferencesById[groupId] || {}
+      const nextPreference = {
+        is_archived: updates?.is_archived ?? existingPreference.is_archived ?? false,
+        is_deleted: updates?.is_deleted ?? existingPreference.is_deleted ?? false
+      }
+
+      setGroupPreferencesById((prev) => ({
+        ...prev,
+        [groupId]: nextPreference
+      }))
+
+      const { error: upsertError } = await supabase.from("conversation_preferences").upsert(
+        {
+          user_id: contextUser.id,
+          conversation_id: null,
+          group_id: groupId,
+          is_archived: nextPreference.is_archived,
+          is_deleted: nextPreference.is_deleted,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "user_id,group_id" }
+      )
+
+      if (upsertError) {
+        console.error("[Chat] Failed to update group preference:", upsertError)
+        setGroupPreferencesById((prev) => {
+          const reverted = { ...prev }
+          if (existingPreference && Object.keys(existingPreference).length > 0) {
+            reverted[groupId] = existingPreference
+          } else {
+            delete reverted[groupId]
+          }
+          return reverted
+        })
+        return false
+      }
+
+      return true
+    },
+    [contextUser?.id, groupPreferencesById]
+  )
 
   const updateMyLastSeen = useCallback(async (force = false) => {
     if (!contextUser?.id) {
@@ -1237,11 +1412,19 @@ export default function Chat() {
     if (!contextUser?.id) {
       setError("You need to sign in to use chat")
       setLoadingConversations(false)
+      setConversationPreferencesById({})
+      setGroupPreferencesById({})
       return
     }
 
     fetchConversations(contextUser.id)
   }, [contextUser?.id, fetchConversations])
+
+  useEffect(() => {
+    if (!contextUser?.id) return
+    const conversationIds = conversations.map((conversation) => conversation.id).filter(Boolean)
+    fetchConversationPreferences(contextUser.id, conversationIds)
+  }, [contextUser?.id, conversations, fetchConversationPreferences])
 
   useEffect(() => {
     if (!contextUser?.id) {
@@ -3711,6 +3894,44 @@ export default function Chat() {
 
   const totalUnreadChatCount = unreadDirectCount + unreadGroupCount
 
+  const visibleConversations = useMemo(() => {
+    return conversations.filter((conversation) => {
+      const preference = conversationPreferencesById[conversation.id]
+      const archived = isPreferenceArchived(preference)
+      const deleted = isPreferenceDeleted(preference)
+
+      if (deleted) return false
+      if (directSidebarView === CHAT_LIST_VIEW.ARCHIVED) return archived
+      return !archived
+    })
+  }, [conversations, conversationPreferencesById, directSidebarView, isPreferenceArchived, isPreferenceDeleted, CHAT_LIST_VIEW.ARCHIVED])
+
+  const archivedConversationCount = useMemo(() => {
+    return conversations.filter((conversation) => {
+      const preference = conversationPreferencesById[conversation.id]
+      return isPreferenceArchived(preference) && !isPreferenceDeleted(preference)
+    }).length
+  }, [conversations, conversationPreferencesById, isPreferenceArchived, isPreferenceDeleted])
+
+  const visibleGroups = useMemo(() => {
+    return groups.filter((group) => {
+      const preference = groupPreferencesById[group.id]
+      const archived = isPreferenceArchived(preference)
+      const deleted = isPreferenceDeleted(preference)
+
+      if (deleted) return false
+      if (groupSidebarView === CHAT_LIST_VIEW.ARCHIVED) return archived
+      return !archived
+    })
+  }, [groups, groupPreferencesById, groupSidebarView, isPreferenceArchived, isPreferenceDeleted, CHAT_LIST_VIEW.ARCHIVED])
+
+  const archivedGroupCount = useMemo(() => {
+    return groups.filter((group) => {
+      const preference = groupPreferencesById[group.id]
+      return isPreferenceArchived(preference) && !isPreferenceDeleted(preference)
+    }).length
+  }, [groups, groupPreferencesById, isPreferenceArchived, isPreferenceDeleted])
+
   // Dispatch unread count update to navbar
   useEffect(() => {
     console.log("[Chat] Dispatching unread count update:", {
@@ -4272,6 +4493,12 @@ export default function Chat() {
   }, [chatMode, fetchGroups])
 
   useEffect(() => {
+    if (!contextUser?.id) return
+    const groupIds = groups.map((group) => group.id).filter(Boolean)
+    fetchGroupPreferences(contextUser.id, groupIds)
+  }, [contextUser?.id, groups, fetchGroupPreferences])
+
+  useEffect(() => {
     if (!contextUser?.id || groups.length === 0) {
       if (groups.length === 0) {
         setUnreadGroupCountsByGroup({})
@@ -4409,6 +4636,125 @@ export default function Chat() {
     }
   }, [activeGroupEmojiPickerMessageId, activeGroupMessageMenuId])
 
+  useEffect(() => {
+    const handleSidebarOptionsOutside = (event) => {
+      const menuNode = event.target?.closest?.("[data-chat-sidebar-menu='true']")
+      const triggerNode = event.target?.closest?.("[data-chat-sidebar-menu-trigger='true']")
+
+      if (menuNode || triggerNode) {
+        return
+      }
+
+      setOpenConversationOptionsId(null)
+      setOpenGroupOptionsId(null)
+    }
+
+    if (openConversationOptionsId || openGroupOptionsId) {
+      document.addEventListener("mousedown", handleSidebarOptionsOutside)
+      return () => document.removeEventListener("mousedown", handleSidebarOptionsOutside)
+    }
+  }, [openConversationOptionsId, openGroupOptionsId])
+
+  const handleArchiveConversation = useCallback(
+    async (conversationId) => {
+      const updated = await upsertConversationPreference(conversationId, { is_archived: true, is_deleted: false })
+      if (!updated) {
+        showToastError("Failed to archive conversation")
+        return
+      }
+
+      if (activeConversationId === conversationId && directSidebarView === CHAT_LIST_VIEW.ACTIVE) {
+        navigateToConversation(null, { replace: true })
+      }
+
+      setOpenConversationOptionsId(null)
+      showSuccess("Conversation archived")
+    },
+    [activeConversationId, directSidebarView, navigateToConversation, showSuccess, showToastError, upsertConversationPreference]
+  )
+
+  const handleRestoreConversation = useCallback(
+    async (conversationId) => {
+      const updated = await upsertConversationPreference(conversationId, { is_archived: false, is_deleted: false })
+      if (!updated) {
+        showToastError("Failed to restore conversation")
+        return
+      }
+
+      setOpenConversationOptionsId(null)
+      showSuccess("Conversation restored")
+    },
+    [showSuccess, showToastError, upsertConversationPreference]
+  )
+
+  const handleDeleteConversationForMe = useCallback(
+    async (conversationId) => {
+      const updated = await upsertConversationPreference(conversationId, { is_deleted: true, is_archived: false })
+      if (!updated) {
+        showToastError("Failed to delete conversation")
+        return
+      }
+
+      if (activeConversationId === conversationId) {
+        navigateToConversation(null, { replace: true })
+      }
+
+      setOpenConversationOptionsId(null)
+      showSuccess("Conversation removed")
+    },
+    [activeConversationId, navigateToConversation, showSuccess, showToastError, upsertConversationPreference]
+  )
+
+  const handleArchiveGroup = useCallback(
+    async (groupId) => {
+      const updated = await upsertGroupPreference(groupId, { is_archived: true, is_deleted: false })
+      if (!updated) {
+        showToastError("Failed to archive group")
+        return
+      }
+
+      if (activeGroupId === groupId && groupSidebarView === CHAT_LIST_VIEW.ACTIVE) {
+        setActiveGroupId(null)
+      }
+
+      setOpenGroupOptionsId(null)
+      showSuccess("Group archived")
+    },
+    [activeGroupId, groupSidebarView, showSuccess, showToastError, upsertGroupPreference]
+  )
+
+  const handleRestoreGroup = useCallback(
+    async (groupId) => {
+      const updated = await upsertGroupPreference(groupId, { is_archived: false, is_deleted: false })
+      if (!updated) {
+        showToastError("Failed to restore group")
+        return
+      }
+
+      setOpenGroupOptionsId(null)
+      showSuccess("Group restored")
+    },
+    [showSuccess, showToastError, upsertGroupPreference]
+  )
+
+  const handleDeleteGroupForMe = useCallback(
+    async (groupId) => {
+      const updated = await upsertGroupPreference(groupId, { is_deleted: true, is_archived: false })
+      if (!updated) {
+        showToastError("Failed to delete group")
+        return
+      }
+
+      if (activeGroupId === groupId) {
+        setActiveGroupId(null)
+      }
+
+      setOpenGroupOptionsId(null)
+      showSuccess("Group removed")
+    },
+    [activeGroupId, showSuccess, showToastError, upsertGroupPreference]
+  )
+
 
   return (
     <div className="mx-auto flex h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-2 pt-3 pb-1 md:px-3">
@@ -4460,77 +4806,110 @@ export default function Chat() {
           {chatMode === "direct" && (
             <>
           <div className="border-b border-slate-100 px-3 py-2.5">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Conversations</h2>
-            <div className="relative mt-2">
-              <input
-                value={userSearchQuery}
-                onChange={(event) => setUserSearchQuery(event.target.value)}
-                placeholder="Search users by username"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
-              />
-
-              {userSearchQuery.trim() && (
-                <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-                  {userSearchLoading ? (
-                    <p className="px-3 py-3 text-sm text-slate-500">Searching...</p>
-                  ) : userSearchResults.length === 0 ? (
-                    <p className="px-3 py-3 text-sm text-slate-500">No users found.</p>
-                  ) : (
-                    userSearchResults.map((profile) => (
-                      (() => {
-                        const displayName = getDisplayName(profile)
-                        const shouldShowUsername = Boolean(profile.username && profile.name)
-
-                        return (
-                      <button
-                        key={profile.id}
-                        onClick={() => handleStartConversationWithUser(profile)}
-                        disabled={startingConversationUserId === profile.id}
-                        className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
-                      >
-                        {profile.avatar_url ? (
-                          <img
-                            src={profile.avatar_url}
-                            alt={displayName}
-                            className="h-8 w-8 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-                            {displayName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-slate-900">
-                            {displayName}
-                            {shouldShowUsername ? ` (@${profile.username})` : ""}
-                          </p>
-                        </div>
-
-                        {startingConversationUserId === profile.id && (
-                          <span className="text-xs text-slate-500">Opening...</span>
-                        )}
-                      </button>
-                        )
-                      })()
-                    ))
-                  )}
-                </div>
-              )}
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                {directSidebarView === CHAT_LIST_VIEW.ACTIVE ? "Conversations" : "Archived Chats"}
+              </h2>
+              <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setDirectSidebarView(CHAT_LIST_VIEW.ACTIVE)}
+                  className={`rounded-md px-2 py-1 text-xs font-semibold transition ${
+                    directSidebarView === CHAT_LIST_VIEW.ACTIVE
+                      ? "bg-white text-slate-700 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Chats
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectSidebarView(CHAT_LIST_VIEW.ARCHIVED)}
+                  className={`rounded-md px-2 py-1 text-xs font-semibold transition ${
+                    directSidebarView === CHAT_LIST_VIEW.ARCHIVED
+                      ? "bg-white text-slate-700 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Archived ({archivedConversationCount})
+                </button>
+              </div>
             </div>
+
+            {directSidebarView === CHAT_LIST_VIEW.ACTIVE && (
+              <div className="relative mt-2">
+                <input
+                  value={userSearchQuery}
+                  onChange={(event) => setUserSearchQuery(event.target.value)}
+                  placeholder="Search users by username"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+                />
+
+                {userSearchQuery.trim() && (
+                  <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                    {userSearchLoading ? (
+                      <p className="px-3 py-3 text-sm text-slate-500">Searching...</p>
+                    ) : userSearchResults.length === 0 ? (
+                      <p className="px-3 py-3 text-sm text-slate-500">No users found.</p>
+                    ) : (
+                      userSearchResults.map((profile) => (
+                        (() => {
+                          const displayName = getDisplayName(profile)
+                          const shouldShowUsername = Boolean(profile.username && profile.name)
+
+                          return (
+                        <button
+                          key={profile.id}
+                          onClick={() => handleStartConversationWithUser(profile)}
+                          disabled={startingConversationUserId === profile.id}
+                          className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {profile.avatar_url ? (
+                            <img
+                              src={profile.avatar_url}
+                              alt={displayName}
+                              className="h-8 w-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                              {displayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-slate-900">
+                              {displayName}
+                              {shouldShowUsername ? ` (@${profile.username})` : ""}
+                            </p>
+                          </div>
+
+                          {startingConversationUserId === profile.id && (
+                            <span className="text-xs text-slate-500">Opening...</span>
+                          )}
+                        </button>
+                          )
+                        })()
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             {loadingConversations ? (
-              <div className="space-y-3 p-4">
-                {Array.from({ length: 5 }).map((_, index) => (
-                  <div key={index} className="h-16 animate-pulse rounded-lg bg-slate-100" />
-                ))}
+              <div className="p-4">
+                <ChatListSkeleton />
               </div>
-            ) : conversations.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">No conversations yet.</p>
+            ) : visibleConversations.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-slate-500">
+                {directSidebarView === CHAT_LIST_VIEW.ARCHIVED
+                  ? "No archived conversations."
+                  : "No conversations yet."}
+              </p>
             ) : (
-              conversations.map((conversation) => {
+              visibleConversations.map((conversation) => {
                 const isActive = conversation.id === activeConversationId
                 const displayName = getDisplayName(conversation.partner)
                 const partnerAvatar = conversation.partner?.avatar_url
@@ -4543,53 +4922,104 @@ export default function Chat() {
                 const showTypingPreview = Boolean(typingByConversation[conversation.id])
 
                 return (
-                  <button
+                  <div
                     key={conversation.id}
-                    onClick={() => navigateToConversation(conversation.id)}
-                    className={`w-full border-b border-slate-100 px-3 py-2.5 text-left transition-all duration-200 ${
-                      isActive
-                        ? "bg-slate-100"
-                        : hasUnread
-                          ? "bg-yellow-50/60 hover:bg-yellow-50"
-                          : "hover:bg-slate-50"
-                    }`}
+                    className="group relative border-b border-slate-100"
                   >
-                    <div className="flex items-center gap-2.5">
-                      {partnerAvatar ? (
-                        <img
-                          src={partnerAvatar}
-                          alt={displayName}
-                          className="h-9 w-9 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-                          {displayName.charAt(0).toUpperCase()}
-                        </div>
-                      )}
+                    <button
+                      onClick={() => navigateToConversation(conversation.id)}
+                      className={`w-full px-3 py-2.5 pr-10 text-left transition-all duration-200 ${
+                        isActive
+                          ? "bg-slate-100"
+                          : hasUnread
+                            ? "bg-yellow-50/60 hover:bg-yellow-50"
+                            : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        {partnerAvatar ? (
+                          <img
+                            src={partnerAvatar}
+                            alt={displayName}
+                            className="h-9 w-9 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                            {displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
 
-                      <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
-                          {showTypingPreview ? (
-                            <p className="mt-1 truncate text-xs italic text-slate-400">Typing...</p>
-                          ) : latestContent ? (
-                            <p className={`mt-1 truncate text-[0.8125rem] ${hasUnread ? "font-medium text-slate-600" : "text-slate-400"}`}>
-                              {latestContent}
-                            </p>
-                          ) : null}
-                        </div>
+                        <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-slate-900">{displayName}</p>
+                            {showTypingPreview ? (
+                              <p className="mt-1 truncate text-xs italic text-slate-400">Typing...</p>
+                            ) : latestContent ? (
+                              <p className={`mt-1 truncate text-[0.8125rem] ${hasUnread ? "font-medium text-slate-600" : "text-slate-400"}`}>
+                                {latestContent}
+                              </p>
+                            ) : null}
+                          </div>
 
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <p className="text-[11px] text-slate-500">{formatConversationListTime(latestTimestamp)}</p>
-                          {hasUnread && (
-                            <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                              {unreadCount > 99 ? "99+" : unreadCount}
-                            </span>
-                          )}
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <p className="text-[11px] text-slate-500">{formatConversationListTime(latestTimestamp)}</p>
+                            {hasUnread && (
+                              <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                                {unreadCount > 99 ? "99+" : unreadCount}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </button>
+                    </button>
+                    <button
+                      type="button"
+                      data-chat-sidebar-menu-trigger="true"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setOpenGroupOptionsId(null)
+                        setOpenConversationOptionsId((prev) => (prev === conversation.id ? null : conversation.id))
+                      }}
+                      className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 ${
+                        openConversationOptionsId === conversation.id ? "opacity-100" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                      }`}
+                      aria-label="Conversation options"
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </button>
+
+                    {openConversationOptionsId === conversation.id && (
+                      <div
+                        data-chat-sidebar-menu="true"
+                        className="absolute right-2 top-11 z-20 min-w-[130px] rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+                      >
+                        {directSidebarView === CHAT_LIST_VIEW.ARCHIVED ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreConversation(conversation.id)}
+                            className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Restore
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleArchiveConversation(conversation.id)}
+                            className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Archive
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteConversationForMe(conversation.id)}
+                          className="mt-1 flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )
               })
             )}
@@ -4602,9 +5032,12 @@ export default function Chat() {
             <>
               <div className="border-b border-slate-100 px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Groups</h2>
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                    {groupSidebarView === CHAT_LIST_VIEW.ACTIVE ? "Groups" : "Archived Chats"}
+                  </h2>
                   <button
                     onClick={() => setShowNewGroupModal(true)}
+                    disabled={groupSidebarView === CHAT_LIST_VIEW.ARCHIVED}
                     className="inline-flex items-center justify-center rounded-lg bg-yellow-400 hover:bg-yellow-500 text-white p-1 transition-colors"
                   >
                     <svg
@@ -4622,10 +5055,34 @@ export default function Chat() {
                     </svg>
                   </button>
                 </div>
+                <div className="mb-2 flex items-center gap-1 rounded-lg bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setGroupSidebarView(CHAT_LIST_VIEW.ACTIVE)}
+                    className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold transition ${
+                      groupSidebarView === CHAT_LIST_VIEW.ACTIVE
+                        ? "bg-white text-slate-700 shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Groups
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupSidebarView(CHAT_LIST_VIEW.ARCHIVED)}
+                    className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold transition ${
+                      groupSidebarView === CHAT_LIST_VIEW.ARCHIVED
+                        ? "bg-white text-slate-700 shadow-sm"
+                        : "text-slate-500 hover:text-slate-700"
+                    }`}
+                  >
+                    Archived ({archivedGroupCount})
+                  </button>
+                </div>
                 <input
                   value={newGroupSearch}
                   onChange={(e) => setNewGroupSearch(e.target.value)}
-                  placeholder="Search groups..."
+                  placeholder={groupSidebarView === CHAT_LIST_VIEW.ARCHIVED ? "Search archived groups..." : "Search groups..."}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
                 />
               </div>
@@ -4637,10 +5094,14 @@ export default function Chat() {
                       <div key={index} className="h-16 animate-pulse rounded-lg bg-slate-100" />
                     ))}
                   </div>
-                ) : groups.length === 0 ? (
-                  <p className="px-4 py-8 text-center text-sm text-slate-500">No groups yet. Create one to get started!</p>
+                ) : visibleGroups.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-slate-500">
+                    {groupSidebarView === CHAT_LIST_VIEW.ARCHIVED
+                      ? "No archived groups."
+                      : "No groups yet. Create one to get started!"}
+                  </p>
                 ) : (
-                  groups
+                  visibleGroups
                     .filter((group) =>
                       group.name.toLowerCase().includes(newGroupSearch.toLowerCase())
                     )
@@ -4652,30 +5113,78 @@ export default function Chat() {
                         : ""
 
                       return (
-                        <button
-                          key={group.id}
-                          onClick={() => handleSelectGroup(group)}
-                          className={`w-full border-b border-slate-100 px-3 py-2.5 text-left transition-all duration-200 ${
-                            isActive ? "bg-slate-100 border-l-4 border-l-yellow-400" : "hover:bg-slate-50"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-yellow-200 text-sm font-semibold text-yellow-700 flex-shrink-0">
-                              {group.name.charAt(0).toUpperCase()}
-                            </div>
+                        <div key={group.id} className="group relative border-b border-slate-100">
+                          <button
+                            onClick={() => handleSelectGroup(group)}
+                            className={`w-full px-3 py-2.5 pr-10 text-left transition-all duration-200 ${
+                              isActive ? "bg-slate-100 border-l-4 border-l-yellow-400" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-yellow-200 text-sm font-semibold text-yellow-700 flex-shrink-0">
+                                {group.name.charAt(0).toUpperCase()}
+                              </div>
 
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-slate-900">{group.name}</p>
-                              <p className="mt-1 truncate text-[0.8125rem] text-slate-400">
-                                {lastMessagePreview}
-                              </p>
-                            </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-slate-900">{group.name}</p>
+                                <p className="mt-1 truncate text-[0.8125rem] text-slate-400">
+                                  {lastMessagePreview}
+                                </p>
+                              </div>
 
-                            <div className="flex shrink-0 flex-col items-end gap-1">
-                              <p className="text-[11px] text-slate-500">{lastMessageTime}</p>
+                              <div className="flex shrink-0 flex-col items-end gap-1">
+                                <p className="text-[11px] text-slate-500">{lastMessageTime}</p>
+                              </div>
                             </div>
-                          </div>
-                        </button>
+                          </button>
+                          <button
+                            type="button"
+                            data-chat-sidebar-menu-trigger="true"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setOpenConversationOptionsId(null)
+                              setOpenGroupOptionsId((prev) => (prev === group.id ? null : group.id))
+                            }}
+                            className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-100 ${
+                              openGroupOptionsId === group.id ? "opacity-100" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+                            }`}
+                            aria-label="Group options"
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </button>
+
+                          {openGroupOptionsId === group.id && (
+                            <div
+                              data-chat-sidebar-menu="true"
+                              className="absolute right-2 top-11 z-20 min-w-[130px] rounded-lg border border-slate-200 bg-white p-1.5 shadow-lg"
+                            >
+                              {groupSidebarView === CHAT_LIST_VIEW.ARCHIVED ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRestoreGroup(group.id)}
+                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Restore
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleArchiveGroup(group.id)}
+                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Archive
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGroupForMe(group.id)}
+                                className="mt-1 flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )
                     })
                 )}

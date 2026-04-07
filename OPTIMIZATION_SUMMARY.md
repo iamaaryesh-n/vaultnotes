@@ -208,7 +208,47 @@ console.log(`Navigation took ${end - start}ms`)
 
 ---
 
-## 🐛 Debugging
+## �️ Image Lazy Loading
+
+### What Was Done
+All 13 user-facing images have been configured with HTML5 lazy loading to defer image downloads until needed:
+
+**Images Updated:**
+- 4 images in Explore.jsx (post previews and modals)
+- 2 images in Profile.jsx (user avatar)
+- 2 images in Notifications.jsx (notification actor avatars)
+- 1 image in ReactionModal.jsx (user avatar in reactions)
+- 1 image in InviteUserModal.jsx (invited user avatar)
+- 1 image in NotificationDropdown.jsx (notification avatars)
+- 1 image in Chat.jsx (message attachment images)
+- 1 image in FollowersModal.jsx (follower avatars)
+
+### Performance Benefits
+| Metric | Impact |
+|--------|--------|
+| Initial Page Load | Faster - fewer images downloaded |
+| LCP (Largest Contentful Paint) | Improved - deferred images don't block rendering |
+| Scroll Performance | Better - images load on-demand as user scrolls |
+| Bandwidth Usage | Reduced - off-screen images not loaded |
+| Browser Performance | Improved - fewer concurrent image downloads |
+
+### Browser Support
+- Chrome/Edge 76+
+- Firefox 75+
+- Safari 15.1+
+- Mobile browsers (99%+ coverage)
+
+Older browsers degrade gracefully, loading images immediately with no functionality impact.
+
+### Implementation Pattern
+```html
+<!-- Simple addition of loading="lazy" attribute -->
+<img src={imageUrl} alt="description" loading="lazy" className="..." />
+```
+
+---
+
+## �🐛 Debugging
 
 ### Check Cache Status
 ```javascript

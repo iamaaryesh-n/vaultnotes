@@ -37,6 +37,9 @@ export default function WorkspaceDetail() {
   const [quickMemoryContent, setQuickMemoryContent] = useState("")
   const [isMember, setIsMember] = useState(null) // Track if user is member (for read-only access UI)
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false)
+  const [workspaceAttribution, setWorkspaceAttribution] = useState(null) // { invitedBy, invitedAt, invitedByUsername }
+  const [members, setMembers] = useState([]) // Phase 1: Workspace members list
+  const [recentActivity, setRecentActivity] = useState([]) // Phase 2: Recent activity feed
 
   // Track initialization to prevent duplicate loads
   const initializeControllerRef = useRef(null)
@@ -75,6 +78,28 @@ export default function WorkspaceDetail() {
       console.log("[WorkspaceDetail] Reset initialization refs for next visit")
     }
   }, [])
+
+  // Fetch workspace members and listen for membership changes
+  useEffect(() => {
+    if (workspace?.id) {
+      fetchMembers()
+      fetchRecentActivity()
+    }
+
+    // Listen for membership changes from other components
+    const handleMembershipChange = () => {
+      if (workspace?.id) {
+        fetchMembers()
+        fetchRecentActivity()
+      }
+    }
+
+    window.addEventListener("workspaceMembershipChanged", handleMembershipChange)
+    
+    return () => {
+      window.removeEventListener("workspaceMembershipChanged", handleMembershipChange)
+    }
+  }, [workspace?.id])
 
   const validateSchema = async () => {
     const { error } = await supabase
@@ -126,11 +151,12 @@ export default function WorkspaceDetail() {
       // - Load sort preference from cache or database
       console.log("[WorkspaceDetail] Steps 2-4: Running parallel API calls...")
 
-      const [accessVerification, role, workspaceData, cachedSortOrder] = await Promise.all([
+      const [accessVerification, role, workspaceData, cachedSortOrder, invitationAttribution] = await Promise.all([
         verifyWorkspaceAccess(user.id, id),
         getUserRole(id).catch(() => "viewer"), // Non-critical, default to viewer
         fetchWorkspaceWithCache(), // New function with caching
         loadSortPreferenceAsync(), // New async function for sort preference
+        fetchWorkspaceAttribution(user.id, id),
       ])
 
       // Abort check
@@ -142,6 +168,7 @@ export default function WorkspaceDetail() {
       // Track if user is a member
       setIsMember(accessVerification.isMember)
       setUserRole(role)
+      setWorkspaceAttribution(accessVerification.isMember ? invitationAttribution : null)
 
       // Apply cached sort order
       if (cachedSortOrder) {
@@ -185,26 +212,33 @@ export default function WorkspaceDetail() {
       
       debugAccessDecision(workspaceData, accessVerification.isMember, "Step 5 - Memory Access Decision")
       
+      // OPTIMIZATION: Defer memory loading to after initial render
       if (canViewMemories && accessVerification.isMember) {
-        // Member: load encryption key and decrypt memories
-        console.log(`[WorkspaceDetail]   → User is member, loading encrypted key and decrypting memories...`)
-        await loadWorkspaceKey()
+        // Member: defer workspace key loading and memory decryption
+        console.log(`[WorkspaceDetail]   → User is member, deferring key loading and memory decryption...`)
+        setTimeout(() => {
+          if (!initializeControllerRef.current?.signal?.aborted) {
+            loadWorkspaceKeyDeferred()
+          }
+        }, 0)
       } else if (canViewMemories && !accessVerification.isMember) {
-        // Non-member but public workspace: fetch memory metadata only
-        console.log(`[WorkspaceDetail]   → User is non-member viewing public workspace, fetching memory metadata...`)
-        await fetchMemoriesPublic()
+        // Non-member but public workspace: defer memory loading
+        console.log(`[WorkspaceDetail]   → User is non-member viewing public workspace, deferring memory load...`)
+        setTimeout(() => {
+          if (!initializeControllerRef.current?.signal?.aborted) {
+            fetchMemoriesPublic()
+          }
+        }, 0)
       } else {
         // No access
         console.log("[WorkspaceDetail] ❌ User has no memory access")
         setMemories([])
-        setLoading(false)
       }
 
       const elapsed = Date.now() - startTime
-      console.log(`[WorkspaceDetail] ✅ Initialization completed in ${elapsed}ms`)
+      console.log(`[WorkspaceDetail] ✅ Workspace UI initialized in ${elapsed}ms (memory loading deferred)`)
       isInitializedRef.current = true
-
-      // Sort preference is now loaded in parallel during Step 2-4
+      setLoading(false)
     } catch (err) {
       console.error("[WorkspaceDetail] ❌ Initialization error:", err)
       showError("Failed to load workspace")
@@ -214,6 +248,182 @@ export default function WorkspaceDetail() {
     }
 
     isInitializingRef.current = false
+  }
+
+  const loadWorkspaceKeyDeferred = async () => {
+    // Deferred key loading - runs AFTER initial render, doesn't block UI
+    console.log(`[WorkspaceDetail/loadWorkspaceKeyDeferred] Starting deferred key/memory load (non-blocking)`)
+    
+    try {
+      // Step 1: Try localStorage first (fastest)
+      console.log(`[WorkspaceDetail/loadWorkspaceKeyDeferred] Step 1: Checking localStorage for cached key...`)
+      let storedKey = localStorage.getItem(`workspace_key_${id}`)
+      
+      if (storedKey) {
+        console.log(`[WorkspaceDetail/loadWorkspaceKeyDeferred] ✅ Key found in localStorage`)
+        debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKeyDeferred - localStorage")
+      }
+
+      // Step 2: If not in localStorage, fetch from database
+      if (!storedKey) {
+        console.log(`[WorkspaceDetail/loadWorkspaceKeyDeferred] Step 2: Key not cached, fetching from database...`)
+        const {
+          data: { user },
+          error: authError
+        } = await supabase.auth.getUser()
+
+        if (authError || !user) {
+          console.error("[WorkspaceDetail/loadWorkspaceKeyDeferred] Authentication error:", authError)
+          showError("Authentication error. Please log in again.")
+          return
+        }
+
+        let memberKeyFound = false
+        let publicKeyFound = false
+
+        // Try to fetch member key first
+        const { data: memberKey, error: memberKeyError } = await supabase
+          .from("workspace_keys")
+          .select("encrypted_key")
+          .eq("workspace_id", id)
+          .eq("user_id", user.id)
+          .eq("key_scope", "member")
+          .maybeSingle()
+
+        if (memberKey?.encrypted_key) {
+          storedKey = memberKey.encrypted_key
+          memberKeyFound = true
+          console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] ✅ Fetched member key from database")
+        } else if (memberKeyError) {
+          console.error("[WorkspaceDetail/loadWorkspaceKeyDeferred] Database error:", JSON.stringify(memberKeyError, null, 2))
+        }
+
+        // If not a member, try public_read key for public workspaces
+        if (!storedKey) {
+          console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] Checking for public read key...")
+          const { data: publicKey, error: publicKeyError } = await supabase
+            .from("workspace_keys")
+            .select("encrypted_key")
+            .eq("workspace_id", id)
+            .is("user_id", null)
+            .eq("key_scope", "public_read")
+            .maybeSingle()
+
+          if (publicKey?.encrypted_key) {
+            storedKey = publicKey.encrypted_key
+            publicKeyFound = true
+            console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] ✅ Fetched public read key from database")
+          } else if (publicKeyError) {
+            console.error("[WorkspaceDetail/loadWorkspaceKeyDeferred] Database error:", JSON.stringify(publicKeyError, null, 2))
+          }
+        }
+        
+        if (!memberKeyFound && !publicKeyFound) {
+          console.error(`[WorkspaceDetail/loadWorkspaceKeyDeferred] ❌ No encryption key found for workspace ${id}`)
+          showError("Cannot access this workspace - encryption key not found.")
+          return
+        }
+
+        debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKeyDeferred - database")
+        localStorage.setItem(`workspace_key_${id}`, storedKey)
+      }
+
+      // Step 3: Validate the key format
+      console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] Step 3: Validating encryption key...")
+      const keyValidation = validateKey(storedKey)
+      if (!keyValidation.isValid) {
+        console.error(`[WorkspaceDetail/loadWorkspaceKeyDeferred] ❌ Key validation failed: ${keyValidation.error}`)
+        showError(`Invalid encryption key: ${keyValidation.error}`)
+        return
+      }
+
+      console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] ✅ Key validation passed")
+
+      // Step 4: Import key and fetch/decrypt memories
+      try {
+        console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] Step 4: Importing key and fetching memories...")
+        const key = await importKey(storedKey)
+        setWorkspaceKey(key)
+        await fetchMemoriesOptimized(key)
+      } catch (err) {
+        console.error("[WorkspaceDetail/loadWorkspaceKeyDeferred] Failed to import key:", err)
+        showError("Failed to process encryption key. Please try again.")
+      }
+    } catch (err) {
+      console.error("[WorkspaceDetail/loadWorkspaceKeyDeferred] Unexpected error:", err)
+      showError("Error loading memories")
+    }
+  }
+
+  const fetchMemoriesOptimized = async (key) => {
+    // OPTIMIZATION: Load first 15 memories initially, preserves sorting and filtering
+    const INITIAL_BATCH_SIZE = 15
+    
+    console.log(`[WorkspaceDetail/fetchMemoriesOptimized] Starting optimized memory fetch...`)
+    console.log(`[WorkspaceDetail/fetchMemoriesOptimized] Loading initial batch of ${INITIAL_BATCH_SIZE} memories`)
+
+    if (!key) {
+      console.error("[WorkspaceDetail/fetchMemoriesOptimized] ❌ No encryption key provided!")
+      showError("Encryption key missing. Cannot load memories.")
+      setMemories([])
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("memories")
+      .select(`
+    id,
+    title,
+    encrypted_content,
+    iv,
+    created_at,
+    updated_at,
+    workspace_id,
+    tags,
+    is_favorite
+  `)
+      .eq("workspace_id", id)
+      .order("updated_at", { ascending: false })
+      .limit(INITIAL_BATCH_SIZE)
+
+    if (error) {
+      console.error("[WorkspaceDetail/fetchMemoriesOptimized] ❌ Database error:", error)
+      showError("Failed to load memories")
+      setMemories([])
+      return
+    }
+
+    console.log(`[WorkspaceDetail/fetchMemoriesOptimized] Retrieved ${data?.length || 0} memories`)
+
+    if (data && data.length > 0) {
+      try {
+        // Decrypt all memories in the batch
+        const decrypted = await Promise.all(
+          data.map(async (memory) => {
+            const text = await decrypt(
+              memory.encrypted_content,
+              memory.iv,
+              key
+            )
+
+            return {
+              ...memory,
+              content: text
+            }
+          })
+        )
+
+        console.log(`[WorkspaceDetail/fetchMemoriesOptimized] ✅ Successfully decrypted ${decrypted.length} memories`)
+        setMemories(decrypted)
+      } catch (decryptErr) {
+        console.error("[WorkspaceDetail/fetchMemoriesOptimized] ❌ Decryption failed:", decryptErr)
+        showError("Failed to decrypt memories")
+        setMemories([])
+      }
+    } else {
+      console.log("[WorkspaceDetail/fetchMemoriesOptimized] ℹ️  No memories found in workspace")
+      setMemories([])
+    }
   }
 
   const fetchWorkspaceWithCache = async () => {
@@ -326,6 +536,46 @@ export default function WorkspaceDetail() {
       setUserRole(role)
     } catch {
       setUserRole("viewer")
+    }
+  }
+
+  const fetchWorkspaceAttribution = async (userId, workspaceId) => {
+    if (!userId || !workspaceId) return null
+
+    try {
+      const { data: membership, error: memberError } = await supabase
+        .from("workspace_members")
+        .select("invited_by, invited_at")
+        .eq("workspace_id", workspaceId)
+        .eq("user_id", userId)
+        .maybeSingle()
+
+      if (memberError || !membership?.invited_by) {
+        return null
+      }
+
+      const { data: inviterProfile, error: inviterError } = await supabase
+        .from("profiles")
+        .select("username, name")
+        .eq("id", membership.invited_by)
+        .maybeSingle()
+
+      if (inviterError) {
+        return {
+          invitedBy: membership.invited_by,
+          invitedAt: membership.invited_at || null,
+          invitedByUsername: "unknown"
+        }
+      }
+
+      return {
+        invitedBy: membership.invited_by,
+        invitedAt: membership.invited_at || null,
+        invitedByUsername: inviterProfile?.username || inviterProfile?.name || "unknown"
+      }
+    } catch (err) {
+      console.error("[WorkspaceDetail] Failed to fetch workspace attribution:", err)
+      return null
     }
   }
 
@@ -808,6 +1058,48 @@ export default function WorkspaceDetail() {
     }
   }
 
+  const fetchMembers = async () => {
+    if (!id) return
+    try {
+      const { data, error } = await supabase
+        .from("workspace_members")
+        .select("user_id, role, invited_at, profiles(username, avatar_url, name)")
+        .eq("workspace_id", id)
+        .order("invited_at", { ascending: true })
+
+      if (error) {
+        console.error("[WorkspaceDetail/fetchMembers] ❌ Error:", error)
+        return
+      }
+
+      setMembers(data || [])
+    } catch (err) {
+      console.error("[WorkspaceDetail/fetchMembers] ❌ Unexpected error:", err)
+    }
+  }
+
+  const fetchRecentActivity = async () => {
+    if (!id) return
+    try {
+      const { data, error } = await supabase
+        .from("workspace_invites")
+        .select("id, status, created_at, responded_at, inviter_id, invitee_id, profiles!workspace_invites_invitee_id_fkey(username, avatar_url)")
+        .eq("workspace_id", id)
+        .eq("status", "accepted")
+        .order("responded_at", { ascending: false, nullsLast: true })
+        .limit(10)
+
+      if (error) {
+        console.error("[WorkspaceDetail/fetchRecentActivity] ❌ Error:", error)
+        return
+      }
+
+      setRecentActivity(data || [])
+    } catch (err) {
+      console.error("[WorkspaceDetail/fetchRecentActivity] ❌ Unexpected error:", err)
+    }
+  }
+
   const handleToggleVisibility = async () => {
     if (!workspace || !canShare(userRole)) {
       showError("Only workspace owner can change visibility")
@@ -970,6 +1262,11 @@ export default function WorkspaceDetail() {
                 {workspace?.name}
               </h1>
               <p className="text-slate-500 text-sm mt-1">Encrypted memory vault</p>
+              {workspaceAttribution?.invitedByUsername && (
+                <p className="text-slate-500 text-xs mt-1">
+                  Added by {workspaceAttribution.invitedByUsername}
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               {/* Members Button - Owner Only */}
@@ -1079,6 +1376,110 @@ export default function WorkspaceDetail() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full p-3 mb-8 bg-white border border-slate-200 rounded-lg text-gray-900 placeholder-slate-400 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200"
         />
+
+        {/* Members Section - Phase 1 */}
+        {members.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+              Workspace Members ({members.length})
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {members.map((member) => (
+                <div
+                  key={member.user_id}
+                  className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-colors duration-200"
+                >
+                  {/* Avatar */}
+                  <div className="flex-shrink-0">
+                    {member.profiles?.[0]?.avatar_url ? (
+                      <img
+                        src={member.profiles[0].avatar_url}
+                        alt={member.profiles[0].username || "User"}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold">
+                        {(member.profiles?.[0]?.username?.[0] || "U").toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Username and Role */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-800 truncate">
+                      {member.profiles?.[0]?.username || "Unknown User"}
+                    </p>
+                    <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded mt-1 ${
+                      member.role === "owner"
+                        ? "bg-purple-100 text-purple-700"
+                        : member.role === "editor"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {member.role === "owner" ? "👑 Owner" : member.role === "editor" ? "✏️ Editor" : "👁️ Viewer"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent Activity Section - Phase 2 */}
+        {recentActivity.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+              Recent Activity
+            </h2>
+            <div className="space-y-2 bg-white border border-slate-200 rounded-lg overflow-hidden">
+              {recentActivity.map((activity, index) => (
+                <div
+                  key={activity.id}
+                  className={`flex items-center gap-3 p-4 ${
+                    index !== recentActivity.length - 1 ? "border-b border-slate-100" : ""
+                  } hover:bg-slate-50 transition-colors duration-200`}
+                >
+                  {/* Timeline Dot */}
+                  <div className="flex-shrink-0 relative w-8 h-8 flex items-center justify-center">
+                    <div className="w-3 h-3 rounded-full bg-yellow-400 border-2 border-white shadow-sm"></div>
+                  </div>
+
+                  {/* Activity Content */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-700">
+                      <span className="font-medium text-gray-800">
+                        {activity.profiles?.[0]?.username || "Unknown User"}
+                      </span>
+                      <span className="text-gray-600"> joined this workspace</span>
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {activity.responded_at
+                        ? new Date(activity.responded_at).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : new Date(activity.created_at).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                    </p>
+                  </div>
+
+                  {/* Join Badge */}
+                  <div className="flex-shrink-0">
+                    <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded">
+                      ✓ Joined
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <MemoryGrid 
           memories={filteredMemories} 

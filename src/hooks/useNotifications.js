@@ -88,11 +88,13 @@ export function useNotifications() {
           .select(`
             id,
             recipient_id,
+            actor_id,
             is_read,
             created_at,
             type,
             post_id,
             comment_id,
+            workspace_id,
             actor:profiles!actor_id (
               id,
               username,
@@ -295,11 +297,11 @@ export function useNotifications() {
 
       console.log('[useNotifications] Notifications with is_read=false BEFORE update:', beforeUpdate?.length || 0)
 
-      // Update ALL unread notifications for current user
-      // Simplified: just filter by recipient_id, mark everything as read
+      // Update only requested notification IDs for current user
       const { data: updatedData, error } = await supabase
         .from('notifications')
         .update({ is_read: true })
+        .in('id', notificationIds)
         .eq('recipient_id', user.id)
 
       if (error) {
@@ -326,30 +328,30 @@ export function useNotifications() {
         console.warn('[useNotifications] ⚠️  Verification failed - still have unread notifications')
       }
 
-      // IMMEDIATELY update local state
+      const idSet = new Set(notificationIds)
+
+      // Immediately update local state for the requested IDs only.
       if (isMountedRef.current) {
         setNotifications(prev => {
-          const updated = prev.map(notif => ({
-            ...notif,
-            is_read: true
-          }))
-          console.log('[useNotifications] 📝 Updated local state - all notifications now is_read = true')
+          const updated = prev.map(notif => (
+            idSet.has(notif.id) ? { ...notif, is_read: true } : notif
+          ))
+          const unread = updated.filter(n => !n.is_read).length
+          setUnreadCount(unread)
+          console.log('[useNotifications] 📝 Updated local state for selected notifications')
           return updated
         })
 
         // Update cache
         if (notificationsCache.data) {
-          notificationsCache.data = notificationsCache.data.map(notif => ({
-            ...notif,
-            is_read: true
-          }))
+          notificationsCache.data = notificationsCache.data.map(notif => (
+            idSet.has(notif.id) ? { ...notif, is_read: true } : notif
+          ))
           notificationsCache.timestamp = Date.now()
           console.log('[useNotifications] 💾 Updated cache')
         }
 
-        // Set unread count to 0
-        setUnreadCount(0)
-        console.log('[useNotifications] 🔔 ✅ Unread count set to 0')
+        console.log('[useNotifications] 🔔 Updated unread count after selective mark-as-read')
       }
 
       console.log('[useNotifications] ========== MARK AS READ END ==========')

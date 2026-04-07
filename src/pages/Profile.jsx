@@ -720,6 +720,7 @@ export default function Profile() {
                 <img
                   src={avatarUrl}
                   alt="Avatar"
+                  loading="lazy"
                   className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg"
                 />
               ) : (
