@@ -1,7 +1,6 @@
 import { memo } from "react"
 import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
-import WorkspaceVisibilityBadge from "./WorkspaceVisibilityBadge"
 
 function PublicWorkspaceCard({ workspace }) {
   const navigate = useNavigate()
@@ -14,37 +13,30 @@ function PublicWorkspaceCard({ workspace }) {
     <motion.button
       type="button"
       onClick={handleWorkspaceClick}
-      className="group w-[260px] flex-none snap-start rounded-2xl border border-slate-200/60 bg-white shadow-sm transition-all duration-300 hover:border-blue-300/60 hover:shadow-md overflow-hidden text-left"
-      whileHover={{ y: -4 }}
+      className="group w-full overflow-hidden rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-[14px] text-left transition-all duration-150 hover:border-[#2A2A2A] hover:bg-[#141414]"
+      whileHover={{ y: -1 }}
       whileTap={{ scale: 0.98 }}
     >
-      {/* Content section */}
-      <div className="p-5">
-        {/* Badge and arrow */}
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
-          <svg className="h-4 w-4 text-slate-400 transition-all group-hover:translate-x-0.5 group-hover:text-blue-600 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#2A2000] font-['Sora'] text-[17px] font-bold text-[#F4B400]">
+            {(workspace.name || "V").charAt(0).toUpperCase()}
+          </div>
+
+          <div className="min-w-0">
+            <h3 className="truncate font-['Sora'] text-[18px] font-bold text-[#F5F0E8]">
+              {workspace.name}
+            </h3>
+
+            <p className="mt-[2px] truncate text-[11px] text-[#5C5248]">
+              By @{workspace.owner_username || "unknown"} · {workspace.member_count || 0} members · Public
+            </p>
+          </div>
         </div>
 
-        {/* Workspace title - primary focus */}
-        <h3 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-          {workspace.name}
-        </h3>
-
-        {/* Owner username - small and muted */}
-        <p className="mt-2 text-sm text-slate-500 group-hover:text-slate-600 transition-colors">
-          by @{workspace.owner_username || "unknown"}
-        </p>
-
-        {/* CTA text */}
-        <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-blue-600 group-hover:text-blue-700">
-          <span>Open</span>
-          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
-        </div>
+        <span className="rounded-[8px] border border-[#2A2A2A] bg-[#141414] px-[14px] py-[5px] text-[12px] font-semibold text-[#A09080] transition-all group-hover:border-[#F4B400] group-hover:text-[#F4B400]">
+          Open
+        </span>
       </div>
     </motion.button>
   )

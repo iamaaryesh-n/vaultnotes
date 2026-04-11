@@ -531,7 +531,7 @@ export default function PublicProfile() {
 
         {/* Profile Info Display */}
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-gray-900">{profile?.name || "User"}</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{profile?.name || "User"}</h2>
           <p className="text-slate-500">@{profile?.username || "username"}</p>
           {profile?.bio ? (
             <p className="text-sm text-slate-600 mt-2 max-w-xl mx-auto">{profile.bio}</p>
@@ -542,13 +542,13 @@ export default function PublicProfile() {
           {/* Followers/Following Stats */}
           <div className="flex justify-center gap-8 mt-6">
             <div className="text-center">
-              <p className="text-xl font-bold text-gray-900">{followersCount}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white">{followersCount}</p>
               <p className="text-sm text-slate-500">
                 {followersCount === 1 ? "Follower" : "Followers"}
               </p>
             </div>
             <div className="text-center">
-              <p className="text-xl font-bold text-gray-900">{followingCount}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-white">{followingCount}</p>
               <p className="text-sm text-slate-500">
                 {followingCount === 1 ? "Following" : "Following"}
               </p>
@@ -565,7 +565,7 @@ export default function PublicProfile() {
                 <button
                   onClick={handleUnfollow}
                   disabled={isFollowLoading}
-                  className="flex-1 px-4 py-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-900 font-semibold disabled:opacity-50 transition-colors duration-200"
+                  className="flex-1 px-4 py-3 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-900 dark:text-white font-semibold disabled:opacity-50 transition-colors duration-200"
                 >
                   {isFollowLoading ? "Unfollowing..." : "Unfollow"}
                 </button>
@@ -573,7 +573,7 @@ export default function PublicProfile() {
                 <button
                   onClick={handleFollow}
                   disabled={isFollowLoading}
-                  className="flex-1 px-4 py-3 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-gray-900 font-semibold disabled:opacity-50 transition-colors duration-200"
+                  className="flex-1 px-4 py-3 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-gray-900 dark:text-white font-semibold disabled:opacity-50 transition-colors duration-200"
                 >
                   {isFollowLoading ? "Following..." : "Follow"}
                 </button>
@@ -591,7 +591,7 @@ export default function PublicProfile() {
           
           <button
             onClick={() => navigate(-1)}
-            className="flex-1 px-4 py-3 rounded-lg border border-gray-300 bg-white text-gray-900 font-semibold hover:bg-gray-50"
+            className="flex-1 px-4 py-3 rounded-lg border border-gray-300 bg-white dark:bg-slate-900 text-gray-900 dark:text-white font-semibold hover:bg-gray-50"
           >
             Back
           </button>
@@ -601,7 +601,7 @@ export default function PublicProfile() {
       {/* ============ SECTION 2: POSTS LIST ============ */}
       <div className="card p-8">
         <div className="mb-6">
-          <h3 className="text-2xl font-bold text-gray-900">Posts</h3>
+          <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Posts</h3>
         </div>
 
         {postsLoading ? (
@@ -619,7 +619,7 @@ export default function PublicProfile() {
             {visiblePosts.map((post) => (
               <article
                 key={post.id}
-                className="border border-slate-200 rounded-xl p-5 bg-white hover:shadow-md transition-shadow duration-200"
+                className="border border-slate-200 rounded-xl p-5 bg-white dark:bg-slate-900 hover:shadow-md transition-shadow duration-200"
               >
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex flex-col gap-1">

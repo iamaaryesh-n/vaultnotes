@@ -36,17 +36,17 @@ export default function ReactionModal({
       onClick={onClose}
     >
       <div
-        className={`w-full max-w-[350px] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.16)] transition-all duration-200 ease-out ${
+        className={`w-full max-w-[350px] rounded-2xl border border-slate-200 bg-white dark:bg-slate-900 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.16)] transition-all duration-200 ease-out dark:border-slate-700 dark:bg-slate-900 ${
           isVisible ? "scale-100 opacity-100" : "scale-95 opacity-0"
         }`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-900">Reactions</h3>
+          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Reactions</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             aria-label="Close reactions modal"
           >
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -56,12 +56,12 @@ export default function ReactionModal({
         </div>
 
         {groups.length === 0 ? (
-          <p className="text-sm text-slate-500">No reactions yet</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">No reactions yet</p>
         ) : (
           <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {groups.map((group) => (
-              <div key={group.emoji} className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5">
-                <p className="mb-2 text-sm font-semibold text-slate-800">
+              <div key={group.emoji} className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-slate-700 dark:bg-slate-800/60">
+                <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">
                   {group.emoji} {group.count}
                 </p>
 
@@ -69,13 +69,13 @@ export default function ReactionModal({
                   {group.users.map((user) => (
                     <div
                       key={user.reactionId}
-                      className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-sm text-slate-700"
+                      className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-sm text-slate-700 dark:text-slate-300"
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         {user.avatarUrl ? (
                           <img src={user.avatarUrl} alt={user.name} loading="lazy" className="h-6 w-6 rounded-full object-cover" />
                         ) : (
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[11px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-200">
                             {(user.name || "?").charAt(0).toUpperCase()}
                           </div>
                         )}
@@ -91,7 +91,7 @@ export default function ReactionModal({
                             You (tap to remove)
                           </button>
                         ) : (
-                          <span className="truncate">{user.name}</span>
+                          <span className="truncate dark:text-slate-200">{user.name}</span>
                         )}
                       </div>
 

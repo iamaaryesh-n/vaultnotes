@@ -60,15 +60,15 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
 
     <div
       data-post-id={memory.id}
-      className={`card p-4 flex flex-col gap-3 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 ease-in-out cursor-pointer ${
-        isRecent ? 'border border-yellow-200 bg-yellow-50/30' : ''
+      className={`cursor-pointer rounded-[16px] border bg-[#0D0D0D] p-4 text-[#F5F0E8] transition-all duration-200 ease-in-out hover:-translate-y-1 hover:shadow-lg ${
+        isRecent ? 'border-[rgba(244,180,0,0.4)] bg-[rgba(244,180,0,0.08)]' : 'border-[#1F1F1F]'
       }`}
       onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${memory.workspace_id}/memory/${memory.id}`))}
     >
 
       {/* Title & Star */}
       <div className="flex justify-between items-start gap-2">
-        <h2 className="text-lg font-bold text-gray-900 flex-1 leading-snug">
+        <h2 className="flex-1 leading-snug text-lg font-bold text-[#F5F0E8]">
           {searchTerm && !searchTerm.startsWith('#')
             ? highlight(memory.title || "Untitled memory", searchTerm).map((seg, i) =>
                 seg.isMatch
@@ -83,8 +83,8 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
             e.stopPropagation()
             if (onFavoriteToggle) onFavoriteToggle(memory.id, memory.is_favorite)
           }}
-          className={`p-1 -mr-1 -mt-1 rounded-full hover:bg-gray-100 transition-all duration-200 flex-shrink-0 ${
-            memory.is_favorite ? "text-yellow-500" : "text-slate-400 hover:text-yellow-500"
+          className={`-mr-1 -mt-1 flex-shrink-0 rounded-full p-1 transition-all duration-200 hover:bg-[#1C1C1C] ${
+            memory.is_favorite ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#F4B400]"
           }`}
         >
           {memory.is_favorite ? (
@@ -111,7 +111,7 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
                   onTagClick(tag)
                 }
               }}
-              className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-2 py-0.5 rounded-full hover:bg-yellow-100 transition-all duration-200 cursor-pointer"
+              className="cursor-pointer rounded-full border border-[rgba(244,180,0,0.25)] bg-[#2A2000] px-2 py-0.5 text-xs text-[#F4B400] transition-all duration-200 hover:bg-[#3A2A00]"
             >
               #{tag}
             </span>
@@ -120,9 +120,9 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
       )}
 
       {/* Content Preview */}
-      <p className="text-slate-600 text-sm leading-relaxed flex-1 line-clamp-2">
+      <p className="line-clamp-2 flex-1 text-sm leading-relaxed text-[#A09080]">
         {isEncrypted || plainContent?.includes("Join workspace to view") ? (
-          <span className="text-slate-500 italic flex items-center gap-2">
+          <span className="flex items-center gap-2 italic text-[#5C5248]">
             🔒 <span>Content encrypted • Join workspace to view</span>
           </span>
         ) : plainContent
@@ -134,13 +134,13 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
                 )
               : getPreview(plainContent)
             )
-          : <span className="text-slate-400">No content.</span>
+          : <span className="text-[#5C5248]">No content.</span>
         }
       </p>
 
       {/* Footer: Date and Delete button */}
-      <div className="flex justify-between items-center mt-auto pt-3 border-t border-slate-100">
-        <p className="text-xs text-slate-400 font-medium">
+      <div className="mt-auto flex items-center justify-between border-t border-[#1F1F1F] pt-3">
+        <p className="text-xs font-medium text-[#5C5248]">
           {timeLabel} {relativeTime}
         </p>
         {canDelete(userRole) && (
@@ -150,7 +150,7 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
               setShowDeleteModal(true)
             }}
             disabled={isDeleting}
-            className="text-xs text-red-500 hover:text-red-600 opacity-50 hover:opacity-100 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-xs text-[#EF4444] opacity-60 transition-all duration-200 hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isDeleting ? '⏳' : 'Delete'}
           </button>

@@ -52,8 +52,8 @@ export default function VisibilitySelector({
           inline-flex items-center gap-2 px-4 py-2 rounded-full font-medium
           border transition-all duration-200
           ${disabled 
-            ? 'opacity-50 cursor-not-allowed bg-gray-100 border-gray-200 text-gray-600'
-            : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400 cursor-pointer'
+            ? 'opacity-50 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
+            : 'bg-white dark:bg-slate-900 border-slate-300 text-slate-700 hover:border-slate-400 cursor-pointer dark:bg-slate-900 dark:border-slate-700 dark:text-slate-100 dark:hover:border-slate-500'
           }
         `}
       >
@@ -79,7 +79,7 @@ export default function VisibilitySelector({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="absolute top-full left-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-2xl z-[9999] overflow-visible"
+            className="absolute top-full left-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 rounded-lg shadow-2xl z-[9999] overflow-visible dark:bg-slate-900 dark:border-slate-700"
           >
             <div className="py-1">
               {options.map((option) => {
@@ -94,19 +94,19 @@ export default function VisibilitySelector({
                     className={`
                       w-full px-4 py-3 text-left transition-all duration-200 flex items-start gap-3
                       ${isSelected 
-                        ? 'bg-blue-50 border-l-2 border-l-blue-500' 
-                        : 'border-l-2 border-l-transparent hover:bg-gray-50'
+                        ? 'bg-blue-50 border-l-2 border-l-blue-500 dark:bg-blue-900/20' 
+                        : 'border-l-2 border-l-transparent hover:bg-slate-50 dark:hover:bg-slate-800'
                       }
                     `}
                   >
                     <span className="text-xl mt-0.5">{optionConfig.icon}</span>
                     <div className="flex-1">
                       <div className={`font-semibold text-sm ${
-                        isSelected ? 'text-blue-700' : 'text-gray-900'
+                        isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-900 dark:text-slate-100'
                       }`}>
                         {optionConfig.label}
                       </div>
-                      <div className="text-xs text-gray-500 mt-0.5">
+                      <div className="text-xs text-slate-500 mt-0.5 dark:text-slate-400">
                         {optionConfig.description}
                       </div>
                     </div>

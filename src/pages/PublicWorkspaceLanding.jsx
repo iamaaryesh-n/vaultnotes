@@ -32,7 +32,7 @@ export default function PublicWorkspaceLanding() {
       // Get current user
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       if (authError || !user) {
-        showError('Please log in to view workspaces')
+        showError('Please log in to view vaults')
         return
       }
       setCurrentUser(user)
@@ -52,7 +52,7 @@ export default function PublicWorkspaceLanding() {
 
       if (workspaceError || !workspaceData) {
         console.error('[PublicWorkspaceLanding] Workspace lookup failed:', workspaceError)
-        showError('Workspace not found')
+        showError('Vault not found')
         setIsLoading(false)
         return
       }
@@ -106,7 +106,7 @@ export default function PublicWorkspaceLanding() {
       }
     } catch (err) {
       console.error('[PublicWorkspaceLanding] Error:', err)
-      showError('Failed to load workspace')
+      showError('Failed to load vault')
     } finally {
       setIsLoading(false)
     }
@@ -131,12 +131,12 @@ export default function PublicWorkspaceLanding() {
         if (error.code === 'PGRST116') {
           // Already a member
           setIsMember(true)
-          success('You are now a member of this workspace!')
+          success('You are now a member of this vault!')
         } else {
           showError('Failed to request access')
         }
       } else {
-        success('Access requested! You can now view the workspace.')
+        success('Access requested! You can now view the vault.')
         setIsMember(true)
       }
     } catch (err) {
@@ -160,7 +160,7 @@ export default function PublicWorkspaceLanding() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-600">Loading workspace...</p>
+          <p className="text-slate-600">Loading vault...</p>
         </div>
       </div>
     )
@@ -170,7 +170,7 @@ export default function PublicWorkspaceLanding() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-slate-600 mb-4">Workspace not found</p>
+          <p className="text-slate-600 mb-4">Vault not found</p>
           <button
             onClick={() => navigate('/dashboard')}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
@@ -201,7 +201,7 @@ export default function PublicWorkspaceLanding() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 mb-6"
+          className="bg-[#0D0D0D] dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 mb-6"
         >
           <div className="flex items-start gap-6 mb-6">
             <div className="flex-1">
@@ -221,14 +221,14 @@ export default function PublicWorkspaceLanding() {
                 disabled={requestingAccess}
                 className="px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 disabled:opacity-50 whitespace-nowrap"
               >
-                {requestingAccess ? 'Joining...' : 'Join Workspace'}
+                {requestingAccess ? 'Joining...' : 'Join Vault'}
               </motion.button>
             )}
           </div>
 
           {/* Owner Info */}
           <div className="mb-6 pb-6 border-b border-slate-200">
-            <p className="text-sm text-slate-600 mb-2">Workspace Owner</p>
+            <p className="text-sm text-slate-600 mb-2">Vault Owner</p>
             <div className="flex items-center gap-3">
               {workspace.ownerProfile?.avatar_url && (
                 <img
@@ -284,7 +284,7 @@ export default function PublicWorkspaceLanding() {
               onClick={() => navigate(`/workspace/${workspace.id}`)}
               className="flex-1 px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-colors"
             >
-              Open Workspace
+              Open Vault
             </button>
           </motion.div>
         )}
@@ -296,7 +296,7 @@ export default function PublicWorkspaceLanding() {
             className="p-6 bg-yellow-50 border border-yellow-200 rounded-xl text-center"
           >
             <p className="text-yellow-800 font-medium">
-              This is a private workspace. Please request access to view its contents.
+              This is a private vault. Please request access to view its contents.
             </p>
           </motion.div>
         )}

@@ -221,7 +221,7 @@ export function Notifications() {
 
         if (insertMemberError && insertMemberError.code !== "23505") {
           console.error("[Notifications] Membership insert error:", insertMemberError)
-          addToast("Failed to join workspace", "error")
+          addToast("Failed to join vault", "error")
           return
         }
 
@@ -374,7 +374,7 @@ export function Notifications() {
     const actor = notif.actor?.username || "User"
 
     if (notif.type === "workspace_invite") {
-      return `${actor} invited you to workspace`
+      return `${actor} invited you to vault`
     }
 
     switch (notif.type) {
@@ -393,14 +393,14 @@ export function Notifications() {
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-gray-50">
-      <div className="sticky top-0 z-40 border-b border-gray-200 bg-white shadow-sm">
+    <div className="min-h-screen bg-[#000000]">
+      <div className="sticky top-[56px] z-40 border-b border-[#1F1F1F] bg-[rgba(0,0,0,0.85)] backdrop-blur-[16px]">
         <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
           <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+            <h1 className="font-['Sora'] text-2xl font-bold text-[#F5F0E8]">Notifications</h1>
             <button
               onClick={() => navigate(-1)}
-              className="text-gray-600 transition-colors hover:text-gray-900"
+              className="text-[#A09080] transition-colors hover:text-[#F5F0E8]"
               aria-label="Go back"
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -413,23 +413,25 @@ export function Notifications() {
             <div className="flex gap-2">
               <button
                 onClick={() => setFilter("all")}
-                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                  filter === "all" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                className={`rounded-[20px] px-4 py-[7px] text-[13px] font-semibold transition-all ${
+                  filter === "all"
+                    ? "bg-[#F4B400] text-[#0D0D0D] shadow-[0_2px_12px_rgba(244,180,0,0.25)]"
+                    : "border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
                 }`}
               >
                 All
               </button>
               <button
                 onClick={() => setFilter("unread")}
-                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                className={`flex items-center gap-2 rounded-[20px] px-4 py-[7px] text-[13px] font-semibold transition-all ${
                   filter === "unread"
-                    ? "bg-yellow-100 text-yellow-700"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    ? "bg-[#F4B400] text-[#0D0D0D] shadow-[0_2px_12px_rgba(244,180,0,0.25)]"
+                    : "border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
                 }`}
               >
                 Unread
                 {unreadCount > 0 && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-500 text-xs text-white">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0D0D0D] text-[11px] font-bold text-[#F4B400]">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -440,7 +442,7 @@ export function Notifications() {
               <button
                 onClick={handleMarkAllAsRead}
                 disabled={markingAsRead}
-                className="rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-yellow-600 disabled:bg-gray-300"
+                className="rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-semibold text-[#0D0D0D] transition-colors hover:bg-[#FFD24A] disabled:bg-[#5C5248] disabled:text-[#0D0D0D]"
               >
                 {markingAsRead ? "Marking..." : "Mark all as read"}
               </button>
@@ -453,12 +455,12 @@ export function Notifications() {
         {loading ? (
           <NotificationListSkeleton />
         ) : filteredNotifications.length === 0 ? (
-          <div className="rounded-lg bg-white p-8 text-center">
+          <div className="rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-8 text-center">
             <div className="mb-3 text-4xl">📭</div>
-            <h3 className="mb-1 text-lg font-semibold text-gray-900">
+            <h3 className="mb-1 text-lg font-semibold text-[#F5F0E8]">
               {filter === "unread" ? "All caught up!" : "No notifications yet"}
             </h3>
-            <p className="text-gray-600">
+            <p className="text-[#A09080]">
               {filter === "unread" ? "You have read all your notifications." : "You will see activity here."}
             </p>
           </div>
@@ -471,14 +473,16 @@ export function Notifications() {
               return (
                 <div
                   key={notif.id}
-                  className={`rounded-lg border-2 p-4 transition-all duration-200 ${
-                    notif.is_read ? "border-gray-200 bg-white" : "border-yellow-200 bg-yellow-50"
+                  className={`rounded-[14px] border p-4 transition-all duration-200 ${
+                    notif.is_read
+                      ? "border-[#1F1F1F] bg-[#0D0D0D]"
+                      : "border-[rgba(244,180,0,0.35)] bg-[rgba(244,180,0,0.07)]"
                   }`}
                 >
                   <button
                     onClick={() => !isInvite && handleNotificationClick(notif)}
                     disabled={isInvite}
-                    className={`w-full text-left transition-colors ${isInvite ? "cursor-default" : "cursor-pointer hover:opacity-75"}`}
+                    className={`w-full text-left transition-colors ${isInvite ? "cursor-default" : "cursor-pointer hover:opacity-85"}`}
                   >
                     <div className="flex gap-4">
                       <div className="flex-shrink-0">
@@ -487,10 +491,10 @@ export function Notifications() {
                             src={notif.actor.avatar_url}
                             alt={notif.actor.username}
                             loading="lazy"
-                            className="h-12 w-12 rounded-full border-2 border-yellow-200 object-cover"
+                            className="h-12 w-12 rounded-full border border-[#2A2A2A] object-cover"
                           />
                         ) : (
-                          <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-yellow-200 bg-gradient-to-br from-yellow-300 to-yellow-100 text-lg font-semibold text-yellow-700">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#2A2A2A] bg-[#2A2000] text-lg font-semibold text-[#F4B400]">
                             {notif.actor?.username?.charAt(0).toUpperCase() || "?"}
                           </div>
                         )}
@@ -499,16 +503,16 @@ export function Notifications() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">
-                            <p className={`text-sm ${notif.is_read ? "text-gray-900" : "font-semibold text-gray-900"}`}>
+                            <p className={`text-sm ${notif.is_read ? "text-[#A09080]" : "font-semibold text-[#F5F0E8]"}`}>
                               {getNotificationText(notif)}
                             </p>
-                            <p className="mt-1 text-xs text-gray-500">{formatTime(notif.created_at)}</p>
+                            <p className="mt-1 text-xs text-[#5C5248]">{formatTime(notif.created_at)}</p>
                           </div>
                           <div className="flex-shrink-0 text-lg">{getNotificationIcon(notif.type)}</div>
                         </div>
                       </div>
 
-                      {!notif.is_read && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-yellow-500" />}
+                      {!notif.is_read && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-[#F4B400]" />}
                     </div>
                   </button>
 
@@ -518,7 +522,7 @@ export function Notifications() {
                         type="button"
                         onClick={() => handleInviteAction(notif, "accept")}
                         disabled={Boolean(actionLoading)}
-                        className="flex-1 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-semibold text-gray-900 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+                        className="flex-1 rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-semibold text-[#0D0D0D] transition-colors hover:bg-[#FFD24A] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {actionLoading === "accept" ? "Accepting..." : "Accept"}
                       </button>
@@ -526,7 +530,7 @@ export function Notifications() {
                         type="button"
                         onClick={() => handleInviteAction(notif, "decline")}
                         disabled={Boolean(actionLoading)}
-                        className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+                        className="flex-1 rounded-[10px] border border-[#2A2A2A] bg-transparent px-4 py-2 text-sm font-semibold text-[#A09080] transition-colors hover:border-[#F4B400] hover:text-[#F4B400] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {actionLoading === "decline" ? "Declining..." : "Decline"}
                       </button>

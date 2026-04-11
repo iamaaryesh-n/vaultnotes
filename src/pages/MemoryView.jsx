@@ -258,27 +258,38 @@ export default function MemoryView() {
     : "Unknown date"
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
-      <div style={{ maxWidth: "760px" }} className="mx-auto px-6 py-12">
+    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-3 pt-5">
+        <div style={{ maxWidth: "760px" }} className="mx-auto">
+          <button
+            onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}`))}
+            className="inline-flex items-center gap-2 text-sm font-medium text-[#A09080] transition-colors hover:text-[#F4B400]"
+          >
+            Back to Workspace
+          </button>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: "760px" }} className="mx-auto px-4 pb-[90px] pt-[72px]">
         <button
           onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}`))}
-          className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-yellow-600 transition-colors hover:text-yellow-500"
+          className="mb-5 hidden"
         >
           Back to Workspace
         </button>
 
-        <div className="rounded-[28px] border border-slate-200/80 bg-white/95 px-8 py-8 shadow-[0_24px_80px_rgba(15,23,42,0.09)] backdrop-blur-sm">
-          <div className="mb-8 flex flex-col gap-5 border-b border-slate-200 pb-6 md:flex-row md:items-start md:justify-between">
+        <div className="rounded-[20px] border border-[#1F1F1F] bg-[#0D0D0D] px-6 py-6 shadow-[0_16px_50px_rgba(0,0,0,0.55)]">
+          <div className="mb-6 flex flex-col gap-5 border-b border-[#1F1F1F] pb-6 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
-              <h1 className="mb-2 text-4xl font-bold tracking-tight text-slate-900 md:text-5xl">{memory?.title || "Untitled"}</h1>
-              <p className="text-sm font-medium text-slate-500">{formattedDate}</p>
+              <h1 className="mb-2 font-['Sora'] text-[28px] font-[800] tracking-tight text-[#F5F0E8] md:text-[34px]">{memory?.title || "Untitled"}</h1>
+              <p className="text-sm font-medium text-[#5C5248]">{formattedDate}</p>
             </div>
 
             <div className="flex shrink-0 items-center gap-3">
               {canEdit(userRole) && (
                 <button
                   onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/memory/${memoryId}/edit`))}
-                  className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800 transition-all duration-200 hover:border-yellow-300 hover:bg-yellow-50 hover:text-yellow-600 active:scale-95"
+                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-sm font-medium text-[#A09080] transition-all duration-200 hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
                 >
                   Edit
                 </button>
@@ -287,7 +298,7 @@ export default function MemoryView() {
                 <button
                   onClick={() => setShowDeleteModal(true)}
                   disabled={deleting}
-                  className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition-all duration-200 hover:border-red-300 hover:bg-red-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-red-50"
+                  className="rounded-[10px] border border-[rgba(239,68,68,0.35)] bg-[rgba(239,68,68,0.12)] px-4 py-2 text-sm font-medium text-[#EF4444] transition-all duration-200 hover:bg-[rgba(239,68,68,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : "Delete"}
                 </button>
@@ -298,7 +309,7 @@ export default function MemoryView() {
           {memory?.tags && memory.tags.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-6">
               {memory.tags.map((tag, idx) => (
-                <span key={idx} className="bg-yellow-50 text-yellow-700 border border-yellow-200 px-3 py-1 rounded-full text-sm">
+                <span key={idx} className="rounded-full border border-[rgba(244,180,0,0.25)] bg-[#2A2000] px-3 py-1 text-sm text-[#F4B400]">
                   #{tag}
                 </span>
               ))}
@@ -311,7 +322,7 @@ export default function MemoryView() {
               margin: 0 auto;
               line-height: 1.6;
               word-break: break-word;
-              color: #334155;
+              color: #A09080;
             }
             .prose-memory * {
               max-width: 100%;
@@ -333,17 +344,17 @@ export default function MemoryView() {
             .prose-memory ul { list-style-type: disc; margin-left: 1.5rem; }
             .prose-memory ol { list-style-type: decimal; margin-left: 1.5rem; }
             .prose-memory pre {
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
+              background: #141414;
+              border: 1px solid #1F1F1F;
               padding: 1rem;
               border-radius: 0.75rem;
               font-family: monospace;
               overflow-x: auto;
-              color: #111827;
+              color: #F5F0E8;
             }
             .prose-memory code {
-              background: #f1f5f9;
-              color: #92400e;
+              background: #1C1C1C;
+              color: #F4B400;
               padding: 0.2rem 0.4rem;
               border-radius: 0.25rem;
               font-size: 0.875em;
@@ -351,7 +362,7 @@ export default function MemoryView() {
             .prose-memory pre code {
               background: transparent;
               padding: 0;
-              color: #1f2937;
+              color: #F5F0E8;
             }
             .prose-memory img {
               max-width: 100%;
@@ -381,11 +392,11 @@ export default function MemoryView() {
             }
           `}</style>
 
-          <div className="whitespace-pre-wrap text-gray-700">
+          <div className="whitespace-pre-wrap text-[#A09080]">
             {!isTiptapContentEmpty(content) ? (
               <div className="prose-memory" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }} />
             ) : (
-              <div className="mx-auto max-w-[700px] rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center italic text-slate-400">
+              <div className="mx-auto max-w-[700px] rounded-2xl border border-dashed border-[#1F1F1F] bg-[#141414] px-5 py-8 text-center italic text-[#5C5248]">
                 No content
               </div>
             )}

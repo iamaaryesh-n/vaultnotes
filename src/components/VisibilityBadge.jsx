@@ -10,17 +10,17 @@ export default function VisibilityBadge({ visibility = 'public', size = 'sm' }) 
   if (!config) return null
 
   const sizeMap = {
-    xs: 'text-xs px-2 py-1',
+    xs: 'text-[10px] px-2 py-[2px] font-semibold',
     sm: 'text-xs px-2.5 py-1.5',
     md: 'text-sm px-3 py-2'
   }
 
   return (
-    <motion.div
+    <motion.span
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       className={`
-        inline-flex items-center gap-1.5 rounded-full border font-medium
+        inline-flex items-center gap-1.5 rounded-full border
         transition-all duration-200
         ${getVisibilityStyles(visibility)}
         ${sizeMap[size]}
@@ -29,6 +29,6 @@ export default function VisibilityBadge({ visibility = 'public', size = 'sm' }) 
     >
       <span>{config.icon}</span>
       <span>{config.label}</span>
-    </motion.div>
+    </motion.span>
   )
 }

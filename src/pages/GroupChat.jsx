@@ -11,6 +11,9 @@ import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2 } from "l
 dayjs.extend(relativeTime)
 dayjs.extend(utc)
 
+const MESSAGE_BATCH_SIZE = 20
+const GROUP_BATCH_SIZE = 15
+
 export default function GroupChat() {
   const { user: contextUser } = useAuth()
   const { success: showSuccess, error: showToastError } = useToast()
@@ -18,10 +21,16 @@ export default function GroupChat() {
   const [groups, setGroups] = useState([])
   const [activeGroupId, setActiveGroupId] = useState(null)
   const [loadingGroups, setLoadingGroups] = useState(true)
+  const [groupPage, setGroupPage] = useState(0)
+  const [hasMoreGroups, setHasMoreGroups] = useState(true)
+  const [loadingMoreGroups, setLoadingMoreGroups] = useState(false)
   const [groupSearch, setGroupSearch] = useState("")
 
   const [messages, setMessages] = useState([])
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [messagePage, setMessagePage] = useState(0)
+  const [hasMoreMessages, setHasMoreMessages] = useState(true)
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState(false)
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
   const [error, setError] = useState("")
@@ -44,11 +53,13 @@ export default function GroupChat() {
   const [creatingGroup, setCreatingGroup] = useState(false)
 
   const messageListRef = useRef(null)
+  const groupListRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const groupChannelRef = useRef(null)
   const readReceiptsChannelRef = useRef(null)
   const messageIdsRef = useRef(new Set())
+  const isPrependingOlderRef = useRef(false)
 
   const activeGroup = useMemo(
     () => groups.find((group) => group.id === activeGroupId) || null,
@@ -104,22 +115,22 @@ export default function GroupChat() {
     try {
       setLoadingGroups(true)
       setError("")
+      setGroupPage(0)
+      setHasMoreGroups(true)
+      setLoadingMoreGroups(false)
 
       const { data, error: fetchError } = await supabase
         .from("group_conversations")
         .select(`
           id,
           name,
-          created_by,
-          created_at,
-          updated_at,
           last_message,
           last_message_at,
-          encryption_key,
           group_members!inner(user_id)
         `)
         .eq("group_members.user_id", contextUser.id)
         .order("last_message_at", { ascending: false, nullsFirst: false })
+        .limit(GROUP_BATCH_SIZE)
 
       if (fetchError) {
         console.error("[GroupChat] Error fetching groups:", fetchError)
@@ -127,8 +138,17 @@ export default function GroupChat() {
         return
       }
 
-      const list = data || []
+      const list = (data || []).map((group) => ({
+        id: group.id,
+        name: group.name,
+        last_message: group.last_message,
+        last_message_at: group.last_message_at
+      }))
       setGroups(list)
+
+      if (list.length < GROUP_BATCH_SIZE) {
+        setHasMoreGroups(false)
+      }
 
       setActiveGroupId((prev) => {
         if (prev && list.some((group) => group.id === prev)) {
@@ -144,6 +164,68 @@ export default function GroupChat() {
       setLoadingGroups(false)
     }
   }, [contextUser?.id])
+
+  const loadMoreGroups = useCallback(async () => {
+    if (!contextUser?.id || loadingGroups || loadingMoreGroups || !hasMoreGroups) {
+      return
+    }
+
+    try {
+      setLoadingMoreGroups(true)
+      const nextPage = groupPage + 1
+      const offset = nextPage * GROUP_BATCH_SIZE
+
+      const { data, error: fetchError } = await supabase
+        .from("group_conversations")
+        .select(`
+          id,
+          name,
+          last_message,
+          last_message_at,
+          group_members!inner(user_id)
+        `)
+        .eq("group_members.user_id", contextUser.id)
+        .order("last_message_at", { ascending: false, nullsFirst: false })
+        .range(offset, offset + GROUP_BATCH_SIZE - 1)
+
+      if (fetchError) {
+        console.error("[GroupChat] Error loading more groups:", fetchError)
+        return
+      }
+
+      const nextRows = (data || []).map((group) => ({
+        id: group.id,
+        name: group.name,
+        last_message: group.last_message,
+        last_message_at: group.last_message_at
+      }))
+
+      if (nextRows.length < GROUP_BATCH_SIZE) {
+        setHasMoreGroups(false)
+      }
+
+      setGroups((prev) => {
+        const existingIds = new Set(prev.map((group) => group.id))
+        const newUniqueGroups = nextRows.filter((group) => !existingIds.has(group.id))
+        return [...prev, ...newUniqueGroups]
+      })
+
+      setGroupPage(nextPage)
+    } catch (err) {
+      console.error("[GroupChat] Exception loading more groups:", err)
+    } finally {
+      setLoadingMoreGroups(false)
+    }
+  }, [contextUser?.id, groupPage, hasMoreGroups, loadingGroups, loadingMoreGroups])
+
+  const handleGroupListScroll = useCallback(() => {
+    const container = groupListRef.current
+    if (!container) return
+
+    if (container.scrollHeight - container.scrollTop - container.clientHeight < 80) {
+      void loadMoreGroups()
+    }
+  }, [loadMoreGroups])
 
   const fetchGroupMembers = useCallback(async (groupId) => {
     if (!groupId) return
@@ -271,11 +353,11 @@ export default function GroupChat() {
     [contextUser?.id]
   )
 
-  const hydrateAndSetMessages = useCallback(
+  const hydrateMessages = useCallback(
     async (rows) => {
       const nextRows = rows || []
 
-      const decrypted = await Promise.all(
+      return Promise.all(
         nextRows.map(async (message) => {
           let content = message.content || ""
 
@@ -295,6 +377,13 @@ export default function GroupChat() {
           }
         })
       )
+    },
+    [getMemberProfileById, groupKey]
+  )
+
+  const hydrateAndSetMessages = useCallback(
+    async (rows) => {
+      const decrypted = await hydrateMessages(rows)
 
       setMessages(decrypted)
       messageIdsRef.current = new Set(decrypted.map((msg) => msg.id))
@@ -303,7 +392,7 @@ export default function GroupChat() {
       await fetchGroupMessageReads(ids)
       await markGroupMessagesAsRead(decrypted)
     },
-    [fetchGroupMessageReads, getMemberProfileById, groupKey, markGroupMessagesAsRead]
+    [fetchGroupMessageReads, hydrateMessages, markGroupMessagesAsRead]
   )
 
   const fetchGroupMessages = useCallback(async () => {
@@ -311,6 +400,8 @@ export default function GroupChat() {
 
     try {
       setLoadingMessages(true)
+      setMessagePage(0)
+      setHasMoreMessages(true)
 
       const { data, error: fetchError } = await supabase
         .from("group_messages")
@@ -326,7 +417,8 @@ export default function GroupChat() {
           profiles(id, username, name, avatar_url)
         `)
         .eq("group_id", activeGroupId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
+        .limit(MESSAGE_BATCH_SIZE)
 
       if (fetchError) {
         console.error("[GroupChat] Error fetching messages:", fetchError)
@@ -334,7 +426,13 @@ export default function GroupChat() {
         return
       }
 
-      await hydrateAndSetMessages(data || [])
+      const fetchedRows = data || []
+      const orderedMessages = [...fetchedRows].reverse()
+      await hydrateAndSetMessages(orderedMessages)
+
+      if (fetchedRows.length < MESSAGE_BATCH_SIZE) {
+        setHasMoreMessages(false)
+      }
     } catch (err) {
       console.error("[GroupChat] Exception fetching messages:", err)
       setMessages([])
@@ -342,6 +440,108 @@ export default function GroupChat() {
       setLoadingMessages(false)
     }
   }, [activeGroupId, hydrateAndSetMessages])
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeGroupId || loadingOlderMessages || loadingMessages || !hasMoreMessages) {
+      return
+    }
+
+    const container = messageListRef.current
+    if (!container) {
+      return
+    }
+
+    try {
+      setLoadingOlderMessages(true)
+
+      const previousHeight = container.scrollHeight
+      const nextPage = messagePage + 1
+      const offset = nextPage * MESSAGE_BATCH_SIZE
+
+      const { data, error: fetchError } = await supabase
+        .from("group_messages")
+        .select(`
+          id,
+          group_id,
+          sender_id,
+          content,
+          encrypted_content,
+          iv,
+          is_encrypted,
+          created_at,
+          profiles(id, username, name, avatar_url)
+        `)
+        .eq("group_id", activeGroupId)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + MESSAGE_BATCH_SIZE - 1)
+
+      if (fetchError) {
+        console.error("[GroupChat] Error fetching older messages:", fetchError)
+        return
+      }
+
+      const fetchedRows = data || []
+      const orderedMessages = [...fetchedRows].reverse()
+      const hydratedOlderMessages = await hydrateMessages(orderedMessages)
+
+      let prependedMessages = []
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id))
+        prependedMessages = hydratedOlderMessages.filter((item) => !existingIds.has(item.id))
+        if (prependedMessages.length === 0) {
+          return prev
+        }
+
+        isPrependingOlderRef.current = true
+        return [...prependedMessages, ...prev]
+      })
+
+      if (prependedMessages.length > 0) {
+        prependedMessages.forEach((item) => messageIdsRef.current.add(item.id))
+
+        const combinedIds = [...new Set([...messages.map((item) => item.id), ...prependedMessages.map((item) => item.id)])]
+        await fetchGroupMessageReads(combinedIds)
+        await markGroupMessagesAsRead(prependedMessages)
+
+        requestAnimationFrame(() => {
+          const currentContainer = messageListRef.current
+          if (currentContainer) {
+            currentContainer.scrollTop = currentContainer.scrollHeight - previousHeight
+          }
+          isPrependingOlderRef.current = false
+        })
+      }
+
+      if (fetchedRows.length < MESSAGE_BATCH_SIZE) {
+        setHasMoreMessages(false)
+      }
+
+      setMessagePage(nextPage)
+    } catch (err) {
+      console.error("[GroupChat] Exception loading older messages:", err)
+    } finally {
+      setLoadingOlderMessages(false)
+    }
+  }, [
+    activeGroupId,
+    fetchGroupMessageReads,
+    hasMoreMessages,
+    hydrateMessages,
+    loadingMessages,
+    loadingOlderMessages,
+    markGroupMessagesAsRead,
+    messagePage,
+    messages
+  ])
+
+  const handleMessageListScroll = useCallback(() => {
+    const container = messageListRef.current
+    if (!container) return
+
+    if (container.scrollTop < 50) {
+      void loadOlderMessages()
+    }
+  }, [loadOlderMessages])
 
   const sendMessage = useCallback(async () => {
     if (!activeGroupId || !contextUser?.id || !groupKey || !draft.trim()) {
@@ -632,6 +832,9 @@ export default function GroupChat() {
   useEffect(() => {
     if (!activeGroupId) {
       setMessages([])
+      setMessagePage(0)
+      setHasMoreMessages(true)
+      setLoadingOlderMessages(false)
       setMessageReadsById({})
       setGroupMembers([])
       setGroupKey(null)
@@ -829,6 +1032,10 @@ export default function GroupChat() {
   useEffect(() => {
     if (!activeGroupId) return
 
+    if (isPrependingOlderRef.current) {
+      return
+    }
+
     requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
     })
@@ -852,8 +1059,8 @@ export default function GroupChat() {
   }, [activeGroupId])
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-144px)] min-w-0 w-full max-w-[1300px] flex-col overflow-hidden px-2 pt-1 md:px-3">
-      <h1 className="mb-1 shrink-0 text-3xl font-bold text-slate-800">Group Chat</h1>
+    <div className="mx-auto flex h-[calc(100dvh-144px)] min-w-0 w-full max-w-[1300px] flex-col overflow-hidden px-2 pt-1 md:px-3 dark:text-slate-100">
+      <h1 className="mb-1 shrink-0 text-3xl font-bold text-slate-800 dark:text-slate-100">Group Chat</h1>
 
       {error && (
         <div className="mb-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -861,15 +1068,15 @@ export default function GroupChat() {
         </div>
       )}
 
-      <div className="grid min-h-0 min-w-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:grid-cols-[310px,minmax(0,1fr)]">
-        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
-          <div className="border-b border-slate-100 px-3 py-2.5">
+      <div className="grid min-h-0 min-w-0 w-full flex-1 grid-cols-1 gap-2 overflow-hidden rounded-2xl bg-white dark:bg-slate-900 p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.05)] lg:grid-cols-[310px,minmax(0,1fr)]">
+        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+          <div className="border-b border-slate-200 dark:border-slate-700 px-3 py-2.5">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Groups</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Groups</h2>
               <button
                 type="button"
                 onClick={() => setNewGroupModalOpen(true)}
-                className="inline-flex items-center justify-center rounded-lg bg-yellow-400 p-1 text-white transition-colors hover:bg-yellow-500"
+                className="inline-flex items-center justify-center rounded-lg bg-yellow-400 p-1 text-black transition-colors hover:bg-yellow-500"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14m7-7H5" />
@@ -881,19 +1088,23 @@ export default function GroupChat() {
               value={groupSearch}
               onChange={(event) => setGroupSearch(event.target.value)}
               placeholder="Search groups..."
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-[#f4b400]"
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            ref={groupListRef}
+            onScroll={handleGroupListScroll}
+            className="min-h-0 flex-1 overflow-y-auto"
+          >
             {loadingGroups ? (
               <div className="space-y-3 p-4">
                 {Array.from({ length: 5 }).map((_, index) => (
-                  <div key={index} className="h-16 animate-pulse rounded-lg bg-slate-100" />
+                  <div key={index} className="h-16 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
                 ))}
               </div>
             ) : filteredGroups.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-slate-500">No groups yet.</p>
+              <p className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No groups yet.</p>
             ) : (
               filteredGroups.map((group) => {
                 const isActive = group.id === activeGroupId
@@ -905,8 +1116,8 @@ export default function GroupChat() {
                     key={group.id}
                     type="button"
                     onClick={() => setActiveGroupId(group.id)}
-                    className={`w-full border-b border-slate-100 px-3 py-2.5 text-left transition-all duration-200 ${
-                      isActive ? "bg-slate-100" : "hover:bg-slate-50"
+                    className={`w-full border-b border-slate-200 dark:border-slate-700 px-3 py-2.5 text-left transition-all duration-200 ${
+                      isActive ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
@@ -915,27 +1126,31 @@ export default function GroupChat() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900">{group.name}</p>
+                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{group.name}</p>
                         <p className="mt-1 truncate text-[0.8125rem] text-slate-400">{lastMessagePreview}</p>
                       </div>
 
-                      <p className="shrink-0 text-[11px] text-slate-500">{lastMessageTime}</p>
+                      <p className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{lastMessageTime}</p>
                     </div>
                   </button>
                 )
               })
             )}
+
+            {!loadingGroups && loadingMoreGroups && (
+              <div className="px-4 py-3 text-center text-xs text-slate-500 dark:text-slate-400">Loading more groups...</div>
+            )}
           </div>
         </section>
 
-        <section className="chat-wrapper flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+        <section className="chat-wrapper flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
           {activeGroup ? (
             <>
-              <div className="shrink-0 border-b border-slate-100 px-4 py-3">
+              <div className="shrink-0 border-b border-slate-200 dark:border-slate-700 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-base font-semibold text-slate-900">{activeGroup.name}</h2>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">{activeGroup.name}</h2>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       {groupMembers.length} {groupMembers.length === 1 ? "member" : "members"}
                     </p>
                   </div>
@@ -947,21 +1162,21 @@ export default function GroupChat() {
                         event.stopPropagation()
                         setMembersDropdownOpen((prev) => !prev)
                       }}
-                      className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                      className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
                       Members
                     </button>
 
                     {membersDropdownOpen && (
                       <div
-                        className="absolute right-0 top-full z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white shadow-lg"
+                        className="absolute right-0 top-full z-20 mt-2 w-56 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
                         onClick={(event) => event.stopPropagation()}
                       >
                         <div className="max-h-64 overflow-y-auto">
                           {groupMembers.map((member) => (
                             <div
                               key={member.user_id}
-                              className="flex items-center gap-2 border-b border-slate-100 px-3 py-2 last:border-b-0"
+                              className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 px-3 py-2 last:border-b-0"
                             >
                               {member.profiles?.avatar_url ? (
                                 <img
@@ -976,7 +1191,7 @@ export default function GroupChat() {
                               )}
 
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-slate-900">
+                                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                                   {getDisplayName(member.profiles)}
                                 </p>
                               </div>
@@ -997,16 +1212,20 @@ export default function GroupChat() {
 
               <div
                 ref={messageListRef}
+                onScroll={handleMessageListScroll}
                 onClick={() => setOpenMessageOptionsId(null)}
                 className="message-list min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
               >
+                {loadingOlderMessages && (
+                  <div className="mb-2 text-center text-xs text-slate-500 dark:text-slate-400">Loading older messages...</div>
+                )}
                 {loadingMessages ? (
                   <div className="flex h-full items-center justify-center">
-                    <p className="text-slate-500">Loading messages...</p>
+                    <p className="text-slate-500 dark:text-slate-400">Loading messages...</p>
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="flex h-full items-center justify-center">
-                    <p className="text-slate-500">No messages yet. Start the conversation!</p>
+                    <p className="text-slate-500 dark:text-slate-400">No messages yet. Start the conversation!</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1049,7 +1268,7 @@ export default function GroupChat() {
                             <div className="relative w-fit max-w-sm">
                               <div
                                 className={`rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
-                                  isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900"
+                                  isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
                                 }`}
                               >
                                 <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
@@ -1061,7 +1280,7 @@ export default function GroupChat() {
                                   event.stopPropagation()
                                   setOpenMessageOptionsId((prev) => (prev === message.id ? null : message.id))
                                 }}
-                                className={`absolute right-0 -top-8 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 ${
+                                className={`absolute right-0 -top-8 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 ${
                                   openMessageOptionsId === message.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                                 }`}
                                 title="More options"
@@ -1072,7 +1291,7 @@ export default function GroupChat() {
 
                               {openMessageOptionsId === message.id && (
                                 <div
-                                  className="absolute right-0 top-full z-40 mt-2 min-w-[190px] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-800 shadow-lg"
+                                  className="absolute right-0 top-full z-40 mt-2 min-w-[190px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 text-slate-800 dark:text-slate-100 shadow-lg"
                                   onClick={(event) => event.stopPropagation()}
                                 >
                                   <button
@@ -1082,7 +1301,7 @@ export default function GroupChat() {
                                       setOpenMessageOptionsId(null)
                                       requestAnimationFrame(() => inputRef.current?.focus())
                                     }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
                                     <Reply className="h-3.5 w-3.5" />
                                     Reply
@@ -1094,7 +1313,7 @@ export default function GroupChat() {
                                       handleCopyMessage(message)
                                       setOpenMessageOptionsId(null)
                                     }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
                                     <Copy className="h-3.5 w-3.5" />
                                     Copy
@@ -1106,7 +1325,7 @@ export default function GroupChat() {
                                       handleForwardMessage(message)
                                       setOpenMessageOptionsId(null)
                                     }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
                                     <Forward className="h-3.5 w-3.5" />
                                     Forward
@@ -1118,7 +1337,7 @@ export default function GroupChat() {
                                       handleReactToMessage()
                                       setOpenMessageOptionsId(null)
                                     }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
                                     <SmilePlus className="h-3.5 w-3.5" />
                                     React
@@ -1144,7 +1363,7 @@ export default function GroupChat() {
                                       setMessageInfoMessageId(message.id)
                                       setOpenMessageOptionsId(null)
                                     }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
                                     <Info className="h-3.5 w-3.5" />
                                     Message info
@@ -1153,10 +1372,10 @@ export default function GroupChat() {
                               )}
                             </div>
 
-                            <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
+                            <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
                               <span>{dayjs(message.created_at).format("HH:mm")}</span>
                               {isOwn && (
-                                <span className="inline-flex items-center gap-1 text-slate-500" title="Delivered">
+                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400" title="Delivered">
                                   <span className="font-semibold tracking-[-0.08em]">✓✓</span>
                                   {seenCount > 0 && (
                                     <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
@@ -1177,7 +1396,7 @@ export default function GroupChat() {
                 <div ref={bottomRef} />
               </div>
 
-              <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-100 bg-white px-4 py-3">
+              <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
                 {replyTarget && (
                   <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
@@ -1185,13 +1404,13 @@ export default function GroupChat() {
                         <p className="text-[11px] font-semibold text-slate-600">
                           Replying to {getDisplayName(replyTarget.profiles || getMemberProfileById(replyTarget.sender_id))}
                         </p>
-                        <p className="truncate text-xs text-slate-500">{replyTarget.content || "[message]"}</p>
+                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">{replyTarget.content || "[message]"}</p>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => setReplyTarget(null)}
-                        className="rounded p-1 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+                        className="rounded p-1 text-slate-500 dark:text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
                         aria-label="Cancel reply"
                       >
                         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1231,7 +1450,7 @@ export default function GroupChat() {
             </>
           ) : (
             <div className="flex h-full items-center justify-center">
-              <p className="text-slate-500">Select or create a group to start chatting</p>
+              <p className="text-slate-500 dark:text-slate-400">Select or create a group to start chatting</p>
             </div>
           )}
         </section>
@@ -1239,8 +1458,8 @@ export default function GroupChat() {
 
       {newGroupModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="mb-4 text-lg font-semibold text-slate-900">Create New Group</h3>
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
+            <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Create New Group</h3>
 
             <div className="mb-4">
               <label className="mb-1 block text-sm font-medium text-slate-700">Group Name</label>
@@ -1249,7 +1468,7 @@ export default function GroupChat() {
                 value={newGroupName}
                 onChange={(event) => setNewGroupName(event.target.value)}
                 placeholder="Enter group name..."
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-[#f4b400]"
               />
             </div>
 
@@ -1260,15 +1479,15 @@ export default function GroupChat() {
                 value={newGroupUserSearch}
                 onChange={(event) => setNewGroupUserSearch(event.target.value)}
                 placeholder="Search by username..."
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none transition focus:border-[#f4b400]"
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-[#f4b400]"
               />
 
               {newGroupUserSearch.trim() && (
                 <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50">
                   {newGroupUserSearchLoading ? (
-                    <p className="p-3 text-center text-sm text-slate-500">Searching...</p>
+                    <p className="p-3 text-center text-sm text-slate-500 dark:text-slate-400">Searching...</p>
                   ) : newGroupUserSearchResults.length === 0 ? (
-                    <p className="p-3 text-center text-sm text-slate-500">No users found.</p>
+                    <p className="p-3 text-center text-sm text-slate-500 dark:text-slate-400">No users found.</p>
                   ) : (
                     newGroupUserSearchResults.map((profile) => (
                       <button
@@ -1293,7 +1512,7 @@ export default function GroupChat() {
                           </div>
                         )}
 
-                        <span className="text-sm font-medium text-slate-900">
+                        <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                           {profile.name || profile.username}
                         </span>
                       </button>
@@ -1331,7 +1550,7 @@ export default function GroupChat() {
                   setNewGroupUserSearch("")
                   setNewGroupSelectedUsers([])
                 }}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 Cancel
               </button>
@@ -1370,13 +1589,13 @@ export default function GroupChat() {
         
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-lg font-semibold text-slate-900">Message info</h3>
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Message info</h3>
                 <button
                   type="button"
                   onClick={() => setMessageInfoMessageId(null)}
-                  className="rounded p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded p-1 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                   aria-label="Close message info"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1391,7 +1610,7 @@ export default function GroupChat() {
                     {/* Delivered To Section */}
                     {deliveredMembers.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Delivered to</p>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Delivered to</p>
                         <div className="space-y-1.5">
                           {deliveredMembers.map((member) => (
                             <div key={member.user_id} className="flex items-center gap-2">
@@ -1416,7 +1635,7 @@ export default function GroupChat() {
                     {/* Read By Section */}
                     {readMembers.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Read by</p>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">Read by</p>
                         <div className="space-y-1.5">
                           {readMembers
                             .slice()
@@ -1436,7 +1655,7 @@ export default function GroupChat() {
                                 )}
                                 <div className="min-w-0 flex-1">
                                   <p className="text-slate-700 truncate text-sm">{getDisplayName(read.profile)}</p>
-                                  <p className="text-[11px] text-slate-500">
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
                                     {read.read_at ? dayjs(read.read_at).format("h:mm A") : "Time unavailable"}
                                   </p>
                                 </div>
@@ -1448,11 +1667,11 @@ export default function GroupChat() {
                     
                     {/* No reads yet message */}
                     {deliveredMembers.length === 0 && readMembers.length === 0 && (
-                      <p className="text-slate-500 text-sm">No members yet in this group.</p>
+                      <p className="text-slate-500 dark:text-slate-400 text-sm">No members yet in this group.</p>
                     )}
                   </>
                 ) : (
-                  <p className="text-slate-500 text-sm">Message info only available for your messages.</p>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">Message info only available for your messages.</p>
                 )}
               </div>
             </div>
