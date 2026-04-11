@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
+import { motion } from "framer-motion"
 
 export function NotificationDropdown({ notifications, loading, unreadCount, onMarkAsRead, isOpen, onClose }) {
   const navigate = useNavigate()
@@ -60,7 +61,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
     const actor = notif.actor?.username || "User"
 
     if (notif.type === "workspace_invite") {
-      return `${actor} invited you to workspace`
+      return `${actor} invited you to vault`
     }
 
     switch (notif.type) {
@@ -316,22 +317,38 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
     onClose()
   }
 
+  const handleMarkAllRead = async () => {
+    const unreadIds = notifications.filter((notif) => !notif.is_read).map((notif) => notif.id)
+    if (unreadIds.length === 0) return
+    await onMarkAsRead(unreadIds)
+  }
+
   if (!isOpen) {
     return null
   }
 
   return (
-    <div
+    <motion.div
       ref={dropdownRef}
-      className="absolute right-0 mt-2 w-80 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg animate-fadeIn z-50"
+      initial={{ opacity: 0, y: -8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+      className="absolute right-0 z-50 mt-2 w-[320px] overflow-hidden rounded-[16px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_16px_48px_rgba(0,0,0,0.9)]"
     >
-      <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-        <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+      <div className="flex items-center justify-between border-b border-[#1F1F1F] px-4 pb-[10px] pt-[14px]">
+        <h3 className="font-['Sora'] text-[14px] font-bold text-[#F5F0E8]">Notifications</h3>
+        <button
+          type="button"
+          onClick={handleMarkAllRead}
+          className="text-[11px] font-semibold text-[#F4B400]"
+        >
+          Mark all read
+        </button>
       </div>
 
       <div className="max-h-96 overflow-y-auto">
         {loading ? (
-          <div className="px-4 py-8 text-center text-slate-500">
+          <div className="px-4 py-8 text-center text-[#A09080]">
             <svg className="m-auto h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 strokeLinecap="round"
@@ -342,11 +359,11 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
             </svg>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="px-4 py-8 text-center text-slate-500">
+          <div className="px-4 py-8 text-center text-[#A09080]">
             <p className="text-sm">No notifications yet</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div>
             {notifications.map((notif) => {
               const isInvite = notif.type === "workspace_invite"
               const isRead = notif.is_read || markedIds.includes(notif.id)
@@ -355,20 +372,20 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
               return (
                 <div
                   key={notif.id}
-                  className={`w-full px-4 py-3 text-left transition-colors duration-150 ${
-                    isRead ? "bg-white" : "bg-yellow-50"
-                  } ${!isInvite ? "hover:bg-gray-50" : ""}`}
+                  className={`w-full border-b border-[rgba(31,31,31,0.6)] px-4 py-[11px] text-left transition-colors duration-150 ${
+                    isRead ? "bg-transparent" : "bg-[rgba(244,180,0,0.04)]"
+                  } ${!isInvite ? "hover:bg-[#141414]" : ""}`}
                 >
                   <div className="flex gap-3">
                     {notif.actor?.avatar_url ? (
                       <img
                         src={notif.actor.avatar_url}
                         alt={notif.actor.username}
-                        className="h-8 w-8 flex-shrink-0 rounded-full border border-yellow-200 object-cover"
+                        className="h-[38px] w-[38px] flex-shrink-0 rounded-full object-cover"
                         loading="lazy"
                       />
                     ) : (
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-yellow-300 bg-gradient-to-br from-yellow-200 to-yellow-100 text-xs font-semibold text-yellow-700">
+                      <div className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full bg-[#2A2000] font-['Sora'] text-[13px] font-bold text-[#F4B400]">
                         {notif.actor?.username?.charAt(0).toUpperCase() || getNotificationIcon(notif.type)}
                       </div>
                     )}
@@ -380,8 +397,8 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                         disabled={isInvite}
                         className={`w-full text-left ${isInvite ? "cursor-default" : "cursor-pointer"}`}
                       >
-                        <p className="truncate text-xs text-gray-900">{getNotificationText(notif)}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{formatTime(notif.created_at)}</p>
+                        <p className="truncate text-[12px] text-[#A09080]"><span className="font-semibold text-[#F5F0E8]">{notif.actor?.username || "User"}</span> {getNotificationText(notif).replace(`${notif.actor?.username || "User"} `, "")}</p>
+                        <p className="mt-0.5 text-[10px] text-[#5C5248]">{formatTime(notif.created_at)}</p>
                       </button>
 
                       {isInvite && !isRead && (
@@ -390,7 +407,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                             type="button"
                             onClick={() => handleInviteAction(notif, "accept")}
                             disabled={Boolean(actionLoading)}
-                            className="min-h-9 rounded-md bg-yellow-500 px-3 text-xs font-semibold text-gray-900 hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="flex-1 rounded-[8px] bg-[#F4B400] py-[7px] text-[12px] font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {actionLoading === "accept" ? "Accepting..." : "Accept"}
                           </button>
@@ -398,7 +415,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                             type="button"
                             onClick={() => handleInviteAction(notif, "decline")}
                             disabled={Boolean(actionLoading)}
-                            className="min-h-9 rounded-md border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="flex-1 rounded-[8px] border border-[#2A2A2A] bg-[#141414] py-[7px] text-[12px] font-semibold text-[#A09080] transition-colors hover:border-[#EF4444] hover:text-[#EF4444] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {actionLoading === "decline" ? "Declining..." : "Decline"}
                           </button>
@@ -406,7 +423,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                       )}
                     </div>
 
-                    {!isRead && <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-yellow-500"></div>}
+                    {!isRead && <div className="mt-[6px] h-[7px] w-[7px] flex-shrink-0 rounded-full bg-[#F4B400]" />}
                   </div>
                 </div>
               )
@@ -416,18 +433,18 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
       </div>
 
       {notifications.length > 0 && (
-        <div className="border-t border-gray-200 bg-gray-50 px-4 py-2">
+        <div className="border-t border-[#1F1F1F] py-[10px] text-center">
           <button
             onClick={() => {
               navigate("/notifications")
               onClose()
             }}
-            className="text-xs font-medium text-yellow-600 hover:text-yellow-700"
+            className="text-[12px] font-semibold text-[#F4B400]"
           >
             View all notifications
           </button>
         </div>
       )}
-    </div>
+    </motion.div>
   )
 }

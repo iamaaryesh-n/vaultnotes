@@ -6,9 +6,7 @@ import { leaveWorkspace, deleteWorkspaceCompletely } from "../lib/workspaceMembe
 import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
-import { WorkspaceListSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
-import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 import { useWorkspaceCacheStore } from "../stores/workspaceCacheStore"
 
 export default function Dashboard({ session }) {
@@ -25,10 +23,14 @@ export default function Dashboard({ session }) {
   const cachedData = getCachedWorkspaces()
   const [workspaces, setWorkspaces] = useState(cachedData?.workspaces || [])
   const [loading, setLoading] = useState(!cachedData) // Only show loading if no cached data
+  const [hasResolvedInitialFetch, setHasResolvedInitialFetch] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [userRoles, setUserRoles] = useState(cachedData?.userRoles || {}) // {workspaceId: role}
   const [ownerCounts, setOwnerCounts] = useState(cachedData?.ownerCounts || {}) // {workspaceId: ownerCount}
+  const [memberCounts, setMemberCounts] = useState({}) // {workspaceId: totalMemberCount}
+  const [activeFilter, setActiveFilter] = useState("all")
+  const [vaultSearchTerm, setVaultSearchTerm] = useState("")
   const [workspaceAttributionById, setWorkspaceAttributionById] = useState({}) // {workspaceId: { invitedBy, invitedAt, invitedByUsername }}
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
   const [workspaceName, setWorkspaceName] = useState("")
@@ -139,6 +141,7 @@ export default function Dashboard({ session }) {
         console.log("[Dashboard] User has no workspace memberships")
         setWorkspaces([])
         setOwnerCounts({})
+        setMemberCounts({})
         setWorkspaceAttributionById({})
         setLoading(false)
         isFetchingRef.current = false
@@ -173,12 +176,15 @@ export default function Dashboard({ session }) {
 
       if (!memberError && memberData) {
         const ownerCountMap = {}
+        const memberCountMap = {}
         memberData.forEach((m) => {
+          memberCountMap[m.workspace_id] = (memberCountMap[m.workspace_id] || 0) + 1
           if (m.role === "owner") {
             ownerCountMap[m.workspace_id] = (ownerCountMap[m.workspace_id] || 0) + 1
           }
         })
         setOwnerCounts(ownerCountMap)
+        setMemberCounts(memberCountMap)
         
         // Cache the fetched data for faster navigation
         setCachedWorkspaces(workspaceData || [], userRolesMap, ownerCountMap)
@@ -191,6 +197,7 @@ export default function Dashboard({ session }) {
       console.error("[Dashboard] Error fetching workspaces:", err)
     } finally {
       setLoading(false)
+      setHasResolvedInitialFetch(true)
       isFetchingRef.current = false
     }
   }, [setCachedWorkspaces])
@@ -338,7 +345,7 @@ export default function Dashboard({ session }) {
         console.error("[Dashboard/createWorkspace]   Error code:", workspaceError.code)
         console.error("[Dashboard/createWorkspace]   Error message:", workspaceError.message)
         console.error("[Dashboard/createWorkspace]   Full error:", JSON.stringify(workspaceError, null, 2))
-        showError(`Failed to create workspace: ${workspaceError.message}`)
+        showError(`Failed to create vault: ${workspaceError.message}`)
         setCreating(false)
         return
       }
@@ -353,7 +360,7 @@ export default function Dashboard({ session }) {
 
       if (!workspace?.id) {
         console.error("[Dashboard/createWorkspace] ❌ Workspace inserted but no ID returned")
-        showError("Workspace created but ID not returned. Please refresh.")
+        showError("Vault created but ID not returned. Please refresh.")
         setCreating(false)
         return
       }
@@ -419,7 +426,7 @@ export default function Dashboard({ session }) {
               console.log("[Dashboard/createWorkspace] ✅ Membership verified (role: " + verifyMember.role + ")")
             } else {
               console.error("[Dashboard/createWorkspace] ❌ Membership not found after insert attempt")
-              showError("Failed to establish workspace ownership")
+              showError("Failed to establish vault ownership")
               setCreating(false)
               return
             }
@@ -488,7 +495,7 @@ export default function Dashboard({ session }) {
       console.log("[Dashboard/createWorkspace] Step 5: Updating UI and navigating...")
       
       setWorkspaces((prev) => [workspace, ...prev])
-      success(`Workspace "${name}" created!`)
+      success(`Vault "${name}" created!`)
       
       await fetchWorkspaces()
       window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: workspace.id } }))
@@ -506,7 +513,7 @@ export default function Dashboard({ session }) {
       console.error("[Dashboard/createWorkspace]   Error type:", err.constructor.name)
       console.error("[Dashboard/createWorkspace]   Error message:", err.message)
       console.error("[Dashboard/createWorkspace]   Stack:", err.stack)
-      showError(`Failed to create workspace: ${err.message}`)
+      showError(`Failed to create vault: ${err.message}`)
       setCreating(false)
     }
   }, [workspaceName, workspaceIsPublic, success, showError, fetchWorkspaces, navigate, authReadyForWorkspaceCreate, session?.user?.id, authReadyUserId])
@@ -575,12 +582,12 @@ export default function Dashboard({ session }) {
     }
 
     if (action === "delete" && userRole !== "owner") {
-      showError("Only owners can delete a workspace")
+      showError("Only owners can delete a vault")
       return
     }
 
     if (action === "leave" && userRole === "owner" && ownerCount <= 1) {
-      showError("Cannot leave workspace: at least one owner must remain")
+      showError("Cannot leave vault: at least one owner must remain")
       return
     }
 
@@ -606,13 +613,13 @@ export default function Dashboard({ session }) {
       if (!result.success) {
         console.error("[Dashboard/runWorkspaceAction] Operation failed:", result.error)
         setWorkspaces(originalWorkspaces)
-        showError(result.error || "Workspace action failed")
+        showError(result.error || "Vault action failed")
         setDeletingId(null)
         return
       }
 
       localStorage.removeItem(`workspace_key_${workspaceId}`)
-      success(action === "delete" ? "Workspace deleted successfully" : "You've left the workspace")
+      success(action === "delete" ? "Vault deleted successfully" : "You've left the vault")
 
       console.log(`[Dashboard] ${action === "delete" ? "Delete" : "Leave"} operation completed, scheduling refetch in 500ms...`)
 
@@ -673,7 +680,7 @@ export default function Dashboard({ session }) {
       if (error) {
         console.error("[Dashboard] Error updating visibility:", error)
         console.error("[Dashboard] Error details:", error.message, error.code, error.status)
-        showError("Failed to update workspace visibility")
+        showError("Failed to update vault visibility")
       } else {
         console.log("[Dashboard] ✅ Update executed. Response:", updatedData)
         
@@ -694,7 +701,7 @@ export default function Dashboard({ session }) {
             ws.id === editVisibilityId ? { ...ws, is_public: editVisibilityValue } : ws
           )
         )
-        success(editVisibilityValue ? "Workspace is now public" : "Workspace is now private")
+        success(editVisibilityValue ? "Vault is now public" : "Vault is now private")
         setEditVisibilityId(null)
         setCurrentVisibilityState(false)
         setEditVisibilityValue(false)
@@ -707,47 +714,123 @@ export default function Dashboard({ session }) {
     }
   }, [editVisibilityId, editVisibilityValue, success, showError, workspaces, currentVisibilityState])
 
-  if (loading) {
+  const shouldShowLoadingSkeleton = loading || (!hasResolvedInitialFetch && workspaces.length === 0)
+  const filteredWorkspaces = workspaces.filter((workspace) => {
+    if (activeFilter === "owned") return workspace.is_public === false
+    if (activeFilter === "public") return workspace.is_public === true
+    if (activeFilter === "shared") return (memberCounts[workspace.id] || 0) > 1
+    return workspace.is_public === true || workspace.is_public === false
+  }).filter((workspace) => {
+    const query = vaultSearchTerm.trim().toLowerCase()
+    if (!query) return true
+    return (workspace.name || "").toLowerCase().includes(query)
+  })
+
+  if (shouldShowLoadingSkeleton) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
-        <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
-          <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Workspaces</h1>
-          <p className="text-slate-600 mb-8">Manage your encrypted knowledge spaces</p>
-          <WorkspaceListSkeleton />
+      <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+        <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-0 pt-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h1 className="font-['Sora'] text-[24px] font-[800] text-[#F5F0E8]">My Vaults</h1>
+              <p className="mt-1 text-[12px] text-[#5C5248]">Manage your encrypted knowledge spaces</p>
+            </div>
+            <div className="rounded-[12px] bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)]">+ Create Vault</div>
+          </div>
+          <div className="scrollbar-hide flex gap-[6px] overflow-x-auto pb-3">
+            <div className="rounded-[20px] bg-[#F4B400] px-[14px] py-[6px] text-[12px] font-[600] text-[#0D0D0D]">All</div>
+            <div className="rounded-[20px] border border-[#1F1F1F] bg-[#141414] px-[14px] py-[6px] text-[12px] font-[600] text-[#5C5248]">Owned</div>
+            <div className="rounded-[20px] border border-[#1F1F1F] bg-[#141414] px-[14px] py-[6px] text-[12px] font-[600] text-[#5C5248]">Shared with me</div>
+            <div className="rounded-[20px] border border-[#1F1F1F] bg-[#141414] px-[14px] py-[6px] text-[12px] font-[600] text-[#5C5248]">Public</div>
+          </div>
+        </div>
+        <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="mb-[10px] rounded-[18px] border border-[#1F1F1F] bg-[#0D0D0D] p-4">
+              <div className="mb-3 h-2 w-1/2 animate-pulse rounded-[8px] bg-[#141414]" />
+              <div className="mb-2 h-4 w-full animate-pulse rounded-[8px] bg-[#141414]" />
+              <div className="mb-2 h-4 w-4/5 animate-pulse rounded-[8px] bg-[#141414]" />
+              <div className="h-4 w-2/3 animate-pulse rounded-[8px] bg-[#141414]" />
+            </div>
+          ))}
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
-      <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
-        <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Workspaces</h1>
-        <p className="text-slate-600 mb-8">Manage your encrypted knowledge spaces</p>
+    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-0 pt-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="font-['Sora'] text-[24px] font-[800] text-[#F5F0E8]">My Vaults</h1>
+            <p className="mt-1 text-[12px] text-[#5C5248]">Manage your encrypted knowledge spaces</p>
+          </div>
 
-        <button
-          onClick={createWorkspace}
-          disabled={creating || !authReadyForWorkspaceCreate}
-          className="bg-yellow-500 hover:bg-yellow-400 hover:shadow-md active:scale-95 text-gray-900 px-6 py-3 rounded-lg mb-8 font-semibold transition-all duration-200 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-yellow-500"
-        >
-          {creating ? "Creating..." : "+ Create Workspace"}
-        </button>
+          <button
+            onClick={createWorkspace}
+            disabled={creating || !authReadyForWorkspaceCreate}
+            className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all duration-150 hover:translate-y-[-1px] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? "Creating..." : "+ Create Vault"}
+          </button>
+        </div>
 
-        {workspaces.length === 0 ? (
-          <div className="card p-12 text-center">
-            <p className="text-slate-600 text-lg mb-6">No workspaces yet</p>
-            <p className="text-slate-500 text-sm mb-6">Start capturing your thoughts by creating your first workspace</p>
+        <div className="scrollbar-hide flex gap-[6px] overflow-x-auto pb-3">
+          <button
+            onClick={() => setActiveFilter("all")}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "all" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setActiveFilter("owned")}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "owned" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+          >
+            Owned
+          </button>
+          <button
+            onClick={() => setActiveFilter("shared")}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "shared" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+          >
+            Shared with me
+          </button>
+          <button
+            onClick={() => setActiveFilter("public")}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "public" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+          >
+            Public
+          </button>
+        </div>
+
+        <div className="mt-2">
+          <input
+            type="text"
+            placeholder="Search vaults..."
+            value={vaultSearchTerm}
+            onChange={(e) => setVaultSearchTerm(e.target.value)}
+            className="w-full rounded-[12px] border border-transparent bg-[#0D0D0D] p-3 text-[#F5F0E8] placeholder:text-[#5C5248] transition-all duration-200 focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
+          />
+        </div>
+      </div>
+
+      <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
+
+        {hasResolvedInitialFetch && filteredWorkspaces.length === 0 ? (
+          <div className="rounded-[18px] border border-[#1F1F1F] bg-[#0D0D0D] p-12 text-center">
+            <p className="mb-6 text-lg text-[#A09080]">No vaults found</p>
+            <p className="mb-6 text-sm text-[#5C5248]">Try another filter or create a new vault</p>
             <button
               onClick={createWorkspace}
               disabled={creating || !authReadyForWorkspaceCreate}
-              className="bg-yellow-500 hover:bg-yellow-400 text-gray-900 px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all duration-150 hover:translate-y-[-1px] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {creating ? "Creating..." : "Create Your First Workspace"}
+              {creating ? "Creating..." : "Create Your First Vault"}
             </button>
-            <p className="text-xs text-slate-400 mt-4">Tip: Press "W" to create a new workspace</p>
+            <p className="mt-4 text-xs text-[#5C5248]">Tip: Press "W" to create a new vault</p>
           </div>
         ) : (
-          workspaces.map((workspace) => (
+          filteredWorkspaces.map((workspace) => (
             <div
               key={workspace.id}
               onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${workspace.id}`))}
@@ -759,75 +842,95 @@ export default function Dashboard({ session }) {
               }}
               role="button"
               tabIndex={0}
-              className="card p-6 mb-4 hover:shadow-lg hover:-translate-y-1 cursor-pointer group transition-all duration-200 bg-white border border-slate-200"
+              className="group mb-[16px] cursor-pointer overflow-visible rounded-[18px] border border-[#1F1F1F] bg-[#0D0D0D] transition-all duration-200 hover:border-[#2A2A2A] hover:bg-[#141414]"
             >
-              <div className="flex justify-between items-center">
-                <div>
-                  <div className="text-lg font-semibold text-gray-900 group-hover:text-yellow-500 transition-colors">
-                    {workspace.name}
-                  </div>
-                  <div className="mt-2">
-                    <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="sm" />
-                  </div>
-                  {workspaceAttributionById[workspace.id]?.invitedByUsername && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Added by {workspaceAttributionById[workspace.id].invitedByUsername}
-                    </p>
-                  )}
-                </div>
+              {(() => {
+                const role = userRoles[workspace.id]
+                const isShared = role && role !== "owner"
+                const visType = workspace.is_public ? "public" : isShared ? "shared" : "private"
+                const accentClass = visType === "private"
+                  ? "bg-gradient-to-r from-[#8B5CF6] via-[rgba(139,92,246,0.3)] to-transparent"
+                  : visType === "shared"
+                    ? "bg-gradient-to-r from-[#22C55E] via-[rgba(34,197,94,0.3)] to-transparent"
+                    : "bg-gradient-to-r from-[#F4B400] via-[rgba(244,180,0,0.3)] to-transparent"
+                const badgeClass = visType === "private"
+                  ? "border border-[rgba(139,92,246,0.2)] bg-[#1E1528] text-[#8B5CF6]"
+                  : visType === "shared"
+                    ? "border border-[rgba(34,197,94,0.2)] bg-[#162116] text-[#22C55E]"
+                    : "border border-[rgba(244,180,0,0.2)] bg-[#2A2000] text-[#F4B400]"
+                const badgeLabel = visType === "private" ? "Private" : visType === "shared" ? "Shared" : "Public"
+                const isOwner = role === "owner"
 
-                {(() => {
-                  const role = userRoles[workspace.id]
-                  const isOwner = role === "owner"
-                  const hasMultipleOwners = (ownerCounts[workspace.id] || 0) > 1
-                  const isDeleting = deletingId === workspace.id
-
-                  return (
-                    <div className="flex items-center gap-2">
-                      {isOwner && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openEditVisibility(workspace.id, workspace.is_public)
-                          }}
-                          className="opacity-60 group-hover:opacity-100 transition-all duration-200 px-3 py-1.5 rounded text-blue-400 hover:text-blue-600 hover:bg-blue-50"
-                          title="Change workspace visibility"
-                        >
-                          Settings
-                        </button>
-                      )}
-
-                      {isOwner && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteWorkspace(workspace.id)
-                          }}
-                          disabled={isDeleting}
-                          className="opacity-60 group-hover:opacity-100 transition-all duration-200 px-3 py-1.5 rounded text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Delete this workspace permanently"
-                        >
-                          {isDeleting ? "..." : "Delete Workspace"}
-                        </button>
-                      )}
-
-                      {((isOwner && hasMultipleOwners) || role === "editor" || role === "viewer") && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            leaveWorkspaceAction(workspace.id)
-                          }}
-                          disabled={isDeleting}
-                          className="opacity-60 group-hover:opacity-100 transition-all duration-200 px-3 py-1.5 rounded text-orange-400 hover:text-orange-600 hover:bg-orange-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                          title="Leave this workspace"
-                        >
-                          {isDeleting ? "..." : "Leave Workspace"}
-                        </button>
-                      )}
+                return (
+                  <>
+                    <div className={`h-[2px] w-full ${accentClass}`} />
+                    <div className="px-5 pb-4 pt-4">
+                      <div className="flex items-start justify-between gap-[10px]">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-[6px] flex items-center gap-2">
+                            <span className="overflow-hidden text-ellipsis whitespace-nowrap font-['Sora'] text-[18px] font-[700] text-[#F5F0E8]">{workspace.name}</span>
+                            <span className={`rounded-[8px] px-[7px] py-[2px] text-[10px] font-[700] ${badgeClass}`}>{badgeLabel}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-[12px] pb-1">
+                            <span className="flex items-center gap-1 text-[12px] text-[#5C5248]">
+                              <svg className="h-[11px] w-[11px] opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                              {(workspaceAttributionById[workspace.id]?.invitedByUsername && "Invited") || "Notes"}
+                            </span>
+                            <span className="flex items-center gap-1 text-[12px] text-[#5C5248]">
+                              <svg className="h-[11px] w-[11px] opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
+                              {userRoles[workspace.id] || "viewer"}
+                            </span>
+                            <span className="text-[12px] text-[#5C5248]">Updated {new Date(workspace.created_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-[6px]">
+                          <details className="relative" onClick={(e) => e.stopPropagation()}>
+                            <summary className="flex h-[30px] w-[30px] cursor-pointer list-none items-center justify-center rounded-[8px] border border-transparent bg-transparent text-[#5C5248] transition-all hover:border-[#1F1F1F] hover:bg-[#1C1C1C]">
+                              <svg className="h-[14px] w-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                            </summary>
+                            <div className="absolute right-0 top-full z-[320] mt-2 w-[185px] overflow-hidden rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_12px_40px_rgba(0,0,0,0.85)]">
+                              <button className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#F5F0E8] hover:bg-[#141414]">Rename</button>
+                              {isOwner && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openEditVisibility(workspace.id, workspace.is_public)
+                                  }}
+                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#F5F0E8] hover:bg-[#141414]"
+                                >
+                                  Settings
+                                </button>
+                              )}
+                              <div className="my-[3px] h-[1px] bg-[#1F1F1F]" />
+                              {isOwner ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    deleteWorkspace(workspace.id)
+                                  }}
+                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#EF4444] hover:bg-[#141414]"
+                                >
+                                  Delete Vault
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    leaveWorkspaceAction(workspace.id)
+                                  }}
+                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#F5F0E8] hover:bg-[#141414]"
+                                >
+                                  Leave Vault
+                                </button>
+                              )}
+                            </div>
+                          </details>
+                        </div>
+                      </div>
                     </div>
-                  )
-                })()}
-              </div>
+                  </>
+                )
+              })()}
             </div>
           ))
         )}
@@ -835,11 +938,11 @@ export default function Dashboard({ session }) {
 
       <Modal
         open={showCreateWorkspaceModal}
-        title="Create Workspace"
-        message="Create a new encrypted workspace for your memories."
+        title="Create Vault"
+        message="Create a new encrypted vault for your memories."
         inputValue={workspaceName}
         onInputChange={setWorkspaceName}
-        inputPlaceholder="Enter workspace name"
+        inputPlaceholder="Enter vault name"
         confirmText="Create"
         confirmVariant="primary"
         confirmDisabled={!workspaceName.trim() || creating || !authReadyForWorkspaceCreate}
@@ -851,21 +954,24 @@ export default function Dashboard({ session }) {
           setWorkspaceIsPublic(false)
         }}
       >
-        <div className="mt-5 space-y-3 border-t border-slate-200 pt-5">
+        <div className="mt-5 space-y-3 border-t border-[#1F1F1F] pt-5">
           <label className="flex items-center gap-3 cursor-pointer group">
-            <div className="relative flex items-center">
-              <input
-                type="checkbox"
-                checked={workspaceIsPublic}
-                onChange={(e) => setWorkspaceIsPublic(e.target.checked)}
-                className="h-5 w-5 rounded cursor-pointer accent-yellow-500"
+            <button
+              type="button"
+              onClick={() => setWorkspaceIsPublic((prev) => !prev)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${workspaceIsPublic ? "border-[#F4B400] bg-[#F4B400]" : "border-[#2A2A2A] bg-[#141414]"}`}
+              aria-label="Toggle public vault"
+              aria-pressed={workspaceIsPublic}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-[#0D0D0D] transition-transform ${workspaceIsPublic ? "translate-x-6" : "translate-x-1"}`}
               />
-            </div>
-            <span className="text-sm font-medium text-slate-900 group-hover:text-slate-700">
-              Public workspace
+            </button>
+            <span className="text-sm font-medium text-[#F5F0E8] group-hover:text-[#A09080]">
+              Public vault
             </span>
           </label>
-          <p className="text-xs text-slate-500 pl-8">
+          <p className="pl-8 text-xs text-[#5C5248]">
             Visible to everyone, editable only by owner and members
           </p>
         </div>
@@ -873,8 +979,8 @@ export default function Dashboard({ session }) {
 
       <Modal
         open={Boolean(workspaceDeleteTarget)}
-        title="Delete Workspace"
-        message="Are you sure you want to delete this workspace? This action cannot be undone."
+        title="Delete Vault"
+        message="Are you sure you want to delete this vault? This action cannot be undone."
         confirmText="Delete"
         confirmVariant="danger"
         onConfirm={() => {
@@ -890,8 +996,8 @@ export default function Dashboard({ session }) {
 
       <Modal
         open={Boolean(editVisibilityId)}
-        title="Change Workspace Visibility"
-        message={currentVisibilityState ? "This workspace is currently PUBLIC and visible to everyone." : "This workspace is currently PRIVATE and only visible to members."}
+        title="Change Vault Visibility"
+        message={currentVisibilityState ? "This vault is currently PUBLIC and visible to everyone." : "This vault is currently PRIVATE and only visible to members."}
         confirmText={editVisibilityValue ? "Make Public" : "Make Private"}
         confirmVariant="primary"
         isLoading={updatingVisibility}
@@ -902,24 +1008,27 @@ export default function Dashboard({ session }) {
           setEditVisibilityValue(false)
         }}
       >
-        <div className="mt-5 space-y-3 border-t border-slate-200 pt-5">
+        <div className="mt-5 space-y-3 border-t border-[#1F1F1F] pt-5">
           <label className="flex items-center gap-3 cursor-pointer group">
-            <div className="relative flex items-center">
-              <input
-                type="checkbox"
-                checked={editVisibilityValue}
-                onChange={(e) => {
-                  setEditVisibilityValue(e.target.checked)
-                  console.log("[Dashboard] Visibility toggle changed to:", e.target.checked)
-                }}
-                className="h-5 w-5 rounded cursor-pointer accent-yellow-500"
+            <button
+              type="button"
+              onClick={() => {
+                setEditVisibilityValue((prev) => !prev)
+                console.log("[Dashboard] Visibility toggle changed to:", !editVisibilityValue)
+              }}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${editVisibilityValue ? "border-[#F4B400] bg-[#F4B400]" : "border-[#2A2A2A] bg-[#141414]"}`}
+              aria-label="Toggle vault visibility"
+              aria-pressed={editVisibilityValue}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-[#0D0D0D] transition-transform ${editVisibilityValue ? "translate-x-6" : "translate-x-1"}`}
               />
-            </div>
-            <span className="text-sm font-medium text-slate-900 group-hover:text-slate-700">
+            </button>
+            <span className="text-sm font-medium text-[#F5F0E8] group-hover:text-[#A09080]">
               Make public
             </span>
           </label>
-          <p className="text-xs text-slate-500 pl-8">
+          <p className="pl-8 text-xs text-[#5C5248]">
             {editVisibilityValue 
               ? "✓ Will be visible to everyone, editable only by owner and members"
               : "✓ Only visible to members, editable only by owner and members"

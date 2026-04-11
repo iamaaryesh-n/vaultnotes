@@ -1,27 +1,31 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, lazy, Suspense } from "react"
 import { supabase } from "../lib/supabase"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import Modal from "../components/Modal"
 import PostInteractions from "../components/PostInteractions"
 import { useSmartFetchPosts } from "../hooks/useSmartFetchPosts"
-import { PostListSkeleton } from "../components/PostSkeleton"
 import { usePostsRealtime } from "../hooks/usePostsRealtime"
 import { EditProfileModal } from "../components/EditProfileModal"
-import { FollowersModal } from "../components/FollowersModal"
-import { FollowingModal } from "../components/FollowingModal"
-import { useToast } from "../hooks/useToast"
 import { fetchUserPublicWorkspaces } from "../lib/globalSearch"
 import VisibilityBadge from "../components/VisibilityBadge"
 import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 
+const FollowersModal = lazy(() =>
+  import("../components/FollowersModal").then((module) => ({ default: module.FollowersModal }))
+)
+const FollowingModal = lazy(() =>
+  import("../components/FollowingModal").then((module) => ({ default: module.FollowingModal }))
+)
+
 export default function Profile() {
   const navigate = useNavigate()
+  const { username } = useParams()
 
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingPostId, setDeletingPostId] = useState(null)
   const [nameInput, setNameInput] = useState("")
@@ -38,8 +42,14 @@ export default function Profile() {
   const [followingCount, setFollowingCount] = useState(0)
   const [activeTab, setActiveTab] = useState("posts")
   const [isFollowing, setIsFollowing] = useState(false)
+  const [isFollowLoading, setIsFollowLoading] = useState(false)
+  const [isChatLoading, setIsChatLoading] = useState(false)
   const [workspaces, setWorkspaces] = useState([])
   const [workspacesLoading, setWorkspacesLoading] = useState(false)
+  const [activePostMenuId, setActivePostMenuId] = useState(null)
+  const [editingPostId, setEditingPostId] = useState(null)
+  const [editingPostContent, setEditingPostContent] = useState("")
+  const [postContentOverrides, setPostContentOverrides] = useState({})
   
   // Smart fetch posts with caching
   const {
@@ -74,7 +84,7 @@ export default function Profile() {
 
   useEffect(() => {
     fetchUserAndProfile()
-  }, [])
+  }, [username])
 
   useEffect(() => {
     if (profile) {
@@ -83,10 +93,34 @@ export default function Profile() {
   }, [profile?.id])
 
   useEffect(() => {
+    if (user && profile && user.id !== profile.id) {
+      fetchFollowStatus()
+    }
+  }, [user?.id, profile?.id])
+
+  useEffect(() => {
     if (profile) {
       fetchWorkspaces()
     }
   }, [profile?.id, user?.id])
+
+  useEffect(() => {
+    const handlePostMenuOutside = (event) => {
+      const menuNode = event.target?.closest?.("[data-post-menu='true']")
+      const triggerNode = event.target?.closest?.("[data-post-menu-trigger='true']")
+
+      if (menuNode || triggerNode) {
+        return
+      }
+
+      setActivePostMenuId(null)
+    }
+
+    if (activePostMenuId) {
+      document.addEventListener("mousedown", handlePostMenuOutside)
+      return () => document.removeEventListener("mousedown", handlePostMenuOutside)
+    }
+  }, [activePostMenuId])
 
   const fetchUserAndProfile = async () => {
     try {
@@ -112,12 +146,10 @@ export default function Profile() {
       setUser(user)
       console.log("[Profile] Fetched user:", user)
 
-      // Fetch user's profile from profiles table
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single()
+      const profileQuery = supabase.from("profiles").select("*")
+      const { data: profileData, error: profileError } = username
+        ? await profileQuery.eq("username", username).single()
+        : await profileQuery.eq("id", user.id).single()
 
       if (profileError && profileError.code !== "PGRST116") {
         // PGRST116 = no rows returned, which is fine for new users
@@ -133,8 +165,26 @@ export default function Profile() {
           setAvatarUrl(profileData.avatar_url)
         }
         console.log("[Profile] Fetched profile:", profileData)
+
+        if (!username && profileData.username) {
+          navigate(`/profile/${profileData.username}`, { replace: true })
+        }
+
         // Posts will be fetched via useSmartFetchPosts hook automatically
       } else {
+        if (username) {
+          setModalConfig({
+            open: true,
+            title: "Not Found",
+            message: `User \"@${username}\" not found.`,
+            onConfirm: () => {
+              setModalConfig({ ...modalConfig, open: false })
+              navigate(-1)
+            }
+          })
+          return
+        }
+
         // Create default profile if it doesn't exist
         console.log("[Profile] No profile found, creating default profile")
         const { data: newProfile, error: insertError } = await supabase
@@ -213,6 +263,131 @@ export default function Profile() {
     }
   }
 
+  const fetchFollowStatus = async () => {
+    if (!user?.id || !profile?.id || user.id === profile.id) {
+      setIsFollowing(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("follows")
+        .select("id")
+        .eq("follower_id", user.id)
+        .eq("following_id", profile.id)
+        .maybeSingle()
+
+      if (error) {
+        console.error("[Profile] Error fetching follow status:", error)
+        return
+      }
+
+      setIsFollowing(!!data)
+    } catch (err) {
+      console.error("[Profile] Exception fetching follow status:", err)
+    }
+  }
+
+  const handleFollowToggle = async () => {
+    if (!user || !profile || user.id === profile.id) return
+
+    try {
+      setIsFollowLoading(true)
+
+      if (isFollowing) {
+        const { error } = await supabase
+          .from("follows")
+          .delete()
+          .eq("follower_id", user.id)
+          .eq("following_id", profile.id)
+
+        if (error) {
+          throw error
+        }
+
+        setIsFollowing(false)
+        setFollowersCount((prev) => Math.max(0, prev - 1))
+        return
+      }
+
+      const { error } = await supabase
+        .from("follows")
+        .insert({
+          follower_id: user.id,
+          following_id: profile.id
+        })
+
+      if (error) {
+        throw error
+      }
+
+      setIsFollowing(true)
+      setFollowersCount((prev) => prev + 1)
+    } catch (err) {
+      console.error("[Profile] Error updating follow state:", err)
+      setModalConfig({
+        open: true,
+        title: "Error",
+        message: "Could not update follow status. Please try again.",
+        onConfirm: () => setModalConfig({ ...modalConfig, open: false })
+      })
+    } finally {
+      setIsFollowLoading(false)
+    }
+  }
+
+  const handleStartChat = async () => {
+    if (!user || !profile?.id || user.id === profile.id) return
+
+    try {
+      setIsChatLoading(true)
+
+      const { data: existingConversation, error: existingError } = await supabase
+        .from("conversations")
+        .select("id, user1_id, user2_id")
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${profile.id}),and(user1_id.eq.${profile.id},user2_id.eq.${user.id})`)
+        .limit(1)
+        .maybeSingle()
+
+      if (existingError) {
+        throw existingError
+      }
+
+      let conversationId = existingConversation?.id
+
+      if (!conversationId) {
+        const { data: newConversation, error: insertError } = await supabase
+          .from("conversations")
+          .insert({
+            user1_id: user.id,
+            user2_id: profile.id
+          })
+          .select("id")
+          .single()
+
+        if (insertError) {
+          throw insertError
+        }
+
+        conversationId = newConversation?.id
+      }
+
+      if (conversationId) {
+        navigate(`/chat?conversation=${conversationId}`)
+      }
+    } catch (err) {
+      console.error("[Profile] Error starting chat:", err)
+      setModalConfig({
+        open: true,
+        title: "Error",
+        message: "Could not start chat. Please try again.",
+        onConfirm: () => setModalConfig({ ...modalConfig, open: false })
+      })
+    } finally {
+      setIsChatLoading(false)
+    }
+  }
+
   const fetchWorkspaces = async () => {
     if (!profile?.id || !user?.id) return
 
@@ -270,89 +445,6 @@ export default function Profile() {
       setWorkspaces([])
     } finally {
       setWorkspacesLoading(false)
-    }
-  }
-
-  const handleAvatarUpload = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file || !user) return
-
-    try {
-      setUploading(true)
-      console.log("[Profile] Starting avatar upload for user:", user.id)
-
-      // Create a unique filename using user ID and timestamp
-      const fileExt = file.name.split(".").pop()
-      const fileName = `${user.id}.${fileExt}`
-
-      // Upload file to storage bucket
-      const { data, error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(fileName, file, { upsert: true })
-
-      if (uploadError) {
-        console.error("[Profile] Upload error:", uploadError.message)
-        setModalConfig({
-          open: true,
-          title: "Upload Error",
-          message: "Failed to upload avatar. " + uploadError.message,
-          onConfirm: () => setModalConfig({ ...modalConfig, open: false })
-        })
-        setUploading(false)
-        return
-      }
-
-      console.log("[Profile] File uploaded successfully:", data)
-
-      // Get public URL for the uploaded file
-      const { data: publicUrlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(fileName)
-
-      const publicUrl = publicUrlData.publicUrl
-      console.log("[Profile] Public URL:", publicUrl)
-
-      // Update profile with avatar URL
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ avatar_url: publicUrl })
-        .eq("id", user.id)
-
-      if (updateError) {
-        console.error("[Profile] Error updating avatar URL:", updateError.message)
-        setModalConfig({
-          open: true,
-          title: "Update Error",
-          message: "Failed to save avatar URL. " + updateError.message,
-          onConfirm: () => setModalConfig({ ...modalConfig, open: false })
-        })
-        setUploading(false)
-        return
-      }
-
-      setAvatarUrl(publicUrl)
-      setProfile({ ...profile, avatar_url: publicUrl })
-      console.log("[Profile] Avatar updated successfully:", publicUrl)
-
-      // Dispatch event for Navbar to update
-      window.dispatchEvent(new CustomEvent("profileUpdated", { detail: { avatar_url: publicUrl } }))
-
-      setModalConfig({
-        open: true,
-        title: "Success",
-        message: "Avatar uploaded successfully!",
-        onConfirm: () => setModalConfig({ ...modalConfig, open: false })
-      })
-    } catch (err) {
-      console.error("[Profile] Exception during upload:", err.message)
-      setModalConfig({
-        open: true,
-        title: "Error",
-        message: "An error occurred while uploading. Please try again.",
-        onConfirm: () => setModalConfig({ ...modalConfig, open: false })
-      })
-    } finally {
-      setUploading(false)
     }
   }
 
@@ -474,7 +566,7 @@ export default function Profile() {
     }
   }
 
-  const handleEditProfileSave = async (updateData) => {
+  const handleEditProfileSave = async (updateData, mediaChanges = {}) => {
     if (!user) return
 
     // Validate username if changed
@@ -497,21 +589,118 @@ export default function Profile() {
     }
 
     try {
+      const payload = {
+        name: updateData.name,
+        username: updateData.username,
+        bio: updateData.bio
+      }
+
+      const createCroppedAvatarBlob = async (file, positionX, positionY, zoom) => {
+        const imageUrl = URL.createObjectURL(file)
+
+        try {
+          const image = await new Promise((resolve, reject) => {
+            const img = new Image()
+            img.onload = () => resolve(img)
+            img.onerror = reject
+            img.src = imageUrl
+          })
+
+          const outputSize = 512
+          const canvas = document.createElement("canvas")
+          canvas.width = outputSize
+          canvas.height = outputSize
+
+          const ctx = canvas.getContext("2d")
+          if (!ctx) {
+            throw new Error("Could not initialize avatar crop canvas")
+          }
+
+          const baseScale = Math.max(outputSize / image.width, outputSize / image.height)
+          const drawScale = baseScale * (zoom || 1)
+          const drawWidth = image.width * drawScale
+          const drawHeight = image.height * drawScale
+
+          const posX = (typeof positionX === "number" ? positionX : 50) / 100
+          const posY = (typeof positionY === "number" ? positionY : 50) / 100
+
+          const offsetX = outputSize * posX - drawWidth * posX
+          const offsetY = outputSize * posY - drawHeight * posY
+
+          ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight)
+
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92))
+          if (!blob) {
+            throw new Error("Failed to generate cropped avatar")
+          }
+
+          return blob
+        } finally {
+          URL.revokeObjectURL(imageUrl)
+        }
+      }
+
+      const uploadFileToBucket = async (file, bucketName, fileName) => {
+        const { error: uploadError } = await supabase.storage
+          .from(bucketName)
+          .upload(fileName, file, { upsert: true })
+
+        if (uploadError) {
+          throw new Error(`Failed to upload ${bucketName}: ${uploadError.message}`)
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from(bucketName)
+          .getPublicUrl(fileName)
+
+        return publicUrlData.publicUrl
+      }
+
+      if (mediaChanges.pendingAvatarFile) {
+        const croppedAvatar = await createCroppedAvatarBlob(
+          mediaChanges.pendingAvatarFile,
+          mediaChanges.avatarPositionX,
+          mediaChanges.avatarPositionY,
+          mediaChanges.avatarZoom
+        )
+        payload.avatar_url = await uploadFileToBucket(croppedAvatar, "avatars", `${user.id}/avatar.jpg`)
+      }
+
+      if (mediaChanges.pendingCoverFile) {
+        const coverExt = mediaChanges.pendingCoverFile.name.split(".").pop() || "jpg"
+        payload.cover_photo_url = await uploadFileToBucket(mediaChanges.pendingCoverFile, "cover-photos", `${user.id}/cover.${coverExt}`)
+      }
+
+      if (typeof mediaChanges.coverPositionX === "number") {
+        payload.cover_position_x = mediaChanges.coverPositionX
+      }
+
+      if (typeof mediaChanges.coverPositionY === "number") {
+        payload.cover_position_y = mediaChanges.coverPositionY
+      }
+
+      if (typeof mediaChanges.coverZoom === "number") {
+        payload.cover_zoom = mediaChanges.coverZoom
+      }
+
       const { error } = await supabase
         .from("profiles")
-        .update(updateData)
+        .update(payload)
         .eq("id", user.id)
 
       if (error) {
         throw new Error(error.message)
       }
 
-      setProfile({ ...profile, ...updateData })
-      setNameInput(updateData.name)
-      setUsernameInput(updateData.username)
-      setBioInput(updateData.bio)
+      setProfile({ ...profile, ...payload })
+      setNameInput(payload.name)
+      setUsernameInput(payload.username)
+      setBioInput(payload.bio)
+      if (payload.avatar_url) {
+        setAvatarUrl(payload.avatar_url)
+      }
 
-      window.dispatchEvent(new CustomEvent("profileUpdated", { detail: updateData }))
+      window.dispatchEvent(new CustomEvent("profileUpdated", { detail: payload }))
 
       setModalConfig({
         open: true,
@@ -577,6 +766,30 @@ export default function Profile() {
     } finally {
       setDeletingPostId(null)
     }
+  }
+
+  const handleStartEditingPost = (post) => {
+    setEditingPostId(post.id)
+    setEditingPostContent(postContentOverrides[post.id] ?? post.content ?? "")
+    setActivePostMenuId(null)
+  }
+
+  const handleCancelEditingPost = () => {
+    setEditingPostId(null)
+    setEditingPostContent("")
+  }
+
+  const handleSaveEditingPostFrontend = () => {
+    if (!editingPostId) {
+      return
+    }
+
+    setPostContentOverrides((prev) => ({
+      ...prev,
+      [editingPostId]: editingPostContent
+    }))
+    setEditingPostId(null)
+    setEditingPostContent("")
   }
 
   // Memoized realtime handlers - stable across renders
@@ -668,19 +881,21 @@ export default function Profile() {
 
   if (loading) {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-12">
+      <div className="min-h-screen bg-[#000000]">
+        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-[#F5F0E8] md:px-6">
         <div className="animate-pulse space-y-6">
           <div className="text-center space-y-4">
-            <div className="w-32 h-32 rounded-full bg-slate-200 mx-auto"></div>
-            <div className="h-8 bg-slate-200 rounded w-3/4 mx-auto"></div>
-            <div className="h-4 bg-slate-200 rounded w-1/2 mx-auto"></div>
+            <div className="mx-auto h-32 w-32 rounded-full bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+            <div className="mx-auto h-8 w-3/4 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+            <div className="mx-auto h-4 w-1/2 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
           </div>
-          <div className="h-10 bg-slate-200 rounded"></div>
+          <div className="h-10 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
           <div className="space-y-4">
             {Array(3).fill(0).map((_, i) => (
-              <div key={i} className="h-24 bg-slate-200 rounded-lg"></div>
+              <div key={i} className="h-24 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
             ))}
           </div>
+        </div>
         </div>
       </div>
     )
@@ -688,101 +903,136 @@ export default function Profile() {
 
   if (!user || !profile) {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-12 text-center">
-        <p className="text-slate-600 mb-4">Unable to load profile data.</p>
+      <div className="min-h-screen bg-[#000000]">
+        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-center text-[#F5F0E8] md:px-6">
+        <p className="mb-4 text-[#A09080]">Unable to load profile data.</p>
         <button
           onClick={() => navigate(-1)}
-          className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors"
+          className="rounded-[10px] bg-[#F4B400] px-6 py-2 font-semibold text-[#0D0D0D] transition-colors hover:bg-[#C49000]"
         >
           Back to Home
         </button>
+        </div>
       </div>
     )
   }
 
+  const isOwnProfile = user?.id === profile?.id
+
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 md:px-6 py-8">
-      {/* ========== Premium Profile Header ========== */}
+    <div className="-mt-[64px] min-h-screen bg-[#000000]">
+      <div className="mx-auto w-full max-w-5xl px-4 pb-8 pt-3 text-[#F5F0E8] md:px-6">
+      {/* ========== Premium Social Header ========== */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden mb-8"
+        className="mb-8 overflow-hidden rounded-3xl border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_20px_50px_-30px_rgba(0,0,0,0.7)]"
       >
-        {/* Cover / Header Area */}
-        <div className="h-24 md:h-32 bg-gradient-to-r from-blue-500 to-cyan-500"></div>
+        {/* Section 1: Cover only */}
+        <div className="relative z-0 h-[280px] overflow-hidden rounded-t-3xl md:h-[320px]">
+          {profile?.cover_photo_url ? (
+            <img
+              src={profile.cover_photo_url}
+              alt="Cover"
+              className="h-full w-full object-cover"
+              style={{
+                objectPosition: `${profile?.cover_position_x ?? 50}% ${profile?.cover_position_y ?? 50}%`,
+                transform: `scale(${profile?.cover_zoom ?? 1})`,
+                transformOrigin: "center center",
+              }}
+            />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-[#1A1200] via-[#2A2000] to-[#1A0A00]" style={{ backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(244,180,0,0.03) 40px, rgba(244,180,0,0.03) 80px)" }} />
+          )}
+        </div>
 
-        {/* Profile Content */}
-        <div className="relative px-6 md:px-8 pb-6">
-          {/* Avatar */}
-          <div className="flex flex-col md:flex-row md:items-end md:gap-6 -mt-16 md:-mt-12 mb-6">
-            <div className="relative mb-4 md:mb-0">
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt="Avatar"
-                  loading="lazy"
-                  className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg"
-                />
+        {/* Section 2: Profile info row */}
+        <div className="relative z-20 border-b border-[#1F1F1F] bg-[#000000] px-5 pb-4">
+          <div className="mb-6 flex flex-col items-start gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="flex items-end gap-[14px]">
+              <div className="relative z-10 -mt-[38px] shrink-0">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt="Avatar"
+                    loading="lazy"
+                    className="h-[76px] w-[76px] shrink-0 rounded-full border-[3px] border-[#000000] object-cover"
+                  />
+                ) : (
+                  <div className="flex h-[76px] w-[76px] shrink-0 items-center justify-center rounded-full border-[3px] border-[#000000] bg-[#2A2000] font-['Sora'] text-[26px] font-bold text-[#F4B400]">
+                    {profile?.name?.charAt(0)?.toUpperCase() || "?"}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col">
+                <h1 className="font-['Sora'] text-[18px] font-bold text-[#F5F0E8]">
+                  {profile?.name || "User"}
+                </h1>
+
+                <p className="mt-[2px] text-[13px] text-[#5C5248]">
+                  @{profile?.username || "username"}
+                </p>
+
+                {profile?.bio && (
+                  <p className="mt-[8px] max-w-[380px] text-[13px] leading-relaxed text-[#A09080]">
+                    {profile.bio}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex w-full items-center gap-2 md:ml-6 md:w-auto">
+              {isOwnProfile ? (
+                <motion.button
+                  onClick={() => setEditProfileModalOpen(true)}
+                  className="w-full rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-4 py-[7px] font-['DM_Sans'] text-[13px] font-semibold text-[#F5F0E8] transition-colors hover:border-[#F4B400] hover:bg-[#1C1C1C] md:w-auto"
+                >
+                  Edit Profile
+                </motion.button>
               ) : (
-                <div className="w-32 h-32 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 border-4 border-white flex items-center justify-center text-4xl font-bold text-white shadow-lg">
-                  {profile?.name?.charAt(0)?.toUpperCase() || "?"}
-                </div>
+                <>
+                  <button
+                    onClick={handleFollowToggle}
+                    disabled={isFollowLoading}
+                    className={`flex-1 rounded-[10px] px-5 py-[7px] font-['DM_Sans'] text-[13px] transition-all md:flex-none ${
+                      isFollowing
+                        ? "border border-[#2A2A2A] bg-[#141414] font-semibold text-[#F5F0E8] hover:border-[#EF4444] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444]"
+                        : "bg-[#F4B400] font-bold text-[#0D0D0D] hover:scale-[1.03] hover:bg-[#C49000] active:scale-[0.96]"
+                    }`}
+                  >
+                    {isFollowLoading ? "Please wait..." : isFollowing ? "Following" : "Follow"}
+                  </button>
+                  <button
+                    onClick={handleStartChat}
+                    disabled={isChatLoading}
+                    className="flex-1 rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-4 py-[7px] font-['DM_Sans'] text-[13px] font-semibold text-[#F5F0E8] transition-colors hover:border-[#A09080] hover:bg-[#1C1C1C] md:flex-none"
+                  >
+                    {isChatLoading ? "Opening..." : "Message"}
+                  </button>
+                </>
               )}
-              <label className="absolute bottom-0 right-0 bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2 cursor-pointer transition-colors shadow-lg">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
-            </div>
-
-            {/* Profile Info */}
-            <div className="flex-1">
-              <h1 className="text-3xl md:text-4xl font-bold text-slate-900">{profile?.name || "User"}</h1>
-              <p className="text-lg text-slate-600">@{profile?.username || "username"}</p>
-              {profile?.bio && (
-                <p className="text-slate-700 mt-2 max-w-2xl">{profile.bio}</p>
-              )}
-            </div>
-
-            {/* Edit Button */}
-            <div className="md:ml-auto">
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setEditProfileModalOpen(true)}
-                className="w-full md:w-auto px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg transition-colors shadow-sm"
-              >
-                Edit Profile
-              </motion.button>
             </div>
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-3 md:grid-cols-5 gap-4 pt-6 border-t border-slate-200">
+          <div className="mt-4 flex overflow-hidden rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D]">
             {[
               { label: "Posts", value: posts.length },
               { label: "Followers", value: followersCount, onClick: () => setFollowersModalOpen(true), clickable: true },
               { label: "Following", value: followingCount, onClick: () => setFollowingModalOpen(true), clickable: true },
               { label: "Notes", value: 0 },
-              { label: "Workspaces", value: 0 }
+              { label: "Vaults", value: 0 }
             ].map((stat, i) => (
               <motion.button
                 key={i}
-                whileHover={stat.clickable ? { backgroundColor: "#f1f5f9" } : {}}
+                whileHover={{ backgroundColor: "#141414" }}
                 onClick={stat.onClick}
                 disabled={!stat.clickable}
-                className={`text-center py-3 rounded-lg transition-colors ${stat.clickable ? "hover:bg-slate-100 cursor-pointer" : ""}`}
+                className="flex-1 border-r border-[#1F1F1F] py-3 text-center transition-colors last:border-r-0"
               >
-                <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-                <p className="text-xs text-slate-600 mt-1">{stat.label}</p>
+                <p className="font-['Sora'] text-[17px] font-bold text-[#F5F0E8]">{stat.value}</p>
+                <p className="mt-[2px] text-[10px] font-semibold uppercase tracking-[0.06em] text-[#5C5248]">{stat.label}</p>
               </motion.button>
             ))}
           </div>
@@ -794,21 +1044,21 @@ export default function Profile() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
-        className="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-slate-200"
+        className="sticky top-0 z-20 mb-6 flex gap-1 overflow-x-auto border-b border-[#1F1F1F] bg-[#000000] px-5"
       >
-        {["posts", "notes", "workspaces", "media"].map((tab) => (
+        {["posts", "workspaces", "saved"].map((tab) => (
           <motion.button
             key={tab}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 font-semibold rounded-lg transition-all whitespace-nowrap ${
+            className={`whitespace-nowrap border-b-[2px] px-4 py-3 font-['DM_Sans'] text-[13px] font-semibold transition-colors ${
               activeTab === tab
-                ? "bg-blue-500 text-white shadow-sm"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                ? "border-b-[#F4B400] text-[#F4B400]"
+                : "border-b-transparent text-[#5C5248] hover:text-[#A09080]"
             }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === "workspaces" ? "Vaults" : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </motion.button>
         ))}
       </motion.div>
@@ -824,24 +1074,39 @@ export default function Profile() {
             transition={{ duration: 0.2 }}
           >
             {postsLoading ? (
-              <PostListSkeleton count={3} />
+              <div className="space-y-3 px-5 py-4">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-4 animate-pulse">
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                      <div className="flex-1">
+                        <div className="mb-1 h-4 w-32 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                        <div className="h-3 w-24 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                      </div>
+                    </div>
+                    <div className="mb-2 h-4 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    <div className="mb-2 h-4 w-5/6 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    <div className="h-40 rounded-[10px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                  </div>
+                ))}
+              </div>
             ) : posts.length === 0 ? (
-              <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
-                <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="mx-5 my-4 bg-transparent p-10 text-center border border-dashed border-[#2A2A2A] rounded-[14px]">
+                <svg className="mx-auto mb-2 h-12 w-12 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v12a2 2 0 01-2 2z" />
                 </svg>
-                <p className="text-slate-500 font-medium">No posts yet</p>
-                <p className="text-slate-400 text-sm">Share your first post with the community!</p>
+                <p className="text-[14px] font-semibold text-[#A09080]">No posts yet</p>
+                <p className="text-[12px] text-[#5C5248]">Share your first post with the community!</p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="flex flex-col gap-3 px-5 py-4">
                 {posts.map((post, index) => (
                   <motion.article
                     key={post.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className="border border-slate-200/60 rounded-xl bg-white p-5 hover:shadow-md transition-all duration-200"
+                    className="rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-4 transition-colors hover:border-[#2A2A2A]"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex flex-col gap-1">
@@ -851,34 +1116,102 @@ export default function Profile() {
                               navigate(`/profile/${post.profiles.username}`)
                             }
                           }}
-                          className="text-sm font-medium text-blue-500 hover:text-blue-700 hover:underline text-left"
+                          className="text-left text-sm font-medium text-[#F4B400] hover:text-[#C49000] hover:underline"
                         >
                           @{post.profiles?.username || "unknown"}
                         </button>
-                        <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <p className="flex items-center gap-2 text-[11px] text-[#5C5248]">
                           <span>{formatPostTime(post.created_at)}</span>
                           <span>·</span>
                           <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleDeletePost(post.id)}
-                        disabled={deletingPostId === post.id}
-                        className="text-xs px-3 py-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                      >
-                        {deletingPostId === post.id ? "Deleting..." : "Delete"}
-                      </button>
+                      {isOwnProfile && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            data-post-menu-trigger="true"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setActivePostMenuId((prev) => (prev === post.id ? null : post.id))
+                            }}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#141414] text-[#A09080] transition-colors hover:border-[#2A2A2A] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
+                            aria-label="Open post actions"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+
+                          {activePostMenuId === post.id && (
+                            <div
+                              data-post-menu="true"
+                              className="absolute right-0 top-10 z-20 min-w-[170px] rounded-[12px] border border-[#1F1F1F] bg-[#111111] p-1.5 shadow-2xl"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingPost(post)}
+                                className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-[12px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#141414]"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Edit post
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeletePost(post.id)
+                                  setActivePostMenuId(null)
+                                }}
+                                disabled={deletingPostId === post.id}
+                                className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-[12px] font-semibold text-[#EF4444] transition-colors hover:bg-[rgba(239,68,68,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                {deletingPostId === post.id ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {post.content && (
-                      <p className="text-gray-800 whitespace-pre-wrap leading-relaxed mb-3">{post.content}</p>
+                    {editingPostId === post.id ? (
+                      <div className="mb-3 rounded-[10px] border border-[#2A2A2A] bg-[#141414] p-3">
+                        <textarea
+                          value={editingPostContent}
+                          onChange={(event) => setEditingPostContent(event.target.value)}
+                          placeholder="Edit your post..."
+                          rows={4}
+                          className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[#F5F0E8] outline-none placeholder:text-[#5C5248]"
+                        />
+                        <div className="mt-3 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCancelEditingPost}
+                            className="rounded-[8px] border border-[#2A2A2A] bg-[#141414] px-3 py-1.5 text-[12px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#1C1C1C]"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveEditingPostFrontend}
+                            className="rounded-[8px] bg-[#F4B400] px-3 py-1.5 text-[12px] font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000]"
+                          >
+                            Save (UI only)
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      (postContentOverrides[post.id] || post.content) && (
+                        <p className="mb-3 whitespace-pre-wrap text-[14px] leading-relaxed text-[#F5F0E8]">
+                          {postContentOverrides[post.id] || post.content}
+                        </p>
+                      )
                     )}
 
                     {post.image_url && (
                       <img
                         src={post.image_url}
                         alt="Post"
-                        className="w-full rounded-lg border border-slate-200 object-cover max-h-96 mb-3"
+                        className="mb-3 max-h-96 w-full rounded-[10px] border border-[#1F1F1F] object-cover"
                       />
                     )}
 
@@ -894,22 +1227,6 @@ export default function Profile() {
           </motion.div>
         )}
 
-        {activeTab === "notes" && (
-          <motion.div
-            key="notes"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50"
-          >
-            <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <p className="text-slate-500 font-medium">Notes feature coming soon</p>
-          </motion.div>
-        )}
-
         {activeTab === "workspaces" && (
           <motion.div
             key="workspaces"
@@ -919,18 +1236,18 @@ export default function Profile() {
             transition={{ duration: 0.2 }}
           >
             {workspacesLoading ? (
-              <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
-                <p className="text-slate-500 font-medium">Loading workspaces...</p>
+              <div className="mx-5 my-4 rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-10 text-center">
+                <p className="text-[14px] font-semibold text-[#A09080]">Loading vaults...</p>
               </div>
             ) : workspaces.length === 0 ? (
-              <div className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50">
-                <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="mx-5 my-4 rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-10 text-center">
+                <svg className="mx-auto mb-2 h-12 w-12 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 5a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2zm0 0a2 2 0 012 2v12a2 2 0 01-2 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2zm6 0v2M7 9h2" />
                 </svg>
-                <p className="text-slate-500 font-medium">No workspaces yet</p>
+                <p className="text-[14px] font-semibold text-[#A09080]">No vaults yet</p>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="px-5 py-4 space-y-6">
                 {(() => {
                   const isOwnProfile = user?.id === profile?.id
                   const publicWorkspaces = workspaces.filter(ws => ws.is_public)
@@ -938,11 +1255,11 @@ export default function Profile() {
 
                   return (
                     <>
-                      {/* Public Workspaces Section */}
+                      {/* Public Vaults Section */}
                       {publicWorkspaces.length > 0 && (
                         <div>
-                          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                            <span>🌍</span> Public Workspaces
+                          <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5C5248]">
+                            <span>🌍</span> Public Vaults
                           </h3>
                           <div className="space-y-2">
                             {publicWorkspaces.map((workspace) => (
@@ -950,20 +1267,20 @@ export default function Profile() {
                                 key={workspace.id}
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="border border-slate-200 rounded-lg bg-white p-4 hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-0.5"
+                                className="mb-2 flex cursor-pointer items-center justify-between rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-[14px] transition-colors hover:border-[#2A2A2A] hover:bg-[#141414]"
                                 onClick={() => navigate(`/workspace/${workspace.id}`)}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <p className="font-medium text-gray-900">{workspace.name}</p>
+                                      <p className="font-['DM_Sans'] text-[14px] font-semibold text-[#F5F0E8]">{workspace.name}</p>
                                       <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
                                     </div>
-                                    <p className="text-xs text-slate-500">
+                                    <p className="mt-[3px] text-[11px] text-[#5C5248]">
                                       Created {new Date(workspace.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                                     </p>
                                   </div>
-                                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="h-5 w-5 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
@@ -973,11 +1290,11 @@ export default function Profile() {
                         </div>
                       )}
 
-                      {/* Private Workspaces Section (Own profile only) */}
+                      {/* Private Vaults Section (Own profile only) */}
                       {isOwnProfile && privateWorkspaces.length > 0 && (
                         <div>
-                          <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                            <span>🔒</span> Private Workspaces
+                          <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5C5248]">
+                            <span>🔒</span> Private Vaults
                           </h3>
                           <div className="space-y-2">
                             {privateWorkspaces.map((workspace) => (
@@ -985,20 +1302,20 @@ export default function Profile() {
                                 key={workspace.id}
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="border border-slate-200 rounded-lg bg-white p-4 hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-0.5"
+                                className="mb-2 flex cursor-pointer items-center justify-between rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-[14px] transition-colors hover:border-[#2A2A2A] hover:bg-[#141414]"
                                 onClick={() => navigate(`/workspace/${workspace.id}`)}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <p className="font-medium text-gray-900">{workspace.name}</p>
+                                      <p className="font-['DM_Sans'] text-[14px] font-semibold text-[#F5F0E8]">{workspace.name}</p>
                                       <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
                                     </div>
-                                    <p className="text-xs text-slate-500">
+                                    <p className="mt-[3px] text-[11px] text-[#5C5248]">
                                       Created {new Date(workspace.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                                     </p>
                                   </div>
-                                  <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="h-5 w-5 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
@@ -1015,19 +1332,19 @@ export default function Profile() {
           </motion.div>
         )}
 
-        {activeTab === "media" && (
+        {activeTab === "saved" && (
           <motion.div
-            key="media"
+            key="saved"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="text-center py-12 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50"
+            className="mx-5 my-4 rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-10 text-center"
           >
-            <svg className="w-12 h-12 text-slate-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <svg className="mx-auto mb-2 h-12 w-12 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5h14v14H5zM8 3v4M16 3v4M8 17h8" />
             </svg>
-            <p className="text-slate-500 font-medium">Media gallery coming soon</p>
+            <p className="text-[14px] font-semibold text-[#A09080]">Saved items coming soon</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1038,24 +1355,25 @@ export default function Profile() {
         onClose={() => setEditProfileModalOpen(false)}
         profile={profile}
         avatarUrl={avatarUrl}
+        coverPhotoUrl={profile?.cover_photo_url || null}
         onSave={handleEditProfileSave}
-        onAvatarUpload={handleAvatarUpload}
-        uploading={uploading}
       />
 
-      <FollowersModal
-        isOpen={followersModalOpen}
-        onClose={() => setFollowersModalOpen(false)}
-        userId={profile?.id}
-        currentUserId={user?.id}
-      />
+      <Suspense fallback={null}>
+        <FollowersModal
+          isOpen={followersModalOpen}
+          onClose={() => setFollowersModalOpen(false)}
+          userId={profile?.id}
+          currentUserId={user?.id}
+        />
 
-      <FollowingModal
-        isOpen={followingModalOpen}
-        onClose={() => setFollowingModalOpen(false)}
-        userId={profile?.id}
-        currentUserId={user?.id}
-      />
+        <FollowingModal
+          isOpen={followingModalOpen}
+          onClose={() => setFollowingModalOpen(false)}
+          userId={profile?.id}
+          currentUserId={user?.id}
+        />
+      </Suspense>
 
       {/* Standard Modal */}
       <Modal
@@ -1069,6 +1387,7 @@ export default function Profile() {
           }
         }}
       />
+      </div>
     </div>
   )
 }

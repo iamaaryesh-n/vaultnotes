@@ -95,7 +95,7 @@ export function FollowingModal({ isOpen, onClose, userId, currentUserId }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 z-40"
+            className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm"
           />
 
           {/* Modal */}
@@ -103,14 +103,14 @@ export function FollowingModal({ isOpen, onClose, userId, currentUserId }) {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-md max-h-96 bg-white rounded-2xl shadow-2xl z-50 flex flex-col"
+            className="fixed left-1/2 top-1/2 z-50 flex max-h-96 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform flex-col rounded-[20px] border border-[#1F1F1F] bg-[#111111] shadow-2xl"
           >
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
-              <h2 className="text-xl font-bold text-slate-900">Following</h2>
+            <div className="flex shrink-0 items-center justify-between border-b border-[#1F1F1F] px-6 py-4">
+              <h2 className="font-['Sora'] text-xl font-bold text-[#F5F0E8]">Following</h2>
               <button
                 onClick={onClose}
-                className="text-slate-500 hover:text-slate-900 transition-colors"
+                className="text-[#A09080] transition-colors hover:text-[#F5F0E8]"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -119,31 +119,31 @@ export function FollowingModal({ isOpen, onClose, userId, currentUserId }) {
             </div>
 
             {/* Search */}
-            <div className="px-6 py-3 border-b border-slate-200 flex-shrink-0">
+            <div className="shrink-0 border-b border-[#1F1F1F] px-6 py-3">
               <input
                 type="text"
                 placeholder="Search following..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="h-[44px] w-full rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-3 text-[13px] text-[#F5F0E8] outline-none placeholder:text-[#5C5248] focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
               />
             </div>
 
             {/* List */}
             <div className="overflow-y-auto flex-1">
               {loading ? (
-                <div className="px-6 py-8 text-center text-slate-500">
+                <div className="px-6 py-8 text-center text-[#A09080]">
                   <svg className="animate-spin h-6 w-6 m-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
                   Loading...
                 </div>
               ) : filteredFollowing.length === 0 ? (
-                <div className="px-6 py-8 text-center text-slate-500 text-sm">
+                <div className="px-6 py-8 text-center text-sm text-[#A09080]">
                   {searchQuery ? "No users found" : "Not following anyone yet"}
                 </div>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-[#1F1F1F]">
                   {filteredFollowing.map((followedUser) => (
                     <motion.div
                       key={followedUser.id}
@@ -153,23 +153,23 @@ export function FollowingModal({ isOpen, onClose, userId, currentUserId }) {
                         navigate(`/profile/${followedUser.username}`)
                         onClose()
                       }}
-                      className="w-full px-6 py-3 flex items-center gap-3 hover:bg-slate-50 transition-colors cursor-pointer"
+                      className="flex w-full cursor-pointer items-center gap-3 rounded-[10px] px-6 py-3 transition-colors hover:bg-[#141414]"
                     >
                       {followedUser.avatar_url ? (
                         <img
                           src={followedUser.avatar_url}
                           alt={followedUser.username}
-                          className="w-10 h-10 rounded-full object-cover ring-2 ring-slate-100"
+                          className="h-10 w-10 rounded-full object-cover"
                           loading="lazy"
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-xs font-bold text-white">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2A2000] text-xs font-bold text-[#F4B400]">
                           {followedUser.username?.charAt(0) || "?"}
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900">{followedUser.name || followedUser.username}</p>
-                        <p className="text-xs text-slate-500">@{followedUser.username}</p>
+                        <p className="text-[13px] font-semibold text-[#F5F0E8]">{followedUser.name || followedUser.username}</p>
+                        <p className="text-[12px] text-[#5C5248]">@{followedUser.username}</p>
                       </div>
                       {currentUserId && followedUser.id !== currentUserId && (
                         <motion.button
@@ -179,10 +179,10 @@ export function FollowingModal({ isOpen, onClose, userId, currentUserId }) {
                             e.stopPropagation()
                             handleFollowToggle(followedUser.id)
                           }}
-                          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                          className={`rounded-[8px] px-3 py-1 text-[12px] font-bold transition-all ${
                             followingStates[followedUser.id]
-                              ? "bg-slate-200 text-slate-900 hover:bg-slate-300"
-                              : "bg-blue-500 text-white hover:bg-blue-600"
+                              ? "border border-[#2A2A2A] bg-[#141414] text-[#F5F0E8] hover:border-[#EF4444] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444]"
+                              : "bg-[#F4B400] text-[#0D0D0D] hover:bg-[#C49000]"
                           }`}
                         >
                           {followingStates[followedUser.id] ? "Following" : "Follow"}

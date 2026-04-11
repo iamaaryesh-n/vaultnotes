@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from './useAuth'
 
 // Cache for notifications to prevent duplicate fetches
 const notificationsCache = {
@@ -18,6 +19,7 @@ let subscriptionUser = null
  * Uses caching to prevent duplicate fetches
  */
 export function useNotifications() {
+  const { user } = useAuth()
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
@@ -26,7 +28,11 @@ export function useNotifications() {
 
   useEffect(() => {
     isMountedRef.current = true
-    initializeNotifications()
+    if (user) {
+      initializeNotifications()
+    } else {
+      setLoading(false)
+    }
 
     return () => {
       isMountedRef.current = false
@@ -41,12 +47,11 @@ export function useNotifications() {
         subscriptionUser = null
       }
     }
-  }, [])
+  }, [user])
 
   const initializeNotifications = async () => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
+      if (!user) {
         console.log('[useNotifications] User not authenticated')
         if (isMountedRef.current) setLoading(false)
         return
@@ -69,13 +74,7 @@ export function useNotifications() {
   const fetchNotifications = useCallback(
     async () => {
       try {
-        if (!isMountedRef.current) return
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        if (authError || !user) {
-          console.log('[useNotifications] User not authenticated')
-          return
-        }
+        if (!isMountedRef.current || !user) return
 
         console.log('[useNotifications] 👤 Current auth user ID:', user.id)
 
@@ -151,13 +150,12 @@ export function useNotifications() {
         if (isMountedRef.current) setLoading(false)
       }
     },
-    []
+    [user]
   )
 
   const subscribeToNotifications = async () => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
+      if (!user) {
         console.log('[useNotifications] User not authenticated for subscription')
         return
       }
@@ -278,8 +276,7 @@ export function useNotifications() {
 
   const markAsRead = useCallback(async (notificationIds) => {
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
+      if (!user) {
         console.error('[useNotifications] User not authenticated for marking as read')
         return false
       }
@@ -360,7 +357,7 @@ export function useNotifications() {
       console.error('[useNotifications] ❌ Exception marking as read:', err)
       return false
     }
-  }, [])
+  }, [user])
 
   const refetch = useCallback(() => {
     console.log('[useNotifications] Manual refetch triggered')

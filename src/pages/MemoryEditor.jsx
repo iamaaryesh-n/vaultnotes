@@ -217,7 +217,7 @@ export default function MemoryEditor() {
     },
     editorProps: {
       attributes: {
-        class: 'w-full min-h-[15rem] p-4 text-gray-900 text-[15px] leading-relaxed focus:outline-none',
+        class: 'w-full min-h-[15rem] p-4 text-gray-900 dark:text-white text-[15px] leading-relaxed focus:outline-none',
       },
     },
   })
@@ -951,7 +951,7 @@ export default function MemoryEditor() {
 
   return (
 
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
+    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
       <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
 
         <button
@@ -964,17 +964,17 @@ export default function MemoryEditor() {
         </button>
 
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">
+          <h1 className="text-4xl font-bold text-[#F5F0E8]">
             {memoryId ? "Edit Memory" : "New Memory"}
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Encrypted and secured</p>
+          <p className="mt-1 text-sm text-[#5C5248]">Encrypted and secured</p>
         </div>
 
         {/* Title Input */}
         <input
           type="text"
           placeholder="Memory title..."
-          className="w-full bg-white text-gray-900 text-2xl font-semibold px-4 py-3 rounded-lg mb-4 border border-slate-200 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200 placeholder-slate-400"
+          className="mb-4 w-full rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-3 text-2xl font-semibold text-[#F5F0E8] transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -1017,10 +1017,17 @@ export default function MemoryEditor() {
             .ProseMirror::after { content: ""; display: block; clear: both; }
           .ProseMirror img.selected { outline: 2px solid #facc15; box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.2); }
           .ProseMirror img.selected::after { content: ''; position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; background: linear-gradient(135deg, transparent 50%, #facc15 50%); cursor: nwse-resize; border-radius: 0 10px 0 0; }
+
+          html.dark .ProseMirror pre { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+          html.dark .ProseMirror code { background: #1e293b; color: #fcd34d; }
+          html.dark .ProseMirror pre code { color: #e2e8f0; }
+          html.dark .ProseMirror strong { color: #f8fafc; }
+          html.dark .ProseMirror em { color: #cbd5e1; }
+          html.dark .ProseMirror img { border-color: #334155; }
         `}</style>
 
         {/* Unified Editor Card: toolbar + content */}
-        <div ref={editorRef} className="card relative overflow-visible shadow-md focus-within:shadow-lg focus-within:border-yellow-400"
+        <div ref={editorRef} className="relative overflow-visible rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-md focus-within:border-[#F4B400]"
         >
 
           {/* Image Alignment & Rotation Toolbar */}
@@ -1034,28 +1041,28 @@ export default function MemoryEditor() {
                 transform: 'translateX(-50%)',
                 zIndex: 9999,
               }}
-              className="flex gap-0 bg-white border-2 border-yellow-400 rounded-lg shadow-2xl overflow-hidden"
+              className="flex gap-0 bg-white dark:bg-slate-800 border-2 border-yellow-400 rounded-lg shadow-2xl overflow-hidden"
             >
               {/* Alignment Section */}
-              <div className="flex gap-0 border-r border-gray-300">
+              <div className="flex gap-0 border-r border-gray-200 dark:border-slate-700">
                 <button
                   onClick={() => handleImageAlignment('left')}
                   title="Align Left"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors hover:text-gray-900"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors"
                 >
                   ⬅️
                 </button>
                 <button
                   onClick={() => handleImageAlignment('center')}
                   title="Align Center"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors border-l border-r border-gray-300 hover:text-gray-900"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors border-l border-r border-gray-200 dark:border-slate-700"
                 >
                   ⬇️
                 </button>
                 <button
                   onClick={() => handleImageAlignment('right')}
                   title="Align Right"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors hover:text-gray-900"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors"
                 >
                   ➡️
                 </button>
@@ -1066,28 +1073,28 @@ export default function MemoryEditor() {
                 <button
                   onClick={() => handleImageRotation(-90)}
                   title="Rotate Left (90°)"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors hover:text-gray-900 border-r border-gray-300"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors border-r border-gray-200 dark:border-slate-700"
                 >
                   ↺
                 </button>
                 <button
                   onClick={() => handleImageRotation(90)}
                   title="Rotate Right (90°)"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors hover:text-gray-900 border-r border-gray-300"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors border-r border-gray-200 dark:border-slate-700"
                 >
                   ↻
                 </button>
                 <button
                   onClick={() => handleStartCrop()}
                   title="Crop"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors hover:text-gray-900 border-r border-gray-300"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors border-r border-gray-200 dark:border-slate-700"
                 >
                   ✂️
                 </button>
                 <button
                   onClick={() => handleResetImage()}
                   title="Reset"
-                  className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-yellow-100 transition-colors hover:text-gray-900"
+                  className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white hover:bg-yellow-100 dark:hover:bg-yellow-500/20 transition-colors"
                 >
                   🔄
                 </button>
@@ -1097,7 +1104,7 @@ export default function MemoryEditor() {
 
           {/* Toolbar */}
           {editor && (
-            <div className="flex items-center gap-1 bg-slate-100 border-b border-slate-200 px-3 py-2 flex-wrap">
+            <div className="flex flex-wrap items-center gap-1 border-b border-[#1F1F1F] bg-[#141414] px-3 py-2">
               <button
                 type="button"
                 onClick={() => editor.chain().focus().toggleBold().run()}
@@ -1105,8 +1112,8 @@ export default function MemoryEditor() {
                 title="Bold"
                 className={`px-2 py-1 rounded text-xs font-bold transition-all duration-200 ${
                   editor.isActive('bold')
-                    ? 'bg-yellow-400 text-gray-900'
-                    : 'text-slate-600 hover:bg-white hover:text-gray-900'
+                    ? 'bg-yellow-400 text-black'
+                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
                 }`}
               >
                 B
@@ -1118,14 +1125,14 @@ export default function MemoryEditor() {
                 title="Italic"
                 className={`px-2 py-1 rounded text-xs italic font-semibold transition-all duration-200 ${
                   editor.isActive('italic')
-                    ? 'bg-yellow-400 text-gray-900'
-                    : 'text-slate-600 hover:bg-white hover:text-gray-900'
+                    ? 'bg-yellow-400 text-black'
+                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
                 }`}
               >
                 I
               </button>
 
-              <div className="w-px h-4 bg-slate-300 mx-1" />
+              <div className="mx-1 h-4 w-px bg-[#2A2A2A]" />
 
               <button
                 type="button"
@@ -1133,8 +1140,8 @@ export default function MemoryEditor() {
                 title="Bullet List"
                 className={`px-2 py-1 rounded text-xs transition-all duration-200 ${
                   editor.isActive('bulletList')
-                    ? 'bg-yellow-400 text-gray-900'
-                    : 'text-slate-600 hover:bg-white hover:text-gray-900'
+                    ? 'bg-yellow-400 text-black'
+                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
                 }`}
               >
                 • List
@@ -1145,14 +1152,14 @@ export default function MemoryEditor() {
                 title="Code Block"
                 className={`px-2 py-1 rounded text-xs font-mono transition-all duration-200 ${
                   editor.isActive('codeBlock')
-                    ? 'bg-yellow-400 text-gray-900'
-                    : 'text-slate-600 hover:bg-white hover:text-gray-900'
+                    ? 'bg-yellow-400 text-black'
+                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
                 }`}
               >
                 {'</>'}  
               </button>
 
-              <div className="w-px h-4 bg-slate-300 mx-1" />
+              <div className="mx-1 h-4 w-px bg-[#2A2A2A]" />
 
               <button
                 type="button"
@@ -1161,20 +1168,20 @@ export default function MemoryEditor() {
                 title="Add Image"
                 className={`px-2 py-1 rounded text-xs transition-all duration-200 ${
                   uploadingImage
-                    ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-white hover:text-gray-900'
+                    ? 'cursor-not-allowed bg-[#1C1C1C] text-[#5C5248]'
+                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
                 }`}
               >
                 {uploadingImage ? '⏳...' : '🖼️'}
               </button>
 
-              <div className="w-px h-4 bg-slate-300 mx-1" />
+              <div className="mx-1 h-4 w-px bg-[#2A2A2A]" />
 
               <button
                 type="button"
                 onClick={() => handleImageAlignment('left')}
                 title="Float Image Left"
-                className="px-2 py-1 rounded text-xs text-slate-600 hover:bg-white hover:text-gray-900 transition-all duration-200"
+                className="rounded px-2 py-1 text-xs text-[#A09080] transition-all duration-200 hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
               >
                 ↙️ Left
               </button>
@@ -1183,7 +1190,7 @@ export default function MemoryEditor() {
                 type="button"
                 onClick={() => handleImageAlignment('right')}
                 title="Float Image Right"
-                className="px-2 py-1 rounded text-xs text-slate-600 hover:bg-white hover:text-gray-900 transition-all duration-200"
+                className="rounded px-2 py-1 text-xs text-[#A09080] transition-all duration-200 hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
               >
                 Right ↗️
               </button>
@@ -1192,7 +1199,7 @@ export default function MemoryEditor() {
                 type="button"
                 onClick={() => handleImageAlignment('center')}
                 title="Reset Image Position"
-                className="px-2 py-1 rounded text-xs text-slate-600 hover:bg-white hover:text-gray-900 transition-all duration-200"
+                className="rounded px-2 py-1 text-xs text-[#A09080] transition-all duration-200 hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
               >
                 🔄 Reset
               </button>
@@ -1200,9 +1207,9 @@ export default function MemoryEditor() {
           )}
 
           {/* Editor body */}
-          <div className="relative bg-white p-4">
+          <div className="relative bg-[#0D0D0D] p-4">
             {editor && editor.isEmpty && !content && (
-              <p className="absolute px-4 pt-4 text-slate-400 text-[15px] pointer-events-none select-none">
+              <p className="pointer-events-none absolute px-4 pt-4 text-[15px] text-[#5C5248] select-none">
                 Start writing your memory...
               </p>
             )}
@@ -1223,11 +1230,11 @@ export default function MemoryEditor() {
             }}
           >
             <div 
-              className="bg-white rounded-lg p-6 shadow-2xl max-w-3xl w-full"
+              className="bg-white dark:bg-slate-900 rounded-lg p-6 shadow-2xl max-w-3xl w-full"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Crop Image</h3>
-              <p className="text-sm text-gray-600 mb-4">Drag the yellow dots at the corners to define the crop area</p>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Crop Image</h3>
+              <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">Drag the yellow dots at the corners to define the crop area</p>
               
               <div 
                 className="relative mb-6 mx-auto" 
@@ -1477,13 +1484,13 @@ export default function MemoryEditor() {
               <div className="flex gap-4">
                 <button
                   onClick={handleCancelCrop}
-                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-900 font-medium rounded-lg hover:bg-gray-400 transition-colors"
+                  className="flex-1 px-4 py-2 bg-white dark:bg-slate-800 text-gray-900 dark:text-white border border-gray-200 dark:border-slate-700 font-medium rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleApplyCrop}
-                  className="flex-1 px-4 py-2 bg-yellow-500 text-gray-900 font-medium rounded-lg hover:bg-yellow-400 transition-colors"
+                  className="flex-1 px-4 py-2 bg-yellow-500 text-black font-medium rounded-lg hover:bg-yellow-400 transition-colors"
                 >
                   Apply Crop
                 </button>
@@ -1498,7 +1505,7 @@ export default function MemoryEditor() {
             onClick={(e) => handleNavigationClick(e, () => memoryId 
               ? navigate(`/workspace/${id}/memory/${memoryId}`)
               : navigate(`/workspace/${id}`))}
-            className="text-slate-600 hover:text-slate-900 font-medium transition-colors"
+            className="font-medium text-[#5C5248] transition-colors hover:text-[#F5F0E8]"
           >
             Cancel
           </button>
@@ -1506,7 +1513,7 @@ export default function MemoryEditor() {
             onClick={saveMemory}
             disabled={saving || (!content.trim() && !title.trim()) || !((memoryId ? canEdit(userRole) : canCreate(userRole)))}
             title={!((memoryId ? canEdit(userRole) : canCreate(userRole))) ? "You don't have permission to perform this action" : ""}
-            className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 font-semibold px-6 py-2 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-yellow-500"
+            className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-black font-semibold px-6 py-2 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-yellow-500"
           >
             {saving ? "⏳ Saving..." : "Save Memory"}
           </button>

@@ -1,11 +1,10 @@
 import { encrypt, decrypt, importKey, validateKey, debugLogKey } from "../utils/encryption"
 import MemoryGrid from "../components/MemoryGrid"
-import InviteUserModal from "../components/InviteUserModal"
 import RemoveUserModal from "../components/RemoveUserModal"
 import { canCreate, canDelete, canShare, getUserRole, isViewer } from "../utils/rolePermissions"
 import { verifyWorkspaceAccess } from "../lib/workspaceMembers"
 import { isWorkspacePublic, getMemoryViewMode, debugAccessDecision } from "../lib/workspaceAccess"
-import { useEffect, useState, useRef, useMemo } from "react"
+import { useEffect, useState, useRef, useMemo, lazy, Suspense } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { handleNavigationClick } from "../utils/navigation"
@@ -13,6 +12,8 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
 import { MemoryGridSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
+
+const InviteUserModal = lazy(() => import("../components/InviteUserModal"))
 
 export default function WorkspaceDetail() {
 
@@ -183,7 +184,7 @@ export default function WorkspaceDetail() {
       
       if (!isMemberOfWorkspace && !isPublicWorkspace) {
         console.error("[WorkspaceDetail] ❌ User cannot access this private workspace")
-        showError("You are not a member of this workspace")
+        showError("You are not a member of this vault")
         setLoading(false)
         isInitializingRef.current = false
         setTimeout(() => navigate(-1), 1500)
@@ -241,7 +242,7 @@ export default function WorkspaceDetail() {
       setLoading(false)
     } catch (err) {
       console.error("[WorkspaceDetail] ❌ Initialization error:", err)
-      showError("Failed to load workspace")
+      showError("Failed to load vault")
       setLoading(false)
       isInitializingRef.current = false
       return
@@ -320,7 +321,7 @@ export default function WorkspaceDetail() {
         
         if (!memberKeyFound && !publicKeyFound) {
           console.error(`[WorkspaceDetail/loadWorkspaceKeyDeferred] ❌ No encryption key found for workspace ${id}`)
-          showError("Cannot access this workspace - encryption key not found.")
+          showError("Cannot access this vault - encryption key not found.")
           return
         }
 
@@ -455,7 +456,7 @@ export default function WorkspaceDetail() {
       .maybeSingle()
 
     if (!data) {
-      showError("Workspace not found or access denied")
+      showError("Vault not found or access denied")
       navigate(-1)
       return null
     }
@@ -650,7 +651,7 @@ export default function WorkspaceDetail() {
         console.error(`[WorkspaceDetail/loadWorkspaceKey] ❌ No encryption key found for workspace ${id} (user: ${user.id})`)
         console.error("[WorkspaceDetail/loadWorkspaceKey]   Tried: member key (failed), public_read key (failed)")
         console.error("[WorkspaceDetail/loadWorkspaceKey] This workspace is inaccessible without a key. Redirecting back...")
-        showError("Cannot access this workspace - encryption key not found. Please ensure you have been granted access.")
+        showError("Cannot access this vault - encryption key not found. Please ensure you have been granted access.")
         setLoading(false)
         
         // Redirect back after a short delay to allow user to see the error message
@@ -1102,7 +1103,7 @@ export default function WorkspaceDetail() {
 
   const handleToggleVisibility = async () => {
     if (!workspace || !canShare(userRole)) {
-      showError("Only workspace owner can change visibility")
+      showError("Only vault owner can change visibility")
       return
     }
 
@@ -1119,7 +1120,7 @@ export default function WorkspaceDetail() {
 
       if (updateError) {
         console.error("[WorkspaceDetail/toggleVisibility] ❌ Failed to update workspace:", updateError)
-        showError("Failed to update workspace visibility")
+        showError("Failed to update vault visibility")
         setIsTogglingVisibility(false)
         return
       }
@@ -1221,10 +1222,10 @@ export default function WorkspaceDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
-        <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
-          <div className="h-8 bg-slate-200 rounded mb-6 w-1/3 animate-pulse"></div>
-          <div className="h-4 bg-slate-200 rounded mb-8 w-1/2 animate-pulse"></div>
+      <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+        <div style={{ maxWidth: '900px' }} className="mx-auto px-4 pb-[90px] pt-6">
+          <div className="mb-6 h-8 w-1/3 animate-pulse rounded bg-[#141414]"></div>
+          <div className="mb-8 h-4 w-1/2 animate-pulse rounded bg-[#141414]"></div>
           <MemoryGridSkeleton />
         </div>
       </div>
@@ -1233,125 +1234,101 @@ export default function WorkspaceDetail() {
 
   return (
 
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
-      <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
+    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-3 pt-5">
+        <div style={{ maxWidth: '900px' }} className="mx-auto">
+          <button
+            onClick={(e) => handleNavigationClick(e, () => navigate("/workspaces"))}
+            className="mb-3 text-[13px] font-medium text-[#A09080] transition-colors hover:text-[#F4B400]"
+          >
+            ← Back to Vaults
+          </button>
 
-        <button
-          onClick={(e) => handleNavigationClick(e, () => navigate("/workspaces"))}
-          className="mb-6 text-yellow-500 hover:text-yellow-400 transition-colors font-medium"
-        >
-          ← Back to Workspaces
-        </button>
-
-        {/* Non-Member Viewing Public Workspace Banner */}
-        {!isMember && workspace && isWorkspacePublic(workspace) && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-3">
-            <div className="text-xl">👁️</div>
-            <div className="flex-1">
-              <p className="font-semibold text-blue-900">Viewing as Guest</p>
-              <p className="text-sm text-blue-700 mt-1">You're viewing this public workspace with read-only access. Join to create and edit memories.</p>
-            </div>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3 mb-8">
-          {/* Row 1: Title and Buttons */}
-          <div className="flex justify-between items-center">
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900">
-                {workspace?.name}
-              </h1>
-              <p className="text-slate-500 text-sm mt-1">Encrypted memory vault</p>
+              <h1 className="font-['Sora'] text-[24px] font-[800] text-[#F5F0E8]">{workspace?.name}</h1>
+              <p className="mt-1 text-[12px] text-[#5C5248]">Encrypted memory workspace</p>
               {workspaceAttribution?.invitedByUsername && (
-                <p className="text-slate-500 text-xs mt-1">
-                  Added by {workspaceAttribution.invitedByUsername}
-                </p>
+                <p className="mt-1 text-[11px] text-[#5C5248]">Added by {workspaceAttribution.invitedByUsername}</p>
               )}
             </div>
-            <div className="flex gap-2">
-              {/* Members Button - Owner Only */}
+
+            <div className="flex flex-wrap gap-2">
               {canShare(userRole) && (
                 <button
                   onClick={() => setShowRemoveUserModal(true)}
-                  className="bg-slate-400 hover:bg-slate-300 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-                  title="Manage workspace members - Owner only"
+                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[13px] font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  title="Manage vault members - Owner only"
                 >
-                  👥 Members
-                </button>
-              )}
-              
-              {/* Share Button - Owner Only */}
-              {canShare(userRole) && (
-                <button
-                  onClick={() => setShowInviteModal(true)}
-                  className="bg-slate-500 hover:bg-slate-400 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-                  title="Invite users to workspace - Owner only"
-                >
-                  📤 Share
+                  Members
                 </button>
               )}
 
-              {/* Settings Button - Owner Only */}
+              {canShare(userRole) && (
+                <button
+                  onClick={() => setShowInviteModal(true)}
+                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[13px] font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  title="Invite users to vault - Owner only"
+                >
+                  Share
+                </button>
+              )}
+
               {canShare(userRole) && (
                 <button
                   onClick={() => setShowSettingsModal(true)}
-                  className="bg-slate-600 hover:bg-slate-500 active:scale-95 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
-                  title="Workspace settings - Owner only"
+                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[13px] font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  title="Vault settings - Owner only"
                 >
-                  ⚙️ Settings
+                  Settings
                 </button>
               )}
-              
-              {/* Add Memory Button - Owner and Editor */}
+
               {canCreate(userRole) && (
                 <button
                   onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
-                  className="bg-yellow-500 hover:bg-yellow-400 active:scale-95 text-gray-900 px-5 py-2 rounded-lg font-medium transition-all duration-200 shadow-sm hover:shadow-md"
+                  className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all hover:bg-[#C49000]"
                   title="Create a new memory"
                 >
                   + Add Memory
                 </button>
               )}
-              
-              {/* Viewer Status - Viewer Role */}
+
               {isViewer(userRole) && (
-                <div className="text-sm text-slate-500 px-4 py-2 font-medium" title="You have read-only access to this workspace">
-                  👁️ Viewer - Read-only access
+                <div className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[12px] font-medium text-[#5C5248]" title="You have read-only access to this vault">
+                  Viewer
                 </div>
               )}
             </div>
           </div>
 
-          {/* Row 2: Filter and Sort Controls */}
-          <div className="flex justify-between items-center">
-            {/* Favorites Filter Toggle */}
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowFavoritesOnly(false)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${!showFavoritesOnly ? 'bg-yellow-400 text-gray-900 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${!showFavoritesOnly ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
               >
                 All
               </button>
               <button
                 onClick={() => setShowFavoritesOnly(true)}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${showFavoritesOnly ? 'bg-yellow-400 text-gray-900 shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+                className={`flex items-center gap-1.5 rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${showFavoritesOnly ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
                   <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
                 </svg>
                 Favorites
               </button>
             </div>
 
-            {/* Sort Control */}
             <div className="flex items-center gap-1">
-              <span className="text-sm text-slate-500 font-medium">Sort:</span>
+              <span className="text-xs font-medium text-[#5C5248]">Sort:</span>
               <button
                 onClick={() => {
                   setSortOrder("newest")
                   saveSortPreference("newest")
                 }}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${sortOrder === "newest" ? 'bg-slate-200 text-gray-900 shadow-sm border border-slate-300' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${sortOrder === "newest" ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
               >
                 Newest
               </button>
@@ -1360,34 +1337,39 @@ export default function WorkspaceDetail() {
                   setSortOrder("oldest")
                   saveSortPreference("oldest")
                 }}
-                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${sortOrder === "oldest" ? 'bg-slate-200 text-gray-900 shadow-sm border border-slate-300' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${sortOrder === "oldest" ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
               >
                 Oldest
               </button>
             </div>
           </div>
         </div>
+      </div>
 
-        <input
-          ref={searchInputRef}
-          type="text"
-          placeholder="Search memories or #tags... (Press / to focus)"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full p-3 mb-8 bg-white border border-slate-200 rounded-lg text-gray-900 placeholder-slate-400 focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/40 transition-all duration-200"
-        />
+      <div style={{ maxWidth: '900px' }} className="mx-auto px-4 pb-[90px] pt-[188px]">
+
+        {/* Non-Member Viewing Public Workspace Banner */}
+        {!isMember && workspace && isWorkspacePublic(workspace) && (
+          <div className="mb-6 flex items-start gap-3 rounded-[14px] border border-[#1F1F1F] bg-[#141414] p-4">
+            <div className="text-xl text-[#F4B400]">👁️</div>
+            <div className="flex-1">
+              <p className="font-semibold text-[#F5F0E8]">Viewing as Guest</p>
+              <p className="mt-1 text-sm text-[#A09080]">You're viewing this public vault with read-only access. Join to create and edit memories.</p>
+            </div>
+          </div>
+        )}
 
         {/* Members Section - Phase 1 */}
         {members.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">
-              Workspace Members ({members.length})
+            <h2 className="mb-3 text-lg font-semibold text-[#F5F0E8]">
+              Vault Members ({members.length})
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {members.map((member) => (
                 <div
                   key={member.user_id}
-                  className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-colors duration-200"
+                  className="flex items-center gap-3 rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-3 transition-colors duration-200 hover:border-[#2A2A2A]"
                 >
                   {/* Avatar */}
                   <div className="flex-shrink-0">
@@ -1395,10 +1377,10 @@ export default function WorkspaceDetail() {
                       <img
                         src={member.profiles[0].avatar_url}
                         alt={member.profiles[0].username || "User"}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                        className="h-10 w-10 rounded-full border border-[#1F1F1F] object-cover"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1C1C1C] font-semibold text-[#F4B400]">
                         {(member.profiles?.[0]?.username?.[0] || "U").toUpperCase()}
                       </div>
                     )}
@@ -1406,15 +1388,15 @@ export default function WorkspaceDetail() {
 
                   {/* Username and Role */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800 truncate">
+                    <p className="truncate font-medium text-[#F5F0E8]">
                       {member.profiles?.[0]?.username || "Unknown User"}
                     </p>
                     <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded mt-1 ${
                       member.role === "owner"
-                        ? "bg-purple-100 text-purple-700"
+                        ? "bg-[#1E1528] text-[#8B5CF6] border border-[rgba(139,92,246,0.25)]"
                         : member.role === "editor"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-slate-100 text-slate-600"
+                        ? "bg-[#2A2000] text-[#F4B400] border border-[rgba(244,180,0,0.25)]"
+                        : "bg-[#141414] text-[#A09080] border border-[#1F1F1F]"
                     }`}>
                       {member.role === "owner" ? "👑 Owner" : member.role === "editor" ? "✏️ Editor" : "👁️ Viewer"}
                     </span>
@@ -1428,31 +1410,31 @@ export default function WorkspaceDetail() {
         {/* Recent Activity Section - Phase 2 */}
         {recentActivity.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+            <h2 className="mb-3 text-lg font-semibold text-[#F5F0E8]">
               Recent Activity
             </h2>
-            <div className="space-y-2 bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <div className="space-y-2 overflow-hidden rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D]">
               {recentActivity.map((activity, index) => (
                 <div
                   key={activity.id}
                   className={`flex items-center gap-3 p-4 ${
-                    index !== recentActivity.length - 1 ? "border-b border-slate-100" : ""
-                  } hover:bg-slate-50 transition-colors duration-200`}
+                    index !== recentActivity.length - 1 ? "border-b border-[#1F1F1F]" : ""
+                  } transition-colors duration-200 hover:bg-[#141414]`}
                 >
                   {/* Timeline Dot */}
                   <div className="flex-shrink-0 relative w-8 h-8 flex items-center justify-center">
-                    <div className="w-3 h-3 rounded-full bg-yellow-400 border-2 border-white shadow-sm"></div>
+                    <div className="h-3 w-3 rounded-full border-2 border-[#0D0D0D] bg-[#F4B400] shadow-sm"></div>
                   </div>
 
                   {/* Activity Content */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-700">
-                      <span className="font-medium text-gray-800">
+                    <p className="text-sm text-[#A09080]">
+                      <span className="font-medium text-[#F5F0E8]">
                         {activity.profiles?.[0]?.username || "Unknown User"}
                       </span>
-                      <span className="text-gray-600"> joined this workspace</span>
+                      <span className="text-[#5C5248]"> joined this vault</span>
                     </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="mt-0.5 text-xs text-[#5C5248]">
                       {activity.responded_at
                         ? new Date(activity.responded_at).toLocaleDateString("en-US", {
                             month: "short",
@@ -1471,7 +1453,7 @@ export default function WorkspaceDetail() {
 
                   {/* Join Badge */}
                   <div className="flex-shrink-0">
-                    <span className="text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded">
+                    <span className="rounded border border-[rgba(34,197,94,0.25)] bg-[#162116] px-2 py-1 text-xs font-semibold text-[#22C55E]">
                       ✓ Joined
                     </span>
                   </div>
@@ -1496,7 +1478,7 @@ export default function WorkspaceDetail() {
               : (searchTerm 
                   ? "No results found 🔍" 
                   : (!isMember && workspace && isWorkspacePublic(workspace)
-                      ? "No memories shared yet 📝\nJoin workspace to create memories"
+                      ? "No memories shared yet 📝\nJoin vault to create memories"
                       : "No memories yet ✨\nStart capturing your thoughts"
                     )
                 )
@@ -1506,14 +1488,16 @@ export default function WorkspaceDetail() {
       </div>
 
       {showInviteModal && (
-        <InviteUserModal
-          onClose={() => setShowInviteModal(false)}
-          workspaceId={id}
-          onSuccess={() => {
-            window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: id } }))
-            loadUserRole()
-          }}
-        />
+        <Suspense fallback={null}>
+          <InviteUserModal
+            onClose={() => setShowInviteModal(false)}
+            workspaceId={id}
+            onSuccess={() => {
+              window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: id } }))
+              loadUserRole()
+            }}
+          />
+        </Suspense>
       )}
 
       {showRemoveUserModal && (
@@ -1532,21 +1516,21 @@ export default function WorkspaceDetail() {
       {showSettingsModal && (
         <Modal
           open={true}
-          title="Workspace Settings"
+          title="Vault Settings"
           onCancel={() => setShowSettingsModal(false)}
         >
           <div className="p-6 space-y-6">
             <div>
-              <h3 className="text-lg font-semibold mb-4 text-gray-900">Visibility</h3>
-              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+              <h3 className="mb-4 text-lg font-semibold text-[#F5F0E8]">Visibility</h3>
+              <div className="flex items-center justify-between rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] p-4">
                 <div>
-                  <p className="font-medium text-gray-900">
+                  <p className="font-medium text-[#F5F0E8]">
                     {workspace?.is_public ? '🌐 Public' : '🔒 Private'}
                   </p>
-                  <p className="text-sm text-slate-600 mt-1">
+                  <p className="mt-1 text-sm text-[#5C5248]">
                     {workspace?.is_public 
-                      ? 'Anyone can view memories in this workspace' 
-                      : 'Only members can access this workspace'}
+                      ? 'Anyone can view memories in this vault' 
+                      : 'Only members can access this vault'}
                   </p>
                 </div>
                 <button
@@ -1566,7 +1550,7 @@ export default function WorkspaceDetail() {
             <div className="flex justify-end gap-2 pt-4">
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="px-4 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-gray-900 font-medium transition-all"
+                className="rounded-lg border border-[#1F1F1F] bg-[#141414] px-4 py-2 font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
               >
                 Close
               </button>

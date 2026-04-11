@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { supabase } from "../lib/supabase"
+import { useAuth } from "../hooks/useAuth"
+import { AnimatePresence, motion } from "framer-motion"
 
 export default function BottomNavigation() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
   const [profile, setProfile] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [currentUserId, setCurrentUserId] = useState(null)
@@ -13,23 +16,25 @@ export default function BottomNavigation() {
   const unreadChatCount = unreadDirectCount + unreadGroupCount
 
   useEffect(() => {
-    fetchProfile()
-  }, [])
+    if (user?.id) {
+      setCurrentUserId(user.id)
+      fetchProfile(user.id)
+    }
+  }, [user?.id])
 
-  const fetchProfile = async () => {
+  const fetchProfile = async (userId) => {
+    if (!userId) return
+
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (!authError && user) {
-        setCurrentUserId(user.id)
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("id", user.id)
-          .single()
+      console.log("[BottomNav] Fetching profile for user:", userId)
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", userId)
+        .single()
 
-        if (profileData) {
-          setProfile(profileData)
-        }
+      if (profileData) {
+        setProfile(profileData)
       }
     } catch (err) {
       console.error("[BottomNav] Error fetching profile:", err)
@@ -158,7 +163,7 @@ export default function BottomNavigation() {
     if (path === "/workspaces" && (location.pathname === "/workspaces" || location.pathname.startsWith("/workspace/"))) {
       return true
     }
-    if (path === "/chat" && location.pathname === "/chat") {
+    if (path === "/chat" && location.pathname.startsWith("/chat")) {
       return true
     }
     if (path === "/profile" && location.pathname.startsWith("/profile")) {
@@ -177,20 +182,31 @@ export default function BottomNavigation() {
     setMenuOpen(!menuOpen)
   }
 
+  const handleProfileNavigation = () => {
+    const currentUsername = profile?.username || user?.user_metadata?.username
+
+    if (currentUsername) {
+      navigate(`/profile/${currentUsername}`)
+      return
+    }
+
+    navigate("/profile")
+  }
+
   return (
     <>
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 bg-white/95 shadow-[0_-4px_16px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="flex h-[62px] items-center justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#1F1F1F] bg-[rgba(0,0,0,0.92)] shadow-[0_-6px_22px_rgba(0,0,0,0.45)] backdrop-blur-[20px]">
+        <div className="flex h-[62px] items-center justify-around px-2">
           {/* Explore */}
           <button
             onClick={() => handleNavigation("/explore")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/explore") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
+              isActive("/explore") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
             }`}
           >
             <svg
-              className="w-6 h-6"
+              className="h-[22px] w-[22px]"
               fill={isActive("/explore") ? "currentColor" : "none"}
               stroke="currentColor"
               strokeWidth={isActive("/explore") ? 0 : 2}
@@ -202,18 +218,18 @@ export default function BottomNavigation() {
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               />
             </svg>
-            <span className="text-xs font-medium">Explore</span>
+            <span className="text-[10px] font-semibold">Explore</span>
           </button>
 
-          {/* Workspaces */}
+          {/* Vaults */}
           <button
             onClick={() => handleNavigation("/workspaces")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/workspaces") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
+              isActive("/workspaces") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
             }`}
           >
             <svg
-              className="w-6 h-6"
+              className="h-[22px] w-[22px]"
               fill={isActive("/workspaces") ? "currentColor" : "none"}
               stroke="currentColor"
               strokeWidth={isActive("/workspaces") ? 0 : 2}
@@ -225,19 +241,22 @@ export default function BottomNavigation() {
                 d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-            <span className="text-xs font-medium">Workspaces</span>
+            <span className="text-[10px] font-semibold">Vaults</span>
           </button>
+
+          {/* Center FAB slot */}
+          <div className="flex-1 flex items-center justify-center" />
 
           {/* Chat */}
           <button
             onClick={() => handleNavigation("/chat")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/chat") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
+              isActive("/chat") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
             }`}
           >
             <div className="relative">
               <svg
-                className="w-6 h-6"
+                className="h-[22px] w-[22px]"
                 fill={isActive("/chat") ? "currentColor" : "none"}
                 stroke="currentColor"
                 strokeWidth={isActive("/chat") ? 0 : 2}
@@ -250,30 +269,23 @@ export default function BottomNavigation() {
                 />
               </svg>
               {unreadChatCount > 0 && (
-                <span className="absolute -right-2 -top-2 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                <span className="absolute -right-2 -top-2 min-w-[18px] rounded-full bg-[#EF4444] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
                   {unreadChatCount > 99 ? "99+" : unreadChatCount}
                 </span>
               )}
             </div>
-            <span className="text-xs font-medium">Chat</span>
+            <span className="text-[10px] font-semibold">Chat</span>
           </button>
-
-          {/* Create Spacer */}
-          <div className="flex-1" />
 
           {/* Profile */}
           <button
-            onClick={() => {
-              if (profile?.username) {
-                handleNavigation(`/profile/${profile.username}`)
-              }
-            }}
+            onClick={handleProfileNavigation}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/profile") ? "text-yellow-500" : "text-gray-500 hover:text-gray-700"
+              isActive("/profile") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
             }`}
           >
             <svg
-              className="w-6 h-6"
+              className="h-[22px] w-[22px]"
               fill={isActive("/profile") ? "currentColor" : "none"}
               stroke="currentColor"
               strokeWidth={isActive("/profile") ? 0 : 2}
@@ -285,7 +297,7 @@ export default function BottomNavigation() {
                 d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
               />
             </svg>
-            <span className="text-xs font-medium">Profile</span>
+            <span className="text-[10px] font-semibold">Profile</span>
           </button>
         </div>
       </nav>
@@ -293,7 +305,7 @@ export default function BottomNavigation() {
       {/* Floating Create Button */}
       <button
         onClick={handleCreateClick}
-        className="fixed bottom-[72px] right-5 z-[60] h-12 w-12 rounded-full bg-yellow-500 text-white shadow-md transition-all duration-200 hover:bg-yellow-400 hover:shadow-lg active:scale-95 flex items-center justify-center"
+        className="fixed bottom-[8px] left-1/2 z-[60] flex h-[46px] w-[46px] -translate-x-1/2 items-center justify-center rounded-[14px] bg-[#F4B400] text-[#0D0D0D] shadow-[0_4px_18px_rgba(244,180,0,0.4)] transition-all duration-200 hover:bg-[#C49000] hover:scale-[1.06] active:scale-95"
       >
         {menuOpen ? (
           <svg
@@ -322,58 +334,66 @@ export default function BottomNavigation() {
         )}
       </button>
 
-      {/* Create Menu */}
-      {menuOpen && (
-        <div
-          className="fixed bottom-[72px] right-5 z-[60] bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-fadeIn"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              console.log("Create Post clicked")
-              window.dispatchEvent(new CustomEvent("openCreatePostModal"))
-              setMenuOpen(false)
-            }}
-            className="w-full px-6 py-3 text-left text-sm font-medium text-gray-900 hover:bg-yellow-50 transition-colors flex items-center gap-3 whitespace-nowrap"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path d="M11 5H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-6m-7-10l6-6v11H5z" />
-            </svg>
-            Create Post
-          </button>
+      <AnimatePresence>
+        {menuOpen && (
+          <>
+            {/* Backdrop for menu */}
+            <motion.div
+              className="fixed inset-0 z-50 bg-black/35 backdrop-blur-[1px]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.16 }}
+              onClick={() => setMenuOpen(false)}
+            />
 
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              navigate("/workspaces")
-              setMenuOpen(false)
-            }}
-            className="w-full px-6 py-3 text-left text-sm font-medium text-gray-900 hover:bg-yellow-50 transition-colors flex items-center gap-3 whitespace-nowrap border-t border-gray-100"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="currentColor"
-              viewBox="0 0 24 24"
+            {/* Create Menu */}
+            <motion.div
+              className="fixed bottom-[66px] left-1/2 z-[60] w-[244px] overflow-hidden rounded-[16px] border border-[#2A2A2A] bg-[linear-gradient(180deg,#111111_0%,#0B0B0B_100%)] shadow-[0_22px_44px_rgba(0,0,0,0.62),0_0_0_1px_rgba(244,180,0,0.08)]"
+              style={{ x: "-50%", transformOrigin: "center bottom" }}
+              initial={{ opacity: 0, y: 10, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.97 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
-            </svg>
-            New Workspace
-          </button>
-        </div>
-      )}
+              <div className="h-[2px] bg-gradient-to-r from-transparent via-[#F4B400] to-transparent opacity-70" />
 
-      {/* Backdrop for menu */}
-      {menuOpen && (
-        <div
-          className="fixed inset-0 z-50"
-          onClick={() => setMenuOpen(false)}
-        />
-      )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  window.dispatchEvent(new CustomEvent("openCreatePostModal"))
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-3 whitespace-nowrap px-5 py-3.5 text-left text-[14px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#171717]"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[rgba(244,180,0,0.25)] bg-[rgba(244,180,0,0.08)] text-[#F4B400]">
+                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M11 5H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-6m-7-10l6-6v11H5z" />
+                  </svg>
+                </span>
+                <span>Create Post</span>
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  navigate("/workspaces")
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-3 whitespace-nowrap border-t border-[#1F1F1F] px-5 py-3.5 text-left text-[14px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#171717]"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[rgba(244,180,0,0.25)] bg-[rgba(244,180,0,0.08)] text-[#F4B400]">
+                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
+                  </svg>
+                </span>
+                <span>New Vault</span>
+              </button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </>
   )
 }

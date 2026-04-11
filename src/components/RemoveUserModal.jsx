@@ -150,7 +150,7 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
       const removedMember = members.find(m => m.user_id === confirmRemoveUser)
       const removedName = removedMember?.name || "User"
       
-      setMessage(`✓ ${removedName} has been removed from the workspace`)
+      setMessage(`✓ ${removedName} has been removed from the vault`)
       setMessageType("success")
       setRemovingUserId(null)
       setConfirmRemoveUser(null)
@@ -228,14 +228,14 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-40 flex items-center justify-center z-50 fade-in backdrop-blur-sm">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-gray-100 max-h-[80vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.72)] backdrop-blur-[6px]">
+      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_24px_80px_rgba(0,0,0,0.7)]">
         
         {/* Header */}
-        <div className="px-8 py-6 border-b border-gray-100 bg-gradient-to-r from-slate-50 to-white">
-          <h2 className="text-2xl font-bold text-gray-900">Workspace Members</h2>
-          <p className="text-slate-500 text-sm mt-1">
-            {isOwner ? "Manage member access and roles" : "Members in this workspace"}
+        <div className="border-b border-[#1F1F1F] bg-[#141414] px-8 py-6">
+          <h2 className="text-2xl font-bold text-[#F5F0E8]">Vault Members</h2>
+          <p className="mt-1 text-sm text-[#5C5248]">
+            {isOwner ? "Manage member access and roles" : "Members in this vault"}
           </p>
         </div>
 
@@ -263,14 +263,14 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="animate-spin mb-3">⏳</div>
-                <p className="text-slate-500 font-medium">Loading members...</p>
+                <p className="font-medium text-[#5C5248]">Loading members...</p>
               </div>
             </div>
           ) : members.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
-                <p className="text-slate-400 text-lg">👥</p>
-                <p className="text-slate-500 font-medium mt-2">No members yet</p>
+                <p className="text-[#5C5248] text-lg">👥</p>
+                <p className="mt-2 font-medium text-[#5C5248]">No members yet</p>
               </div>
             </div>
           ) : (
@@ -287,8 +287,8 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
                     key={member.user_id}
                     className={`relative group p-4 rounded-xl border transition-all duration-200 ${
                       isDisabled
-                        ? "bg-gray-50 border-gray-100 opacity-60"
-                        : "bg-white border-gray-200 hover:border-yellow-200 hover:shadow-md hover:bg-gradient-to-r hover:from-yellow-50/30 hover:to-white"
+                        ? "border-[#1F1F1F] bg-[#141414] opacity-60"
+                        : "border-[#1F1F1F] bg-[#0D0D0D] hover:border-[#2A2A2A] hover:bg-[#141414]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-4">
@@ -311,16 +311,16 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
                         {/* User Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold text-gray-900 truncate">
+                            <p className="truncate font-semibold text-[#F5F0E8]">
                               {member.name || "User"}
                             </p>
                             {isCurrentUser && (
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium flex-shrink-0">
+                              <span className="flex-shrink-0 rounded-full border border-[rgba(244,180,0,0.3)] bg-[#2A2000] px-2 py-1 text-xs font-medium text-[#F4B400]">
                                 You
                               </span>
                             )}
                           </div>
-                          <p className="text-sm text-slate-500 truncate">
+                          <p className="truncate text-sm text-[#5C5248]">
                             @{member.username || "unknown"}
                           </p>
                         </div>
@@ -329,7 +329,7 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
                       {/* RIGHT: Role + Actions */}
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {isOwnerRole ? (
-                          <span className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-full font-semibold flex items-center gap-1.5 shadow-sm">
+                          <span className="flex items-center gap-1.5 rounded-full border border-[rgba(244,180,0,0.25)] bg-[#2A2000] px-3 py-1.5 text-xs font-semibold text-[#F4B400]">
                             👑 Owner
                           </span>
                         ) : (
@@ -340,8 +340,8 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
                               disabled={isDisabled}
                               className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all border ${
                                 isDisabled
-                                  ? "bg-gray-100 border-gray-200 text-gray-500 cursor-not-allowed"
-                                  : "bg-white border-slate-300 text-gray-900 hover:border-slate-400 cursor-pointer"
+                                  ? "cursor-not-allowed border-[#1F1F1F] bg-[#141414] text-[#5C5248]"
+                                  : "cursor-pointer border-[#2A2A2A] bg-[#141414] text-[#F5F0E8] hover:border-[#F4B400]"
                               }`}
                             >
                               <option value="viewer">👁️ Viewer</option>
@@ -359,14 +359,14 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
                                 <button
                                   onClick={handleCancelRemove}
                                   disabled={isRemoving}
-                                  className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-all disabled:opacity-50"
+                                  className="rounded-lg border border-[#1F1F1F] bg-[#141414] px-3 py-1.5 text-sm font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8] disabled:opacity-50"
                                 >
                                   Cancel
                                 </button>
                                 <button
                                   onClick={handleConfirmRemove}
                                   disabled={isRemoving}
-                                  className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                  className="flex items-center gap-1.5 rounded-lg bg-[#EF4444] px-3 py-1.5 text-sm font-medium text-white transition-all hover:bg-[#DC2626] disabled:opacity-50"
                                 >
                                   {isRemoving && <span className="animate-spin text-xs">⏳</span>}
                                   Confirm
@@ -376,7 +376,7 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
                               <button
                                 onClick={() => handleRemoveClick(member.user_id)}
                                 disabled={isDisabled}
-                                className="px-4 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg font-medium hover:bg-red-100 transition-all disabled:opacity-50 border border-red-200 hover:border-red-300"
+                                className="rounded-lg border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.12)] px-4 py-1.5 text-sm font-medium text-[#EF4444] transition-all hover:bg-[rgba(239,68,68,0.2)] disabled:opacity-50"
                               >
                                 Remove
                               </button>
@@ -393,11 +393,11 @@ export default function RemoveUserModal({ onClose, workspaceId, isOwner, onUserR
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+        <div className="flex justify-end gap-3 border-t border-[#1F1F1F] bg-[#141414] px-8 py-4">
           <button
             onClick={onClose}
             disabled={removingUserId !== null}
-            className="px-4 py-2 bg-white text-gray-900 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-gray-300 active:scale-95 transition-all font-medium disabled:opacity-50"
+            className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-2 font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8] disabled:opacity-50"
           >
             Close
           </button>

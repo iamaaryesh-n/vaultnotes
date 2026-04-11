@@ -11,37 +11,40 @@ export function PostCardSkeleton() {
           100% { background-position: 1000px 0; }
         }
         .skeleton-shimmer {
-          background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+          background: linear-gradient(90deg, #111111 0%, #1a1a1a 50%, #111111 100%);
           background-size: 1000px 100%;
           animation: shimmer 2s infinite;
+        }
+        .dark .skeleton-shimmer {
+          background: linear-gradient(90deg, #111111 0%, #1a1a1a 50%, #111111 100%);
         }
       `}</style>
       
       {/* Post card container */}
-      <div className="card p-4 mb-4">
+      <div className="mb-3 rounded-[16px] border border-[#1F1F1F] bg-[#0D0D0D] p-4">
         {/* Author info */}
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-slate-200 skeleton-shimmer flex-shrink-0"></div>
+          <div className="h-10 w-10 flex-shrink-0 rounded-full bg-[#141414] skeleton-shimmer"></div>
           <div className="flex-1">
-            <div className="h-4 bg-slate-200 rounded w-32 skeleton-shimmer mb-1"></div>
-            <div className="h-3 bg-slate-200 rounded w-24 skeleton-shimmer"></div>
+            <div className="mb-1 h-4 w-32 rounded bg-[#141414] skeleton-shimmer"></div>
+            <div className="h-3 w-24 rounded bg-[#141414] skeleton-shimmer"></div>
           </div>
         </div>
         
         {/* Content */}
         <div className="mb-4">
-          <div className="h-4 bg-slate-200 rounded mb-2 skeleton-shimmer"></div>
-          <div className="h-4 bg-slate-200 rounded mb-2 w-5/6 skeleton-shimmer"></div>
-          <div className="h-4 bg-slate-200 rounded w-4/5 skeleton-shimmer"></div>
+          <div className="mb-2 h-4 rounded bg-[#141414] skeleton-shimmer"></div>
+          <div className="mb-2 h-4 w-5/6 rounded bg-[#141414] skeleton-shimmer"></div>
+          <div className="h-4 w-4/5 rounded bg-[#141414] skeleton-shimmer"></div>
         </div>
         
         {/* Image placeholder */}
-        <div className="h-48 bg-slate-200 rounded mb-4 skeleton-shimmer"></div>
+        <div className="mb-4 h-48 rounded-[12px] border border-[#1F1F1F] bg-[#141414] skeleton-shimmer"></div>
         
         {/* Interaction buttons */}
-        <div className="flex gap-4 pt-2">
-          <div className="h-8 bg-slate-200 rounded w-20 skeleton-shimmer"></div>
-          <div className="h-8 bg-slate-200 rounded w-20 skeleton-shimmer"></div>
+        <div className="flex gap-4 border-t border-[#1F1F1F] pt-3">
+          <div className="h-8 w-20 rounded bg-[#141414] skeleton-shimmer"></div>
+          <div className="h-8 w-20 rounded bg-[#141414] skeleton-shimmer"></div>
         </div>
       </div>
     </>

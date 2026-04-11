@@ -9,29 +9,43 @@ import ToastContainer from "./components/ToastContainer"
 import BottomNavigation from "./components/BottomNavigation"
 import CreatePostModal from "./components/CreatePostModal"
 import Navbar from "./components/Navbar"
+import ErrorBoundary from "./components/ErrorBoundary"
 
 // Eagerly load lightweight pages
-import Dashboard from "./pages/Dashboard"
 import Login from "./pages/Login"
-import Explore from "./pages/Explore"
 import PublicWorkspaceLanding from "./pages/PublicWorkspaceLanding"
 import DiscoverWorkspaces from "./pages/DiscoverWorkspaces"
-import { Notifications } from "./pages/Notifications"
 
 // Lazy load heavy routes (code splitting for better performance)
+const Explore = lazy(() => import("./pages/Explore"))
+const Dashboard = lazy(() => import("./pages/Dashboard"))
+const Notifications = lazy(() => import("./pages/Notifications").then((module) => ({ default: module.Notifications })))
 const WorkspaceDetail = lazy(() => import("./pages/WorkspaceDetail"))
 const MemoryView = lazy(() => import("./pages/MemoryView"))
 const MemoryEditor = lazy(() => import("./pages/MemoryEditor"))
 const Profile = lazy(() => import("./pages/Profile"))
-const PublicProfile = lazy(() => import("./pages/PublicProfile"))
 const Chat = lazy(() => import("./pages/Chat"))
 const GroupChat = lazy(() => import("./pages/GroupChat"))
 
 function AppContent() {
   const location = useLocation()
-  const { user, session, authLoading, logout } = useAuth()
+  const { user, session, authLoading } = useAuth()
   const [createPostOpen, setCreatePostOpen] = useState(false)
   useScrollToTop()
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") || "system"
+    const root = document.documentElement
+
+    if (savedTheme === "dark") {
+      root.classList.add("dark")
+    } else if (savedTheme === "light") {
+      root.classList.remove("dark")
+    } else {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
+      root.classList.toggle("dark", prefersDark)
+    }
+  }, [])
 
   // Listen for Create Post event from floating action button
   useEffect(() => {
@@ -46,10 +60,10 @@ function AppContent() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in dark:from-slate-950 dark:to-slate-900 dark:text-[#F5F0E8]">
         <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
-          <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Workspaces</h1>
-          <p className="text-slate-600 mb-8">Loading your workspaces...</p>
+          <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Vaults</h1>
+          <p className="text-slate-600 mb-8">Loading your vaults...</p>
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="card p-4 animate-pulse">
@@ -63,11 +77,12 @@ function AppContent() {
     )
   }
 
-  const isChatRoute = location.pathname === "/chat" || location.pathname === "/groups"
+  const isChatRoute = location.pathname.startsWith("/chat") || location.pathname === "/groups"
+  const isVaultRoute = location.pathname === "/workspaces" || location.pathname.startsWith("/workspace/")
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {user && <Navbar onLogout={logout} />}
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[#000000] dark:text-[#F5F0E8]">
+      {user && <Navbar />}
       <ToastContainer />
       <LoadingBar />
       {user && <BottomNavigation />}
@@ -86,36 +101,60 @@ function AppContent() {
         className={user
           ? isChatRoute
             ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
-            : "min-h-screen pt-[64px] pb-20"
+            : isVaultRoute
+              ? "min-h-screen overflow-x-hidden bg-[#000000] pt-[64px] pb-20"
+              : "min-h-screen pt-[64px] pb-20"
           : "min-h-screen"}
       >
         <Routes>
           <Route
             path="/login"
-            element={!user ? <Login /> : <Explore />}
+            element={!user ? <Login /> : (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <Explore />
+              </Suspense>
+            )}
           />
 
           <Route
             path="/"
-            element={user ? <Explore /> : <Login />}
+            element={user ? (
+              <ErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                  <Explore />
+                </Suspense>
+              </ErrorBoundary>
+            ) : <Login />}
           />
 
           <Route
             path="/explore"
-            element={user ? <Explore /> : <Login />}
+            element={user ? (
+              <ErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                  <Explore />
+                </Suspense>
+              </ErrorBoundary>
+            ) : <Login />}
           />
 
           <Route
             path="/workspaces"
-            element={user ? <Dashboard session={session} /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <Dashboard session={session} />
+              </Suspense>
+            ) : <Login />}
           />
 
           <Route
             path="/profile"
             element={user ? (
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <Profile />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                  <Profile />
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <Login />
             )}
@@ -124,9 +163,11 @@ function AppContent() {
           <Route
             path="/profile/:username"
             element={user ? (
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <PublicProfile />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                  <Profile />
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <Login />
             )}
@@ -135,9 +176,50 @@ function AppContent() {
           <Route
             path="/chat"
             element={user ? (
-              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
-                <Chat />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            ) : (
+              <Login />
+            )}
+          />
+
+          <Route
+            path="/chat/group/:groupId"
+            element={user ? (
+              <ErrorBoundary>
+                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            ) : (
+              <Login />
+            )}
+          />
+
+          <Route
+            path="/chat/direct/:conversationId"
+            element={user ? (
+              <ErrorBoundary>
+                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            ) : (
+              <Login />
+            )}
+          />
+
+          <Route
+            path="/chat/:conversationId"
+            element={user ? (
+              <ErrorBoundary>
+                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <Login />
             )}
@@ -157,9 +239,11 @@ function AppContent() {
           <Route
             path="/workspace/:id"
             element={user ? (
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <WorkspaceDetail />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                  <WorkspaceDetail />
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <Login />
             )}
@@ -210,7 +294,11 @@ function AppContent() {
 
           <Route
             path="/notifications"
-            element={user ? <Notifications /> : <Login />}
+            element={user ? (
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <Notifications />
+              </Suspense>
+            ) : <Login />}
           />
         </Routes>
       </main>

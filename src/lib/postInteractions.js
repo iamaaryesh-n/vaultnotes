@@ -112,20 +112,21 @@ export async function toggleLike(postId) {
       throw new Error("User not authenticated")
     }
 
-    // Check if user has already liked
-    const { data: existingLike } = await supabase
+    // Check if user has already liked (array query avoids maybeSingle multiple-row edge case)
+    const { data: existingLikes, error: existingLikeError } = await supabase
       .from("likes")
       .select("id")
       .eq("post_id", postId)
       .eq("user_id", user.id)
-      .maybeSingle()
+    if (existingLikeError) throw existingLikeError
 
-    if (existingLike) {
-      // Unlike: delete the like
+    if ((existingLikes || []).length > 0) {
+      // Unlike: delete all matching likes for safety
       const { error: deleteError } = await supabase
         .from("likes")
         .delete()
-        .eq("id", existingLike.id)
+        .eq("post_id", postId)
+        .eq("user_id", user.id)
 
       if (deleteError) throw deleteError
       return { success: true, liked: false }
@@ -135,7 +136,13 @@ export async function toggleLike(postId) {
         .from("likes")
         .insert({ post_id: postId, user_id: user.id })
 
-      if (insertError) throw insertError
+      if (insertError) {
+        // If unique constraint exists and a race inserts first, treat as liked success
+        if (insertError.code === "23505") {
+          return { success: true, liked: true }
+        }
+        throw insertError
+      }
 
       // Fetch post to get owner and create notification
       const { data: post } = await supabase
