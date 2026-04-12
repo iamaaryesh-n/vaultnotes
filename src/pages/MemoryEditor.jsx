@@ -13,6 +13,7 @@ import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { EditorSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
 import { useWorkspaceStore } from "../stores/workspaceStore"
+import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 
 const FloatingImage = Image.extend({
   addAttributes() {
@@ -908,15 +909,19 @@ export default function MemoryEditor() {
   const handleImageUpload = async (file) => {
     if (!file) return
 
-    // Validate file is an image
-    if (!file.type.startsWith('image/')) {
-      openModal("Image Upload", "Please select an image file.")
-      return
-    }
+    let processedFile = null
 
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      openModal("Image Upload", "Image must be less than 5MB.")
+    try {
+      processedFile = await prepareImageForUpload(file)
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        showError(IMAGE_TOO_LARGE_MESSAGE)
+      } else {
+        openModal("Image Upload", err?.message || "Please select an image file.")
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       return
     }
 
@@ -929,12 +934,12 @@ export default function MemoryEditor() {
 
       // Generate unique filename
       const timestamp = Date.now()
-      const filename = `${user.id}/${id}/${timestamp}-${file.name}`
+      const filename = `${user.id}/${id}/${timestamp}-${processedFile.name}`
 
       // Upload to Supabase Storage
       const { error } = await supabase.storage
         .from('memory-images')
-        .upload(filename, file, {
+        .upload(filename, processedFile, {
           cacheControl: '3600',
           upsert: false,
         })

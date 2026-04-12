@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "../lib/supabase"
+import { useToast } from "../hooks/useToast"
+import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 
 export function EditProfileModal({
   isOpen,
@@ -10,6 +12,7 @@ export function EditProfileModal({
   coverPhotoUrl,
   onSave,
 }) {
+  const { addToast } = useToast()
   const [nameInput, setNameInput] = useState(profile?.name || "")
   const [usernameInput, setUsernameInput] = useState(profile?.username || "")
   const [bioInput, setBioInput] = useState(profile?.bio || "")
@@ -191,18 +194,40 @@ export function EditProfileModal({
     }
   }
 
-  const handleAvatarFileSelect = (e) => {
+  const handleAvatarFileSelect = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setPendingAvatarFile(file)
-    setAvatarPreview(URL.createObjectURL(file))
+
+    try {
+      const compressedFile = await prepareImageForUpload(file)
+      setPendingAvatarFile(compressedFile)
+      setAvatarPreview(URL.createObjectURL(compressedFile))
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        addToast(IMAGE_TOO_LARGE_MESSAGE, "error")
+      } else {
+        addToast(err?.message || "Failed to process image.", "error")
+      }
+      e.target.value = ""
+    }
   }
 
-  const handleCoverFileSelect = (e) => {
+  const handleCoverFileSelect = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    setPendingCoverFile(file)
-    setCoverPreview(URL.createObjectURL(file))
+
+    try {
+      const compressedFile = await prepareImageForUpload(file)
+      setPendingCoverFile(compressedFile)
+      setCoverPreview(URL.createObjectURL(compressedFile))
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        addToast(IMAGE_TOO_LARGE_MESSAGE, "error")
+      } else {
+        addToast(err?.message || "Failed to process image.", "error")
+      }
+      e.target.value = ""
+    }
   }
 
   const handleCancel = () => {

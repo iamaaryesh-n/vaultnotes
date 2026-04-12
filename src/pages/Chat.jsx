@@ -6,6 +6,7 @@ import { ChatListSkeleton } from "../components/SkeletonLoader"
 import { useToast } from "../hooks/useToast"
 import { encrypt, decrypt, importKey, generateKey, exportKey, validateKey, debugLogKey } from "../utils/encryption"
 import { getSignedImageUrl, uploadImageToPrivateStorage, isSignedUrlValid, deletePrivateImage } from "../lib/privateImageStorage"
+import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown } from "lucide-react"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
@@ -25,8 +26,6 @@ const CHAT_LIST_VIEW = {
 }
 
 export default function Chat() {
-  const MAX_IMAGE_SIZE = 5 * 1024 * 1024
-  const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
   const REACTION_EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F621}"]
 
   const navigate = useNavigate()
@@ -2582,7 +2581,7 @@ export default function Chat() {
     fileInputRef.current?.click()
   }
 
-  const handleImageSelected = (event) => {
+  const handleImageSelected = async (event) => {
     const file = event.target.files?.[0]
     event.target.value = ""
 
@@ -2590,19 +2589,23 @@ export default function Chat() {
       return
     }
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      setError("Only JPG, PNG, and WEBP images are allowed")
-      return
-    }
-
-    if (file.size > MAX_IMAGE_SIZE) {
-      setError("Image must be 5MB or smaller")
+    let processedFile = null
+    try {
+      processedFile = await prepareImageForUpload(file)
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        setError(IMAGE_TOO_LARGE_MESSAGE)
+        showToastError(IMAGE_TOO_LARGE_MESSAGE)
+      } else {
+        setError(err?.message || "Failed to process image")
+        showToastError(err?.message || "Failed to process image")
+      }
       return
     }
 
     setError("")
-    setSelectedImageFile(file)
-    setSelectedImageComposerUrl(URL.createObjectURL(file))
+    setSelectedImageFile(processedFile)
+    setSelectedImageComposerUrl(URL.createObjectURL(processedFile))
     setImageCaption("")
 
     requestAnimationFrame(() => {
@@ -4605,24 +4608,31 @@ export default function Chat() {
   }, [showSuccess])
 
   // Handle group image file selection
-  const handleGroupImageSelected = useCallback((event) => {
+  const handleGroupImageSelected = useCallback(async (event) => {
     const file = event.target.files?.[0]
+    event.target.value = ""
     if (!file) return
 
-    if (file.size > MAX_IMAGE_SIZE) {
-      showToastError(`Image must be less than 5 MB`)
+    let processedFile = null
+    try {
+      processedFile = await prepareImageForUpload(file)
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        showToastError(IMAGE_TOO_LARGE_MESSAGE)
+      } else {
+        showToastError(err?.message || "Failed to process image")
+      }
       return
     }
 
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      showToastError('Only JPEG, PNG, and WebP images are allowed')
-      return
+    if (groupSelectedImageComposerUrl) {
+      URL.revokeObjectURL(groupSelectedImageComposerUrl)
     }
 
-    setGroupSelectedImage(file)
-    const url = URL.createObjectURL(file)
+    setGroupSelectedImage(processedFile)
+    const url = URL.createObjectURL(processedFile)
     setGroupSelectedImageComposerUrl(url)
-  }, [showToastError])
+  }, [groupSelectedImageComposerUrl, showToastError])
 
   // Send group message with image
   const handleSendGroupMessageWithImage = useCallback(async () => {
@@ -4684,6 +4694,9 @@ export default function Chat() {
 
       // Reset
       setGroupSelectedImage(null)
+      if (groupSelectedImageComposerUrl) {
+        URL.revokeObjectURL(groupSelectedImageComposerUrl)
+      }
       setGroupSelectedImageComposerUrl('')
       setGroupImageCaption('')
       showSuccess('Image sent!')
@@ -4693,7 +4706,15 @@ export default function Chat() {
     } finally {
       setUploadingGroupImage(false)
     }
-  }, [groupSelectedImage, groupImageCaption, activeGroupId, contextUser?.id, groups, showToastError, showSuccess])
+  }, [groupSelectedImage, groupImageCaption, activeGroupId, contextUser?.id, groups, showToastError, showSuccess, groupSelectedImageComposerUrl])
+
+  useEffect(() => {
+    return () => {
+      if (groupSelectedImageComposerUrl) {
+        URL.revokeObjectURL(groupSelectedImageComposerUrl)
+      }
+    }
+  }, [groupSelectedImageComposerUrl])
 
   // Get signed URL for group image
   const getGroupImageSignedUrl = useCallback(async (storagePath) => {
@@ -6775,6 +6796,9 @@ export default function Chat() {
                     <button
                       onClick={() => {
                         setGroupSelectedImage(null)
+                        if (groupSelectedImageComposerUrl) {
+                          URL.revokeObjectURL(groupSelectedImageComposerUrl)
+                        }
                         setGroupSelectedImageComposerUrl('')
                         setGroupImageCaption('')
                       }}

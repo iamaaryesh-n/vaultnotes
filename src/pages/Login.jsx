@@ -2,11 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate } from "react-router-dom"
 import Modal from "../components/Modal"
+import { applyTheme, getStoredTheme, setStoredTheme } from "../utils/theme"
+import { useToast } from "../hooks/useToast"
+import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Login({ initialMode = "login" }) {
   const navigate = useNavigate()
+  const { addToast } = useToast()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -24,6 +28,7 @@ export default function Login({ initialMode = "login" }) {
   const [usernameStatus, setUsernameStatus] = useState("idle")
   const [usernameMessage, setUsernameMessage] = useState("")
   const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "", onConfirm: null })
+  const [selectedTheme, setSelectedTheme] = useState("system")
   const usernameCheckTimeoutRef = useRef(null)
   const usernameRequestIdRef = useRef(0)
 
@@ -96,6 +101,12 @@ export default function Login({ initialMode = "login" }) {
     setFormError("")
     return true
   }
+
+  useEffect(() => {
+    const savedTheme = getStoredTheme()
+    setSelectedTheme(savedTheme)
+    applyTheme(savedTheme)
+  }, [])
 
   useEffect(() => {
     if (!(isSignup && signupStep === 2)) {
@@ -185,20 +196,40 @@ export default function Login({ initialMode = "login" }) {
     }
   }
 
-  const handleAvatarChange = (e) => {
+  const handleAvatarChange = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    setAvatarFile(file)
-    setAvatarPreview(URL.createObjectURL(file))
+    try {
+      const compressedFile = await prepareImageForUpload(file)
+      setAvatarFile(compressedFile)
+      setAvatarPreview(URL.createObjectURL(compressedFile))
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        addToast(IMAGE_TOO_LARGE_MESSAGE, "error")
+      } else {
+        addToast(err?.message || "Failed to process image.", "error")
+      }
+      e.target.value = ""
+    }
   }
 
-  const handleCoverPhotoChange = (e) => {
+  const handleCoverPhotoChange = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    setCoverPhotoFile(file)
-    setCoverPhotoPreview(URL.createObjectURL(file))
+    try {
+      const compressedFile = await prepareImageForUpload(file)
+      setCoverPhotoFile(compressedFile)
+      setCoverPhotoPreview(URL.createObjectURL(compressedFile))
+    } catch (err) {
+      if (err?.code === "IMAGE_TOO_LARGE") {
+        addToast(IMAGE_TOO_LARGE_MESSAGE, "error")
+      } else {
+        addToast(err?.message || "Failed to process image.", "error")
+      }
+      e.target.value = ""
+    }
   }
 
   const getDefaultAvatarUrl = (nameSeed) => {
@@ -391,6 +422,12 @@ export default function Login({ initialMode = "login" }) {
     }
   }
 
+  const handleThemeChange = (theme) => {
+    setStoredTheme(theme)
+    applyTheme(theme)
+    setSelectedTheme(theme)
+  }
+
   return (
     <div className="min-h-screen bg-[var(--profile-bg)] flex items-center justify-center relative overflow-hidden px-5 py-6">
       <div
@@ -410,6 +447,35 @@ export default function Login({ initialMode = "login" }) {
         <div className="h-[3px] bg-gradient-to-r from-[#F4B400] via-[rgba(244,180,0,0.2)] to-transparent" />
 
         <div className="px-8 pt-8 pb-6">
+          <div className="mb-4 flex items-center justify-end">
+            <div className="flex items-center gap-1 rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-1">
+              <button
+                type="button"
+                onClick={() => handleThemeChange("light")}
+                className={`rounded-[8px] px-2.5 py-1 text-[11px] font-[700] transition-all ${selectedTheme === "light" ? "bg-[#F4B400] text-[#111]" : "text-[var(--profile-text-subtle)] hover:text-[var(--profile-text)]"}`}
+                aria-label="Use light theme"
+              >
+                Light
+              </button>
+              <button
+                type="button"
+                onClick={() => handleThemeChange("dark")}
+                className={`rounded-[8px] px-2.5 py-1 text-[11px] font-[700] transition-all ${selectedTheme === "dark" ? "bg-[#F4B400] text-[#111]" : "text-[var(--profile-text-subtle)] hover:text-[var(--profile-text)]"}`}
+                aria-label="Use dark theme"
+              >
+                Dark
+              </button>
+              <button
+                type="button"
+                onClick={() => handleThemeChange("system")}
+                className={`rounded-[8px] px-2.5 py-1 text-[11px] font-[700] transition-all ${selectedTheme === "system" ? "bg-[#F4B400] text-[#111]" : "text-[var(--profile-text-subtle)] hover:text-[var(--profile-text)]"}`}
+                aria-label="Use system theme"
+              >
+                Auto
+              </button>
+            </div>
+          </div>
+
           <div className="mb-7 flex items-center gap-[10px]">
             <div className="flex h-[40px] w-[40px] items-center justify-center rounded-[12px] border border-[rgba(244,180,0,0.2)] bg-[#2A2000] font-['Sora'] text-[18px] font-[800] text-[#F4B400]">V</div>
             <div className="font-['Sora'] text-[18px] font-[700] text-[var(--profile-text)]">Vault<span className="text-[#F4B400]">.</span>Notes</div>

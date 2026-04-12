@@ -2,13 +2,37 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import VisibilitySelector from './VisibilitySelector'
 import VisibilityBadge from './VisibilityBadge'
+import { useToast } from '../hooks/useToast'
+import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from '../lib/imageCompression'
 
 export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }) {
+  const { addToast } = useToast()
   const [postContent, setPostContent] = useState('')
   const [postImageFile, setPostImageFile] = useState(null)
   const [visibility, setVisibility] = useState('public')
   const [posting, setPosting] = useState(false)
   const [modalConfig, setModalConfig] = useState({ open: false, title: '', message: '', onConfirm: null })
+
+  const handlePostImageChange = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      setPostImageFile(null)
+      return
+    }
+
+    try {
+      const compressedFile = await prepareImageForUpload(file)
+      setPostImageFile(compressedFile)
+    } catch (err) {
+      if (err?.code === 'IMAGE_TOO_LARGE') {
+        addToast(IMAGE_TOO_LARGE_MESSAGE, 'error')
+      } else {
+        addToast(err?.message || 'Failed to process image.', 'error')
+      }
+      setPostImageFile(null)
+      event.target.value = ''
+    }
+  }
 
   if (!isOpen || !user) return null
 
@@ -147,7 +171,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => setPostImageFile(e.target.files?.[0] || null)}
+                  onChange={handlePostImageChange}
                   className="block w-full text-sm text-[var(--overlay-text-subtle)]"
                 />
                 {postImageFile && (
