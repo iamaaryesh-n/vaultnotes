@@ -393,14 +393,14 @@ export function Notifications() {
   const unreadCount = notifications.filter((n) => !n.is_read).length
 
   return (
-    <div className="min-h-screen bg-[#000000]">
-      <div className="sticky top-[56px] z-40 border-b border-[#1F1F1F] bg-[rgba(0,0,0,0.85)] backdrop-blur-[16px]">
+    <div className="profile-theme min-h-screen bg-[var(--profile-bg)]">
+      <div className="sticky top-[56px] z-40 border-b border-[var(--profile-border)] bg-[color:var(--profile-bg)]/85 backdrop-blur-[16px]">
         <div className="mx-auto max-w-2xl px-4 py-4 sm:px-6">
           <div className="mb-4 flex items-center justify-between">
-            <h1 className="font-['Sora'] text-2xl font-bold text-[#F5F0E8]">Notifications</h1>
+            <h1 className="font-['Sora'] text-2xl font-bold text-[var(--profile-text)]">Notifications</h1>
             <button
               onClick={() => navigate(-1)}
-              className="text-[#A09080] transition-colors hover:text-[#F5F0E8]"
+              className="text-[var(--profile-text-subtle)] transition-colors hover:text-[var(--profile-text)]"
               aria-label="Go back"
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -415,8 +415,8 @@ export function Notifications() {
                 onClick={() => setFilter("all")}
                 className={`rounded-[20px] px-4 py-[7px] text-[13px] font-semibold transition-all ${
                   filter === "all"
-                    ? "bg-[#F4B400] text-[#0D0D0D] shadow-[0_2px_12px_rgba(244,180,0,0.25)]"
-                    : "border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                    ? "bg-[#F4B400] text-[var(--profile-on-accent)] shadow-[0_2px_12px_rgba(244,180,0,0.25)]"
+                    : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
                 }`}
               >
                 All
@@ -425,13 +425,13 @@ export function Notifications() {
                 onClick={() => setFilter("unread")}
                 className={`flex items-center gap-2 rounded-[20px] px-4 py-[7px] text-[13px] font-semibold transition-all ${
                   filter === "unread"
-                    ? "bg-[#F4B400] text-[#0D0D0D] shadow-[0_2px_12px_rgba(244,180,0,0.25)]"
-                    : "border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                    ? "bg-[#F4B400] text-[var(--profile-on-accent)] shadow-[0_2px_12px_rgba(244,180,0,0.25)]"
+                    : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
                 }`}
               >
                 Unread
                 {unreadCount > 0 && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0D0D0D] text-[11px] font-bold text-[#F4B400]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--profile-surface)] text-[11px] font-bold text-[#F4B400]">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -442,7 +442,7 @@ export function Notifications() {
               <button
                 onClick={handleMarkAllAsRead}
                 disabled={markingAsRead}
-                className="rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-semibold text-[#0D0D0D] transition-colors hover:bg-[#FFD24A] disabled:bg-[#5C5248] disabled:text-[#0D0D0D]"
+                className="rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-semibold text-[var(--profile-on-accent)] transition-colors hover:bg-[#FFD24A] disabled:bg-[var(--profile-text-muted)] disabled:text-[var(--profile-on-accent)]"
               >
                 {markingAsRead ? "Marking..." : "Mark all as read"}
               </button>
@@ -455,12 +455,12 @@ export function Notifications() {
         {loading ? (
           <NotificationListSkeleton />
         ) : filteredNotifications.length === 0 ? (
-          <div className="rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-8 text-center">
+          <div className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-8 text-center">
             <div className="mb-3 text-4xl">📭</div>
-            <h3 className="mb-1 text-lg font-semibold text-[#F5F0E8]">
+            <h3 className="mb-1 text-lg font-semibold text-[var(--profile-text)]">
               {filter === "unread" ? "All caught up!" : "No notifications yet"}
             </h3>
-            <p className="text-[#A09080]">
+            <p className="text-[var(--profile-text-subtle)]">
               {filter === "unread" ? "You have read all your notifications." : "You will see activity here."}
             </p>
           </div>
@@ -475,7 +475,7 @@ export function Notifications() {
                   key={notif.id}
                   className={`rounded-[14px] border p-4 transition-all duration-200 ${
                     notif.is_read
-                      ? "border-[#1F1F1F] bg-[#0D0D0D]"
+                      ? "border-[var(--profile-border)] bg-[var(--profile-surface)]"
                       : "border-[rgba(244,180,0,0.35)] bg-[rgba(244,180,0,0.07)]"
                   }`}
                 >
@@ -491,10 +491,10 @@ export function Notifications() {
                             src={notif.actor.avatar_url}
                             alt={notif.actor.username}
                             loading="lazy"
-                            className="h-12 w-12 rounded-full border border-[#2A2A2A] object-cover"
+                            className="h-12 w-12 rounded-full border border-[var(--profile-border-strong)] object-cover"
                           />
                         ) : (
-                          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#2A2A2A] bg-[#2A2000] text-lg font-semibold text-[#F4B400]">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--profile-border-strong)] bg-[var(--chat-accent-soft)] text-lg font-semibold text-[var(--chat-accent)]">
                             {notif.actor?.username?.charAt(0).toUpperCase() || "?"}
                           </div>
                         )}
@@ -503,10 +503,10 @@ export function Notifications() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">
-                            <p className={`text-sm ${notif.is_read ? "text-[#A09080]" : "font-semibold text-[#F5F0E8]"}`}>
+                            <p className={`text-sm ${notif.is_read ? "text-[var(--profile-text-subtle)]" : "font-semibold text-[var(--profile-text)]"}`}>
                               {getNotificationText(notif)}
                             </p>
-                            <p className="mt-1 text-xs text-[#5C5248]">{formatTime(notif.created_at)}</p>
+                            <p className="mt-1 text-xs text-[var(--profile-text-muted)]">{formatTime(notif.created_at)}</p>
                           </div>
                           <div className="flex-shrink-0 text-lg">{getNotificationIcon(notif.type)}</div>
                         </div>
@@ -522,7 +522,7 @@ export function Notifications() {
                         type="button"
                         onClick={() => handleInviteAction(notif, "accept")}
                         disabled={Boolean(actionLoading)}
-                        className="flex-1 rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-semibold text-[#0D0D0D] transition-colors hover:bg-[#FFD24A] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="flex-1 rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-semibold text-[var(--profile-on-accent)] transition-colors hover:bg-[#FFD24A] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {actionLoading === "accept" ? "Accepting..." : "Accept"}
                       </button>
@@ -530,7 +530,7 @@ export function Notifications() {
                         type="button"
                         onClick={() => handleInviteAction(notif, "decline")}
                         disabled={Boolean(actionLoading)}
-                        className="flex-1 rounded-[10px] border border-[#2A2A2A] bg-transparent px-4 py-2 text-sm font-semibold text-[#A09080] transition-colors hover:border-[#F4B400] hover:text-[#F4B400] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="flex-1 rounded-[10px] border border-[var(--profile-border-strong)] bg-transparent px-4 py-2 text-sm font-semibold text-[var(--profile-text-subtle)] transition-colors hover:border-[#F4B400] hover:text-[#F4B400] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {actionLoading === "decline" ? "Declining..." : "Decline"}
                       </button>

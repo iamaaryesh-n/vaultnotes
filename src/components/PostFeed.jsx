@@ -129,7 +129,7 @@ export default function PostFeed({
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-4 text-[#EF4444]"
+          className="mb-6 rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 text-[#EF4444]"
         >
           <p className="font-medium">{error}</p>
         </motion.div>
@@ -139,10 +139,10 @@ export default function PostFeed({
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-12 text-center"
+          className="rounded-[14px] border border-dashed border-[var(--profile-border-strong)] bg-transparent p-12 text-center"
         >
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#141414]">
-            <svg className="h-8 w-8 text-[#5C5248]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--profile-elev)]">
+            <svg className="h-8 w-8 text-[var(--profile-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -151,8 +151,8 @@ export default function PostFeed({
               />
             </svg>
           </div>
-          <p className="mb-1 text-lg font-semibold text-[#A09080]">No posts yet</p>
-          <p className="text-[#5C5248]">Be the first to share something with the community!</p>
+          <p className="mb-1 text-lg font-semibold text-[var(--profile-text-subtle)]">No posts yet</p>
+          <p className="text-[var(--profile-text-muted)]">Be the first to share something with the community!</p>
         </motion.div>
       ) : (
         <div>
@@ -164,7 +164,7 @@ export default function PostFeed({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.1) }}
                 data-post-id={post.id}
-                className="group border-b border-[#1F1F1F] py-4 transition-colors duration-200 hover:bg-[rgba(255,255,255,0.015)] first:border-t first:border-[#1F1F1F]"
+                className="group border-b border-[var(--profile-border)] py-4 transition-colors duration-200 hover:bg-[rgba(255,255,255,0.015)] first:border-t first:border-[var(--profile-border)]"
               >
                 <div
                   onClick={() => onOpenPost(post)}
@@ -205,13 +205,13 @@ export default function PostFeed({
                             navigate(`/profile/${post.profiles.username}`)
                           }
                         }}
-                        className="text-left font-['Sora'] text-[14px] font-bold text-[#F5F0E8] transition-colors hover:text-[#F4B400]"
+                        className="text-left font-['Sora'] text-[14px] font-bold text-[var(--profile-text)] transition-colors hover:text-[#F4B400]"
                       >
                         {post.profiles?.name || post.profiles?.username || "Unknown"}
                       </button>
-                      <span className="text-[12px] text-[#5C5248]">@{post.profiles?.username || "unknown"}</span>
-                      <span className="h-[3px] w-[3px] rounded-full bg-[#5C5248]" />
-                      <span className="text-[12px] text-[#5C5248]">{formatPostTime(post.created_at)}</span>
+                      <span className="text-[12px] text-[var(--profile-text-muted)]">@{post.profiles?.username || "unknown"}</span>
+                      <span className="h-[3px] w-[3px] rounded-full bg-[var(--profile-text-muted)]" />
+                      <span className="text-[12px] text-[var(--profile-text-muted)]">{formatPostTime(post.created_at)}</span>
                       </div>
                     </div>
 
@@ -223,8 +223,8 @@ export default function PostFeed({
                         }}
                         className={`ml-auto flex-shrink-0 rounded-[16px] border px-3 py-[3px] text-[12px] font-semibold transition-all duration-200 ${
                           followedUsers.includes(post.user_id)
-                            ? "border-transparent bg-transparent text-[#5C5248]"
-                            : "border-[#2A2A2A] bg-transparent text-[#A09080] hover:border-[#F4B400] hover:text-[#F4B400]"
+                            ? "border-transparent bg-transparent text-[var(--profile-text-muted)]"
+                            : "border-[var(--profile-border-strong)] bg-transparent text-[var(--profile-text-subtle)] hover:border-[#F4B400] hover:text-[#F4B400]"
                         }`}
                       >
                         {followedUsers.includes(post.user_id) ? "Following" : "Follow"}
@@ -236,7 +236,7 @@ export default function PostFeed({
                 {post.content && (
                   <div
                     onClick={() => onOpenPost(post)}
-                    className="mt-[6px] cursor-pointer break-words whitespace-pre-wrap pl-[51px] text-[14px] leading-[1.6] text-[#F5F0E8]"
+                    className="mt-[6px] cursor-pointer break-words whitespace-pre-wrap pl-[51px] text-[14px] leading-[1.6] text-[var(--profile-text)]"
                   >
                     {post.content}
                   </div>
@@ -252,7 +252,7 @@ export default function PostFeed({
                       alt="Post"
                       width={700}
                       height={400}
-                      className="max-h-[320px] w-full rounded-[14px] border border-[#1F1F1F] object-cover"
+                      className="max-h-[320px] w-full rounded-[14px] border border-[var(--profile-border)] object-cover"
                       loading="lazy"
                     />
                   </div>
@@ -274,8 +274,8 @@ export default function PostFeed({
           {loadingMore && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center py-4">
               <div className="flex gap-1">
-                <div className="h-2 w-2 animate-bounce rounded-full bg-[#5C5248]" style={{ animationDelay: "0ms" }} />
-                <div className="h-2 w-2 animate-bounce rounded-full bg-[#A09080]" style={{ animationDelay: "150ms" }} />
+                <div className="h-2 w-2 animate-bounce rounded-full bg-[var(--profile-text-muted)]" style={{ animationDelay: "0ms" }} />
+                <div className="h-2 w-2 animate-bounce rounded-full bg-[var(--profile-text-subtle)]" style={{ animationDelay: "150ms" }} />
                 <div className="h-2 w-2 animate-bounce rounded-full bg-[#F4B400]" style={{ animationDelay: "300ms" }} />
               </div>
             </motion.div>

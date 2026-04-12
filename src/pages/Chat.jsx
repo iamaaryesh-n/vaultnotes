@@ -310,7 +310,7 @@ export default function Chat() {
         return (
           <mark
             key={`${messageId}-match-${index}`}
-            className={isActiveMessage ? "rounded bg-[#F4B400]/90 px-0.5" : "rounded bg-[#2A2000] px-0.5"}
+            className={isActiveMessage ? "rounded bg-[var(--chat-accent)]/90 px-0.5" : "rounded bg-[var(--chat-accent-soft)] px-0.5"}
           >
             {segment}
           </mark>
@@ -388,7 +388,7 @@ export default function Chat() {
             const cryptoKey = await importKey(keyToUse)
             conversationCryptoKeysRef.current[conversationId] = cryptoKey
             debugLogKey(keyToUse, `Chat-Conversation-${conversationId}-FromDB`)
-            console.log(`[Chat] ✅ Successfully loaded shared key for conversation ${conversationId}`)
+            console.log(`[Chat] [ok] Successfully loaded shared key for conversation ${conversationId}`)
             return cryptoKey
           }
         }
@@ -420,7 +420,7 @@ export default function Chat() {
             console.warn(`[Chat] Failed to store key in database:`, insertError)
           }
         } else {
-          console.log(`[Chat] ✅ Stored shared key in database for conversation ${conversationId}`)
+          console.log(`[Chat] [ok] Stored shared key in database for conversation ${conversationId}`)
         }
       } catch (dbErr) {
         console.warn(`[Chat] Database error storing key:`, dbErr)
@@ -461,7 +461,7 @@ export default function Chat() {
             // Update cache with fresh key from DB
             conversationCryptoKeysRef.current[conversationId] = cryptoKey
             debugLogKey(keyToUse, `Chat-Conversation-${conversationId}-FreshFromDB`)
-            console.log(`[Chat] ✅ Successfully loaded fresh key for conversation ${conversationId}`)
+            console.log(`[Chat] [ok] Successfully loaded fresh key for conversation ${conversationId}`)
             return cryptoKey
           }
         }
@@ -3657,7 +3657,7 @@ export default function Chat() {
     if (!groupId) return false
 
     try {
-      // ✅ Use actual Supabase auth user ID (not contextUser)
+      // Use actual Supabase auth user ID (not contextUser)
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
       
       if (authError || !authUser?.id) {
@@ -4996,21 +4996,19 @@ export default function Chat() {
 
 
   return (
-    <div className="mx-auto flex h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[#F5F0E8]">
-      {!isMobileDetailView && <h1 className="mb-0.5 shrink-0 text-2xl font-bold text-[#F5F0E8] text-[#F5F0E8]">Chat</h1>}
-
+    <div className="chat-theme mx-auto flex h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[var(--chat-text)]">
       {error && (
         <div className="mb-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <div className={`grid h-full min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden rounded-2xl bg-[#000000] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] ${isMobileDetailView ? "" : "lg:grid-cols-[268px,minmax(0,1fr)]"}`}>
-        {!isMobileDetailView && <section className="flex h-full min-h-0 w-full lg:w-[268px] flex-col overflow-hidden rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
+      <div className={`grid h-full min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden rounded-2xl bg-[var(--chat-bg)] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] ${isMobileDetailView ? "" : "lg:grid-cols-[268px,minmax(0,1fr)]"}`}>
+        {!isMobileDetailView && <section className="flex h-full min-h-0 w-full lg:w-[268px] flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
           {/* Mode Toggle */}
-          <div className="border-b border-[#1F1F1F] px-3.5 pt-4 pb-3">
-            <div className="mb-3 font-['Sora'] text-[21px] font-bold tracking-[-0.3px] text-[#F5F0E8]">Chat</div>
-            <div className="flex gap-1 rounded-[10px] bg-[#141414] p-[3px]">
+          <div className="border-b border-[var(--chat-border)] px-3.5 pt-4 pb-3">
+            <div className="mb-3 font-['Sora'] text-[21px] font-bold tracking-[-0.3px] text-[var(--chat-text)]">Chat</div>
+            <div className="flex gap-1 rounded-[10px] bg-[var(--chat-elev)] p-[3px]">
             <button
               onClick={() => {
                 setChatMode("direct")
@@ -5018,13 +5016,13 @@ export default function Chat() {
               }}
               className={`relative flex-1 rounded-[7px] py-[7px] text-center font-['DM_Sans'] text-[12px] font-semibold transition-colors ${
                 chatMode === "direct"
-                  ? "bg-[#F4B400] text-[#0D0D0D]"
-                  : "text-[#5C5248] hover:bg-[#1C1C1C]"
+                  ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                  : "text-[var(--chat-text-muted)] hover:bg-[var(--chat-hover)]"
               }`}
             >
               Direct
               {unreadDirectCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#F4B400] px-1 text-[10px] font-bold leading-none text-[#0D0D0D]">
+                <span className="absolute -top-1.5 -right-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--chat-accent)] px-1 text-[10px] font-bold leading-none text-[var(--chat-surface)]">
                   {unreadDirectCount > 9 ? "9+" : unreadDirectCount}
                 </span>
               )}
@@ -5036,13 +5034,13 @@ export default function Chat() {
               }}
               className={`relative flex-1 rounded-[7px] py-[7px] text-center font-['DM_Sans'] text-[12px] font-semibold transition-colors ${
                 chatMode === "groups"
-                  ? "bg-[#F4B400] text-[#0D0D0D]"
-                  : "text-[#5C5248] hover:bg-[#1C1C1C]"
+                  ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                  : "text-[var(--chat-text-muted)] hover:bg-[var(--chat-hover)]"
               }`}
             >
               Groups
               {unreadGroupCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#F4B400] px-1 text-[10px] font-bold leading-none text-[#0D0D0D]">
+                <span className="absolute -top-1.5 -right-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--chat-accent)] px-1 text-[10px] font-bold leading-none text-[var(--chat-surface)]">
                   {unreadGroupCount > 9 ? "9+" : unreadGroupCount}
                 </span>
               )}
@@ -5053,19 +5051,19 @@ export default function Chat() {
           {/* Direct Chat Sidebar */}
           {chatMode === "direct" && (
             <>
-          <div className="border-b border-[#1F1F1F] px-3 py-2.5">
+          <div className="border-b border-[var(--chat-border)] px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="font-['DM_Sans'] text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5C5248]">
+              <h2 className="font-['DM_Sans'] text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--chat-text-muted)]">
                 {directSidebarView === CHAT_LIST_VIEW.ACTIVE ? "Conversations" : "Archived Chats"}
               </h2>
-              <div className="flex items-center gap-1 rounded-[10px] bg-[#141414] p-[3px]">
+              <div className="flex items-center gap-1 rounded-[10px] bg-[var(--chat-elev)] p-[3px]">
                 <button
                   type="button"
                   onClick={() => setDirectSidebarView(CHAT_LIST_VIEW.ACTIVE)}
                   className={`rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${
                     directSidebarView === CHAT_LIST_VIEW.ACTIVE
-                      ? "bg-[#F4B400] text-[#0D0D0D]"
-                      : "text-[#5C5248] hover:text-[#A09080]"
+                      ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                      : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                   }`}
                 >
                   Chats
@@ -5075,8 +5073,8 @@ export default function Chat() {
                   onClick={() => setDirectSidebarView(CHAT_LIST_VIEW.ARCHIVED)}
                   className={`rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${
                     directSidebarView === CHAT_LIST_VIEW.ARCHIVED
-                      ? "bg-[#F4B400] text-[#0D0D0D]"
-                      : "text-[#5C5248] hover:text-[#A09080]"
+                      ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                      : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                   }`}
                 >
                   Archived ({archivedConversationCount})
@@ -5090,15 +5088,15 @@ export default function Chat() {
                   value={userSearchQuery}
                   onChange={(event) => setUserSearchQuery(event.target.value)}
                   placeholder="Search users by username"
-                  className="h-9 w-full rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-3 font-['DM_Sans'] text-[12px] text-[#F5F0E8] placeholder:text-[#5C5248] outline-none transition focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
+                  className="h-9 w-full rounded-[10px] border border-[var(--chat-border)] bg-[var(--chat-elev)] px-3 font-['DM_Sans'] text-[12px] text-[var(--chat-text)] placeholder:text-[var(--chat-text-muted)] outline-none transition focus:border-[var(--chat-accent)] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
                 />
 
                 {userSearchQuery.trim() && (
-                  <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-lg">
+                  <div className="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-[12px] border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-lg">
                     {userSearchLoading ? (
-                      <p className="px-3 py-3 font-['DM_Sans'] text-sm text-[#A09080]">Searching...</p>
+                      <p className="px-3 py-3 font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">Searching...</p>
                     ) : userSearchResults.length === 0 ? (
-                      <p className="px-3 py-3 font-['DM_Sans'] text-sm text-[#A09080]">No users found.</p>
+                      <p className="px-3 py-3 font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">No users found.</p>
                     ) : (
                       userSearchResults.map((profile) => (
                         (() => {
@@ -5110,7 +5108,7 @@ export default function Chat() {
                           key={profile.id}
                           onClick={() => handleStartConversationWithUser(profile)}
                           disabled={startingConversationUserId === profile.id}
-                          className="flex w-full items-center gap-3 border-b border-[#1F1F1F] px-3 py-2 text-left hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-70"
+                          className="flex w-full items-center gap-3 border-b border-[var(--chat-border)] px-3 py-2 text-left hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-70"
                         >
                           {profile.avatar_url ? (
                             <img
@@ -5119,20 +5117,20 @@ export default function Chat() {
                               className="h-8 w-8 rounded-full object-cover"
                             />
                           ) : (
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2A2000] font-['Sora'] text-xs font-semibold text-[#F4B400]">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-xs font-semibold text-[var(--chat-accent)]">
                               {displayName.charAt(0).toUpperCase()}
                             </div>
                           )}
 
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-['Sora'] text-sm font-medium text-[#F5F0E8]">
+                            <p className="truncate font-['Sora'] text-sm font-medium text-[var(--chat-text)]">
                               {displayName}
                               {shouldShowUsername ? ` (@${profile.username})` : ""}
                             </p>
                           </div>
 
                           {startingConversationUserId === profile.id && (
-                            <span className="font-['DM_Sans'] text-xs text-[#A09080]">Opening...</span>
+                            <span className="font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">Opening...</span>
                           )}
                         </button>
                           )
@@ -5151,7 +5149,7 @@ export default function Chat() {
                 <ChatListSkeleton />
               </div>
             ) : visibleConversations.length === 0 ? (
-              <p className="px-4 py-8 text-center font-['DM_Sans'] text-sm text-[#A09080]">
+              <p className="px-4 py-8 text-center font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">
                 {directSidebarView === CHAT_LIST_VIEW.ARCHIVED
                   ? "No archived conversations."
                   : "No conversations yet."}
@@ -5172,16 +5170,16 @@ export default function Chat() {
                 return (
                   <div
                     key={conversation.id}
-                    className="group relative border-b border-[#1F1F1F]"
+                    className="group relative border-b border-[var(--chat-border)]"
                   >
                     <button
                       onClick={() => navigateToConversation(conversation.id)}
                       className={`w-full rounded-[12px] px-[10px] py-[9px] pr-10 text-left transition-all duration-150 ${
                         isActive
-                          ? "border-l-[3px] border-[#F4B400] bg-[#1C1C1C] pl-[7px]"
+                          ? "border-l-[3px] border-[var(--chat-accent)] bg-[var(--chat-hover)] pl-[7px]"
                           : hasUnread
-                            ? "hover:bg-[#141414]"
-                            : "hover:bg-[#141414]"
+                            ? "hover:bg-[var(--chat-elev)]"
+                            : "hover:bg-[var(--chat-elev)]"
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
@@ -5192,27 +5190,27 @@ export default function Chat() {
                             className="h-9 w-9 rounded-full object-cover"
                           />
                         ) : (
-                          <div className="flex h-[43px] w-[43px] items-center justify-center rounded-full bg-[#2A2000] font-['Sora'] text-[14px] font-bold text-[#F4B400]">
+                          <div className="flex h-[43px] w-[43px] items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-[14px] font-bold text-[var(--chat-accent)]">
                             {displayName.charAt(0).toUpperCase()}
                           </div>
                         )}
 
                         <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
-                            <p className="truncate font-['Sora'] text-[13px] font-semibold text-[#F5F0E8]">{displayName}</p>
+                            <p className="truncate font-['Sora'] text-[13px] font-semibold text-[var(--chat-text)]">{displayName}</p>
                             {showTypingPreview ? (
-                              <p className="mt-1 truncate font-['DM_Sans'] text-[11px] italic text-[#F4B400]">typing...</p>
+                              <p className="mt-1 truncate font-['DM_Sans'] text-[11px] italic text-[var(--chat-accent)]">typing...</p>
                             ) : latestContent ? (
-                              <p className={`mt-[2px] truncate font-['DM_Sans'] text-[11px] ${hasUnread ? "font-medium text-[#A09080]" : "text-[#5C5248]"}`}>
+                              <p className={`mt-[2px] truncate font-['DM_Sans'] text-[11px] ${hasUnread ? "font-medium text-[var(--chat-text-subtle)]" : "text-[var(--chat-text-muted)]"}`}>
                                 {latestContent}
                               </p>
                             ) : null}
                           </div>
 
                           <div className="flex shrink-0 flex-col items-end gap-1">
-                            <p className="font-['DM_Sans'] text-[10px] text-[#5C5248]">{formatConversationListTime(latestTimestamp)}</p>
+                            <p className="font-['DM_Sans'] text-[10px] text-[var(--chat-text-muted)]">{formatConversationListTime(latestTimestamp)}</p>
                             {hasUnread && (
-                              <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#F4B400] px-[5px] text-[10px] font-bold leading-none text-[#0D0D0D]">
+                              <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--chat-accent)] px-[5px] text-[10px] font-bold leading-none text-[var(--chat-surface)]">
                                 {unreadCount > 99 ? "99+" : unreadCount}
                               </span>
                             )}
@@ -5228,7 +5226,7 @@ export default function Chat() {
                         setOpenGroupOptionsId(null)
                         setOpenConversationOptionsId((prev) => (prev === conversation.id ? null : conversation.id))
                       }}
-                      className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#141414] text-[#A09080] shadow-sm transition hover:bg-[#1C1C1C] ${
+                      className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-hover)] ${
                         openConversationOptionsId === conversation.id ? "opacity-100" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                       }`}
                       aria-label="Conversation options"
@@ -5239,13 +5237,13 @@ export default function Chat() {
                     {openConversationOptionsId === conversation.id && (
                       <div
                         data-chat-sidebar-menu="true"
-                        className="absolute right-2 top-11 z-20 min-w-[130px] rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] p-1.5 shadow-lg"
+                        className="absolute right-2 top-11 z-20 min-w-[130px] rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] p-1.5 shadow-lg"
                       >
                         {directSidebarView === CHAT_LIST_VIEW.ARCHIVED ? (
                           <button
                             type="button"
                             onClick={() => handleRestoreConversation(conversation.id)}
-                            className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[#F5F0E8] transition hover:bg-[#141414]"
+                            className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[var(--chat-text)] transition hover:bg-[var(--chat-elev)]"
                           >
                             Restore
                           </button>
@@ -5253,7 +5251,7 @@ export default function Chat() {
                           <button
                             type="button"
                             onClick={() => handleArchiveConversation(conversation.id)}
-                            className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[#F5F0E8] transition hover:bg-[#141414]"
+                            className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[var(--chat-text)] transition hover:bg-[var(--chat-elev)]"
                           >
                             Archive
                           </button>
@@ -5278,15 +5276,15 @@ export default function Chat() {
           {/* Groups Chat Sidebar */}
           {chatMode === "groups" && (
             <>
-              <div className="border-b border-[#1F1F1F] px-3 py-2.5">
+              <div className="border-b border-[var(--chat-border)] px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <h2 className="font-['DM_Sans'] text-[10px] font-semibold uppercase tracking-[0.09em] text-[#5C5248]">
+                  <h2 className="font-['DM_Sans'] text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--chat-text-muted)]">
                     {groupSidebarView === CHAT_LIST_VIEW.ACTIVE ? "Groups" : "Archived Chats"}
                   </h2>
                   <button
                     onClick={() => setShowNewGroupModal(true)}
                     disabled={groupSidebarView === CHAT_LIST_VIEW.ARCHIVED}
-                    className="inline-flex items-center justify-center rounded-full bg-[#F4B400] p-1 text-[#0D0D0D] shadow-[0_4px_18px_rgba(244,180,0,0.3)] transition-colors hover:bg-[#C49000]"
+                    className="inline-flex items-center justify-center rounded-full bg-[var(--chat-accent)] p-1 text-[var(--chat-surface)] shadow-[0_4px_18px_rgba(244,180,0,0.3)] transition-colors hover:bg-[var(--chat-accent-hover)]"
                   >
                     <svg
                       className="w-4 h-4"
@@ -5303,14 +5301,14 @@ export default function Chat() {
                     </svg>
                   </button>
                 </div>
-                <div className="mb-2 flex items-center gap-1 rounded-[10px] bg-[#141414] p-[3px]">
+                <div className="mb-2 flex items-center gap-1 rounded-[10px] bg-[var(--chat-elev)] p-[3px]">
                   <button
                     type="button"
                     onClick={() => setGroupSidebarView(CHAT_LIST_VIEW.ACTIVE)}
                     className={`flex-1 rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${
                       groupSidebarView === CHAT_LIST_VIEW.ACTIVE
-                        ? "bg-[#F4B400] text-[#0D0D0D]"
-                        : "text-[#5C5248] hover:text-[#A09080]"
+                        ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                        : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                     }`}
                   >
                     Groups
@@ -5320,8 +5318,8 @@ export default function Chat() {
                     onClick={() => setGroupSidebarView(CHAT_LIST_VIEW.ARCHIVED)}
                     className={`flex-1 rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${
                       groupSidebarView === CHAT_LIST_VIEW.ARCHIVED
-                        ? "bg-[#F4B400] text-[#0D0D0D]"
-                        : "text-[#5C5248] hover:text-[#A09080]"
+                        ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                        : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                     }`}
                   >
                     Archived ({archivedGroupCount})
@@ -5331,7 +5329,7 @@ export default function Chat() {
                   value={groupListSearchQuery}
                   onChange={(e) => setGroupListSearchQuery(e.target.value)}
                   placeholder={groupSidebarView === CHAT_LIST_VIEW.ARCHIVED ? "Search archived groups..." : "Search groups..."}
-                  className="h-9 w-full rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-3 font-['DM_Sans'] text-[12px] text-[#F5F0E8] placeholder:text-[#5C5248] outline-none transition focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
+                  className="h-9 w-full rounded-[10px] border border-[var(--chat-border)] bg-[var(--chat-elev)] px-3 font-['DM_Sans'] text-[12px] text-[var(--chat-text)] placeholder:text-[var(--chat-text-muted)] outline-none transition focus:border-[var(--chat-accent)] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
                 />
               </div>
 
@@ -5339,11 +5337,11 @@ export default function Chat() {
                 {loadingGroups ? (
                   <div className="space-y-3 p-4">
                     {Array.from({ length: 5 }).map((_, index) => (
-                      <div key={index} className="h-16 animate-pulse rounded-lg bg-[#141414]" />
+                      <div key={index} className="h-16 animate-pulse rounded-lg bg-[var(--chat-elev)]" />
                     ))}
                   </div>
                 ) : visibleGroups.length === 0 ? (
-                  <p className="px-4 py-8 text-center font-['DM_Sans'] text-sm text-[#A09080]">
+                  <p className="px-4 py-8 text-center font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">
                     {groupSidebarView === CHAT_LIST_VIEW.ARCHIVED
                       ? "No archived groups."
                       : "No groups yet. Create one to get started!"}
@@ -5361,27 +5359,27 @@ export default function Chat() {
                         : ""
 
                       return (
-                        <div key={group.id} className="group relative border-b border-[#1F1F1F]">
+                        <div key={group.id} className="group relative border-b border-[var(--chat-border)]">
                           <button
                             onClick={() => handleOpenGroupFromList(group)}
                             className={`w-full rounded-[12px] px-[10px] py-[9px] pr-10 text-left transition-all duration-150 ${
-                              isActive ? "border-l-[3px] border-[#F4B400] bg-[#1C1C1C] pl-[7px]" : "hover:bg-[#141414]"
+                              isActive ? "border-l-[3px] border-[var(--chat-accent)] bg-[var(--chat-hover)] pl-[7px]" : "hover:bg-[var(--chat-elev)]"
                             }`}
                           >
                             <div className="flex items-center gap-2.5">
-                              <div className="flex h-[43px] w-[43px] flex-shrink-0 items-center justify-center rounded-full bg-[#2A2000] font-['Sora'] text-[14px] font-bold text-[#F4B400]">
+                              <div className="flex h-[43px] w-[43px] flex-shrink-0 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-[14px] font-bold text-[var(--chat-accent)]">
                                 {group.name.charAt(0).toUpperCase()}
                               </div>
 
                               <div className="min-w-0 flex-1">
-                                <p className="truncate font-['Sora'] text-[13px] font-semibold text-[#F5F0E8]">{group.name}</p>
-                                <p className="mt-[2px] truncate font-['DM_Sans'] text-[11px] text-[#5C5248]">
+                                <p className="truncate font-['Sora'] text-[13px] font-semibold text-[var(--chat-text)]">{group.name}</p>
+                                <p className="mt-[2px] truncate font-['DM_Sans'] text-[11px] text-[var(--chat-text-muted)]">
                                   {lastMessagePreview}
                                 </p>
                               </div>
 
                               <div className="flex shrink-0 flex-col items-end gap-1">
-                                <p className="font-['DM_Sans'] text-[10px] text-[#5C5248]">{lastMessageTime}</p>
+                                <p className="font-['DM_Sans'] text-[10px] text-[var(--chat-text-muted)]">{lastMessageTime}</p>
                               </div>
                             </div>
                           </button>
@@ -5393,7 +5391,7 @@ export default function Chat() {
                               setOpenConversationOptionsId(null)
                               setOpenGroupOptionsId((prev) => (prev === group.id ? null : group.id))
                             }}
-                            className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#141414] text-[#A09080] shadow-sm transition hover:bg-[#1C1C1C] ${
+                            className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-hover)] ${
                               openGroupOptionsId === group.id ? "opacity-100" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                             }`}
                             aria-label="Group options"
@@ -5404,13 +5402,13 @@ export default function Chat() {
                           {openGroupOptionsId === group.id && (
                             <div
                               data-chat-sidebar-menu="true"
-                              className="absolute right-2 top-11 z-20 min-w-[130px] rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] p-1.5 shadow-lg"
+                              className="absolute right-2 top-11 z-20 min-w-[130px] rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] p-1.5 shadow-lg"
                             >
                               {groupSidebarView === CHAT_LIST_VIEW.ARCHIVED ? (
                                 <button
                                   type="button"
                                   onClick={() => handleRestoreGroup(group.id)}
-                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[#F5F0E8] transition hover:bg-[#141414]"
+                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[var(--chat-text)] transition hover:bg-[var(--chat-elev)]"
                                 >
                                   Restore
                                 </button>
@@ -5418,7 +5416,7 @@ export default function Chat() {
                                 <button
                                   type="button"
                                   onClick={() => handleArchiveGroup(group.id)}
-                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[#F5F0E8] transition hover:bg-[#141414]"
+                                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left font-['DM_Sans'] text-xs font-medium text-[var(--chat-text)] transition hover:bg-[var(--chat-elev)]"
                                 >
                                   Archive
                                 </button>
@@ -5443,17 +5441,17 @@ export default function Chat() {
 
         {/* Direct Chat Window */}
         {chatMode === "direct" && (!isMobileView || isMobileConversationView) && (
-        <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-[#1F1F1F] bg-[#000000] shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
+        <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
           <div className="flex h-full min-h-0 overflow-hidden">
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 border-b border-[#1F1F1F] bg-[#000000] px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="shrink-0 border-b border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-2.5 sm:px-4 sm:py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2">
                 {isMobileConversationView && (
                   <button
                     type="button"
                     onClick={() => navigateToConversation(null)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] transition hover:bg-[#141414]"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)]"
                     aria-label="Back to chat list"
                   >
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -5462,11 +5460,11 @@ export default function Chat() {
                   </button>
                 )}
                 <div>
-                <h2 className="font-['Sora'] text-base font-semibold text-[#F5F0E8]">
+                <h2 className="font-['Sora'] text-base font-semibold text-[var(--chat-text)]">
                   {activeConversation ? getDisplayName(activeConversationPartner) : "Select a conversation"}
                 </h2>
                 {activeConversation && (
-                  <p className="mt-1.5 font-['DM_Sans'] text-xs text-[#A09080]">{activeConversationStatus}</p>
+                  <p className="mt-1.5 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">{activeConversationStatus}</p>
                 )}
                 </div>
               </div>
@@ -5482,7 +5480,7 @@ export default function Chat() {
 
                     setConversationSearchOpen(true)
                   }}
-                  className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] p-2 text-[#A09080] transition hover:bg-[#141414] hover:text-[#F5F0E8]"
+                  className="rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] p-2 text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)] hover:text-[var(--chat-text)]"
                   aria-label="Search messages"
                   title="Search messages"
                 >
@@ -5495,7 +5493,7 @@ export default function Chat() {
             </div>
 
             {conversationSearchOpen && (
-              <div className="mt-3 rounded-xl border border-[#1F1F1F] bg-[#141414] p-2.5">
+              <div className="mt-3 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-elev)] p-2.5">
                 <div className="flex items-center gap-2">
                   <input
                     ref={conversationSearchInputRef}
@@ -5515,14 +5513,14 @@ export default function Chat() {
                       }
                     }}
                     placeholder="Search in conversation"
-                    className="flex-1 rounded-[10px] border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 font-['DM_Sans'] text-sm text-[#F5F0E8] outline-none transition focus:border-[#F4B400]"
+                    className="flex-1 rounded-[10px] border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 font-['DM_Sans'] text-sm text-[var(--chat-text)] outline-none transition focus:border-[var(--chat-accent)]"
                   />
 
                   <button
                     type="button"
                     onClick={goToPreviousSearchMatch}
                     disabled={matchedMessageIds.length === 0}
-                    className="rounded-md border border-[#1F1F1F] bg-[#0D0D0D] px-2 py-1.5 font-['DM_Sans'] text-xs text-[#A09080] transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2 py-1.5 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                     title="Previous result"
                   >
                     ↑
@@ -5532,7 +5530,7 @@ export default function Chat() {
                     type="button"
                     onClick={goToNextSearchMatch}
                     disabled={matchedMessageIds.length === 0}
-                    className="rounded-md border border-[#1F1F1F] bg-[#0D0D0D] px-2 py-1.5 font-['DM_Sans'] text-xs text-[#A09080] transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-md border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2 py-1.5 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                     title="Next result"
                   >
                     ↓
@@ -5541,13 +5539,13 @@ export default function Chat() {
                   <button
                     type="button"
                     onClick={closeConversationSearch}
-                    className="rounded-md border border-[#1F1F1F] bg-[#0D0D0D] px-2 py-1.5 font-['DM_Sans'] text-xs text-[#A09080] transition hover:bg-[#141414]"
+                    className="rounded-md border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2 py-1.5 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)]"
                   >
                     Close
                   </button>
                 </div>
 
-                <p className="mt-2 font-['DM_Sans'] text-xs text-[#A09080]">
+                <p className="mt-2 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">
                   {conversationSearchQuery.trim() && matchedMessageIds.length === 0
                     ? "No messages found"
                     : matchedMessageIds.length > 0
@@ -5558,17 +5556,17 @@ export default function Chat() {
             )}
           </div>
 
-          <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[#000000] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4">
+          <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[var(--chat-bg)] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4">
             {!activeConversation ? (
-              <p className="font-['DM_Sans'] text-sm text-[#A09080]">Select a conversation to start chatting</p>
+              <p className="font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">Select a conversation to start chatting</p>
             ) : loadingMessages ? (
               <div className="space-y-3">
                 {Array.from({ length: 6 }).map((_, index) => (
-                  <div key={index} className="h-10 animate-pulse rounded-lg bg-[#141414]" />
+                  <div key={index} className="h-10 animate-pulse rounded-lg bg-[var(--chat-elev)]" />
                 ))}
               </div>
             ) : messages.length === 0 ? (
-              <p className="font-['DM_Sans'] text-sm text-[#A09080]">No messages yet. Send the first one.</p>
+              <p className="font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">No messages yet. Send the first one.</p>
             ) : (
               messages.map((message) => {
                 const mine = message.sender_id === contextUser?.id
@@ -5604,22 +5602,22 @@ export default function Chat() {
                           className="mr-2 h-8 w-8 shrink-0 self-end rounded-full object-cover"
                         />
                       ) : (
-                        <div className="mr-2 flex h-8 w-8 shrink-0 self-end items-center justify-center rounded-full bg-[#2A2000] font-['Sora'] text-xs font-semibold text-[#F4B400]">
+                        <div className="mr-2 flex h-8 w-8 shrink-0 self-end items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-xs font-semibold text-[var(--chat-accent)]">
                           {getDisplayName(senderProfile).charAt(0).toUpperCase()}
                         </div>
                       )
                     )}
                     <div className={`max-w-[84%] sm:max-w-[75%] md:max-w-[58%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
                       {isForwardedMessage && (
-                        <p className="mb-1 font-['DM_Sans'] text-[10px] font-medium uppercase tracking-wide text-[#5C5248]">
+                        <p className="mb-1 font-['DM_Sans'] text-[10px] font-medium uppercase tracking-wide text-[var(--chat-text-muted)]">
                           Forwarded
                         </p>
                       )}
 
                       {message.reply_to_id && (
-                        <div className="mb-1.5 rounded-[4px] border-l-[3px] border-[#F4B400] bg-[rgba(244,180,0,0.10)] px-2 py-1 font-['DM_Sans'] text-xs italic text-[#A09080]">
+                        <div className="mb-1.5 rounded-[4px] border-l-[3px] border-[var(--chat-accent)] bg-[rgba(244,180,0,0.10)] px-2 py-1 font-['DM_Sans'] text-xs italic text-[var(--chat-text-subtle)]">
                           {!repliedMessage ? (
-                            <span className="italic text-[#5C5248]">Original message unavailable</span>
+                            <span className="italic text-[var(--chat-text-muted)]">Original message unavailable</span>
                           ) : (
                             <button
                               type="button"
@@ -5627,10 +5625,10 @@ export default function Chat() {
                                 const element = document.getElementById(`message-${repliedMessage.id}`)
                                 element?.scrollIntoView({ behavior: "smooth", block: "center" })
                               }}
-                              className="w-full text-left transition hover:text-[#F5F0E8]"
+                              className="w-full text-left transition hover:text-[var(--chat-text)]"
                             >
-                              <p className="font-['Sora'] font-semibold text-[#F5F0E8]">{getDisplayName(profilesById[repliedMessage.sender_id])}</p>
-                              <p className="line-clamp-1 font-['DM_Sans'] italic text-[#A09080]">{repliedMessage.content || "[Image]"}</p>
+                              <p className="font-['Sora'] font-semibold text-[var(--chat-text)]">{getDisplayName(profilesById[repliedMessage.sender_id])}</p>
+                              <p className="line-clamp-1 font-['DM_Sans'] italic text-[var(--chat-text-subtle)]">{repliedMessage.content || "[Image]"}</p>
                             </button>
                           )}
                         </div>
@@ -5640,8 +5638,8 @@ export default function Chat() {
                         className={`relative w-fit cursor-pointer ${
                           isMatchedMessage
                             ? isActiveMatchedMessage
-                              ? "ring-2 ring-[#F4B400]/70 ring-offset-2 ring-offset-[#000000]"
-                              : "ring-1 ring-[#F4B400]/50 ring-offset-1 ring-offset-[#000000]"
+                              ? "ring-2 ring-[var(--chat-accent)]/70 ring-offset-2 ring-offset-[var(--chat-bg)]"
+                              : "ring-1 ring-[var(--chat-accent)]/50 ring-offset-1 ring-offset-[var(--chat-bg)]"
                             : ""
                         }`}
                         onClick={() => {
@@ -5675,7 +5673,7 @@ export default function Chat() {
                               setActiveMessageMenuId(null)
                             }}
                             disabled={isDeletedMessage}
-                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] shadow-sm transition hover:bg-[#141414]"
+                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
                             title="React"
                             aria-label="React to message"
                           >
@@ -5688,7 +5686,7 @@ export default function Chat() {
                               handleReply(message)
                             }}
                             disabled={isDeletedMessage}
-                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] shadow-sm transition hover:bg-[#141414]"
+                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
                             title="Reply"
                             aria-label="Reply to message"
                           >
@@ -5702,7 +5700,7 @@ export default function Chat() {
                                 setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
                                 setActiveReactionPickerMessageId(null)
                               }}
-                              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] shadow-sm transition hover:bg-[#141414]"
+                              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
                               title="More options"
                               aria-label="Open message options"
                             >
@@ -5713,7 +5711,7 @@ export default function Chat() {
 
                         {isMessageMenuOpen && canShowActionTrigger && (
                           <div
-                            className={`absolute z-40 top-full mt-2 ${mine ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[#1F1F1F] bg-[#0D0D0D]/95 p-1.5 text-[#F5F0E8] shadow-2xl backdrop-blur transition-all duration-150`}
+                            className={`absolute z-40 top-full mt-2 ${mine ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)]/95 p-1.5 text-[var(--chat-text)] shadow-2xl backdrop-blur transition-all duration-150`}
                             onClick={(event) => event.stopPropagation()}
                           >
                             <button
@@ -5723,7 +5721,7 @@ export default function Chat() {
                                 setActiveMessageMenuId(null)
                               }}
                               disabled={!canReplyMessage}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <Reply className="h-3.5 w-3.5" />
                               Reply
@@ -5733,7 +5731,7 @@ export default function Chat() {
                               type="button"
                               onClick={() => handleCopyMessage(message)}
                               disabled={!canCopyMessage}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <Copy className="h-3.5 w-3.5" />
                               {isImageMessage && !message.content ? "Copy image link" : "Copy"}
@@ -5746,7 +5744,7 @@ export default function Chat() {
                                   handleStartEditingMessage(message)
                                   setActiveMessageMenuId(null)
                                 }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[#141414]"
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)]"
                               >
                                 <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                   <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -5763,7 +5761,7 @@ export default function Chat() {
                                   openForwardModal(message)
                                   setActiveMessageMenuId(null)
                                 }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[#141414]"
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)]"
                               >
                                 <Forward className="h-3.5 w-3.5" />
                                 Forward
@@ -5777,7 +5775,7 @@ export default function Chat() {
                                 setActiveMessageMenuId(null)
                               }}
                               disabled={!canReactMessage}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <SmilePlus className="h-3.5 w-3.5" />
                               React
@@ -5814,7 +5812,7 @@ export default function Chat() {
                         )}
 
                         {isReactionPickerOpen && (
-                          <div className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[#2A2A2A] bg-[#141414] px-2 py-1 shadow-md`}>
+                          <div className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2 py-1 shadow-md`}>
                             {REACTION_EMOJIS.map((emoji) => (
                               <button
                                 key={emoji}
@@ -5823,7 +5821,7 @@ export default function Chat() {
                                   event.stopPropagation()
                                   handleReactionSelect(message.id, emoji)
                                 }}
-                                className="rounded-full p-1 text-sm transition hover:bg-[#1C1C1C]"
+                                className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-hover)]"
                               >
                                 {emoji}
                               </button>
@@ -5832,11 +5830,11 @@ export default function Chat() {
                         )}
 
                         {isDeletedMessage ? (
-                          <div className="w-fit rounded-2xl bg-[#141414] px-2.5 py-1.5 font-['DM_Sans'] text-[13px] italic text-[#A09080]">
+                          <div className="w-fit rounded-2xl bg-[var(--chat-elev)] px-2.5 py-1.5 font-['DM_Sans'] text-[13px] italic text-[var(--chat-text-subtle)]">
                             This message was unsent
                           </div>
                         ) : isImageMessage ? (
-                          <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D]">
+                          <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)]">
                             <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
                               <button
                                 type="button"
@@ -5868,7 +5866,7 @@ export default function Chat() {
                               loading="lazy"
                             />
                             {message.content && (
-                              <p className={`border-t border-[#1F1F1F] px-2.5 py-2 font-['DM_Sans'] text-[13px] ${mine ? "text-[#0D0D0D]" : "text-[#F5F0E8]"}`}>
+                              <p className={`border-t border-[var(--chat-border)] px-2.5 py-2 font-['DM_Sans'] text-[13px] ${mine ? "text-[var(--chat-surface)]" : "text-[var(--chat-text)]"}`}>
                                 {renderHighlightedMessageText(message.content, message.id)}
                               </p>
                             )}
@@ -5876,7 +5874,7 @@ export default function Chat() {
                         ) : (
                           <div
                             className={`w-fit max-w-sm md:max-w-xs px-[13px] py-[9px] font-['DM_Sans'] text-[13px] leading-[1.55] ${
-                              mine ? "rounded-[16px_16px_4px_16px] bg-[#F4B400] text-[#0D0D0D]" : "rounded-[16px_16px_16px_4px] bg-[#1C1C1C] text-[#F5F0E8]"
+                              mine ? "rounded-[16px_16px_4px_16px] bg-[var(--chat-accent)] text-[var(--chat-surface)]" : "rounded-[16px_16px_16px_4px] bg-[var(--chat-hover)] text-[var(--chat-text)]"
                             }`}
                           >
                             <p className="whitespace-pre-wrap break-words">
@@ -5895,8 +5893,8 @@ export default function Chat() {
                               onClick={() => setReactionModalMessageId(message.id)}
                               className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${
                                 item.reactedByCurrentUser
-                                  ? "border-[#2A2A2A] bg-[#141414] text-[#F5F0E8]"
-                                  : "border-[#2A2A2A] bg-[#141414] text-[#A09080]"
+                                  ? "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text)]"
+                                  : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
                               }`}
                             >
                               <span>{item.emoji}</span>
@@ -5906,16 +5904,14 @@ export default function Chat() {
                         </div>
                       )}
 
-                      <p className="mt-1 flex items-center gap-1 font-['DM_Sans'] text-[10px] text-[#5C5248]">
+                      <p className="mt-1 flex items-center gap-1 font-['DM_Sans'] text-[10px] text-[var(--chat-text-muted)]">
                         <span>
                           {formatTime(message.created_at)}
-                          {message.edited_at && " � edited"}
+                          {message.edited_at && " (edited)"}
                         </span>
                         {mine && !isDeletedMessage && messageTickState && (
                           <span
-                            className={`inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] ${
-                              messageTickState === "read" ? "text-[#0D0D0D]" : "text-[#5C5248]"
-                            }`}
+                            className="inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] text-[var(--chat-on-accent)]"
                             title={
                               messageTickState === "read"
                                 ? "Read"
@@ -5931,7 +5927,7 @@ export default function Chat() {
                                   : "Sent"
                             }
                           >
-                            {messageTickState === "sent" ? "✓" : "✓✓"}
+                            {messageTickState === "sent" ? "\u2713" : "\u2713\u2713"}
                           </span>
                         )}
                       </p>
@@ -5943,9 +5939,9 @@ export default function Chat() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="sticky bottom-0 z-10 shrink-0 border-t border-[#1F1F1F] bg-[#000000] px-3 py-[10px] pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] sm:px-3">
+          <div className="sticky bottom-0 z-10 shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-[10px] pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] sm:px-3">
             {selectedImageFile && selectedImageComposerUrl && (
-              <div className="mb-2 rounded-xl border border-[#1F1F1F] bg-[#141414] p-2.5">
+              <div className="mb-2 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-elev)] p-2.5">
                 <div className="mb-2 flex items-start gap-2">
                   <img
                     src={selectedImageComposerUrl}
@@ -5953,8 +5949,8 @@ export default function Chat() {
                     className="h-20 w-20 rounded-lg object-cover"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="font-['DM_Sans'] text-[11px] font-semibold text-[#A09080]">Image preview</p>
-                    <p className="mt-0.5 truncate font-['DM_Sans'] text-[11px] text-[#5C5248]">{selectedImageFile.name}</p>
+                    <p className="font-['DM_Sans'] text-[11px] font-semibold text-[var(--chat-text-subtle)]">Image preview</p>
+                    <p className="mt-0.5 truncate font-['DM_Sans'] text-[11px] text-[var(--chat-text-muted)]">{selectedImageFile.name}</p>
                     <input
                       ref={imageCaptionInputRef}
                       value={imageCaption}
@@ -5966,13 +5962,13 @@ export default function Chat() {
                         }
                       }}
                       placeholder="Add a caption..."
-                      className="mt-2 w-full rounded-[10px] border border-[#2A2A2A] bg-[#0D0D0D] px-3 py-2 font-['DM_Sans'] text-sm text-[#F5F0E8] outline-none transition focus:border-[#F4B400]"
+                      className="mt-2 w-full rounded-[10px] border border-[var(--chat-border-strong)] bg-[var(--chat-surface)] px-3 py-2 font-['DM_Sans'] text-sm text-[var(--chat-text)] outline-none transition focus:border-[var(--chat-accent)]"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={clearSelectedImageComposer}
-                    className="rounded-md p-1 text-[#A09080] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[#F4B400]"
+                    className="rounded-md p-1 text-[var(--chat-text-subtle)] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[var(--chat-accent)]"
                     aria-label="Remove selected image"
                   >
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -5985,7 +5981,7 @@ export default function Chat() {
                     type="button"
                     onClick={handleSendImageMessage}
                     disabled={uploadingImage || !activeConversation}
-                    className="rounded-lg bg-[#F4B400] px-3 py-1.5 font-['DM_Sans'] text-xs font-semibold text-[#0D0D0D] transition hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg bg-[var(--chat-accent)] px-3 py-1.5 font-['DM_Sans'] text-xs font-semibold text-[var(--chat-surface)] transition hover:bg-[var(--chat-accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {uploadingImage ? "Sending..." : "Send image"}
                   </button>
@@ -5994,10 +5990,10 @@ export default function Chat() {
             )}
 
             {editingMessage && (
-              <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[#2A2A2A] bg-[#2A2000] px-2.5 py-2">
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)] px-2.5 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="font-['DM_Sans'] text-[11px] font-semibold text-[#F4B400]">Editing message</p>
-                  <p className="truncate font-['DM_Sans'] text-xs text-[#A09080]">{editingMessage.content || "[Message]"}</p>
+                  <p className="font-['DM_Sans'] text-[11px] font-semibold text-[var(--chat-accent)]">Editing message</p>
+                  <p className="truncate font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">{editingMessage.content || "[Message]"}</p>
                 </div>
                 <button
                   type="button"
@@ -6008,7 +6004,7 @@ export default function Chat() {
                       inputRef.current?.focus()
                     })
                   }}
-                  className="shrink-0 rounded-md p-1 text-[#F4B400] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[#C49000]"
+                  className="shrink-0 rounded-md p-1 text-[var(--chat-accent)] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[var(--chat-accent-hover)]"
                   aria-label="Cancel editing"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -6018,15 +6014,15 @@ export default function Chat() {
               </div>
             )}
             {replyToMessage && (
-              <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[#2A2A2A] bg-[#141414] px-2.5 py-2">
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2.5 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="font-['DM_Sans'] text-[11px] font-semibold text-[#A09080]">Replying to {getDisplayName(profilesById[replyToMessage.sender_id])}</p>
-                  <p className="truncate font-['DM_Sans'] text-xs text-[#F5F0E8]">{replyToMessage.content || "[Image]"}</p>
+                  <p className="font-['DM_Sans'] text-[11px] font-semibold text-[var(--chat-text-subtle)]">Replying to {getDisplayName(profilesById[replyToMessage.sender_id])}</p>
+                  <p className="truncate font-['DM_Sans'] text-xs text-[var(--chat-text)]">{replyToMessage.content || "[Image]"}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setReplyToMessage(null)}
-                  className="shrink-0 rounded-md p-1 text-[#A09080] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[#F4B400]"
+                  className="shrink-0 rounded-md p-1 text-[var(--chat-text-subtle)] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[var(--chat-accent)]"
                   aria-label="Cancel reply"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -6036,12 +6032,12 @@ export default function Chat() {
               </div>
             )}
             {activeConversation && isPartnerTyping && (
-              <div className="mb-1.5 flex items-center gap-1 font-['DM_Sans'] text-[11px] italic text-[#A09080]">
+              <div className="mb-1.5 flex items-center gap-1 font-['DM_Sans'] text-[11px] italic text-[var(--chat-text-subtle)]">
                 <span>Typing</span>
                 <span className="inline-flex gap-0.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#F4B400] [animation-delay:0ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#F4B400] [animation-delay:150ms]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#F4B400] [animation-delay:300ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--chat-accent)] [animation-delay:0ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--chat-accent)] [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--chat-accent)] [animation-delay:300ms]" />
                 </span>
               </div>
             )}
@@ -6057,7 +6053,7 @@ export default function Chat() {
                 type="button"
                 onClick={handleImageButtonClick}
                 disabled={!activeConversation || uploadingImage || sending || Boolean(selectedImageFile)}
-                className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-[24px] border border-[#1F1F1F] bg-[#141414] text-[#A09080] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[#F4B400] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-[44px] w-[44px] items-center justify-center rounded-[24px] border border-[var(--chat-border)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[var(--chat-accent)] disabled:cursor-not-allowed disabled:opacity-60"
                 aria-label="Upload image"
                 title="Upload image"
               >
@@ -6096,12 +6092,12 @@ export default function Chat() {
                       : "Type a message..."
                     : "Select a conversation first"
                 }
-                className="h-[44px] flex-1 rounded-[24px] border border-[#1F1F1F] bg-[#141414] px-4 font-['DM_Sans'] text-sm text-[#F5F0E8] outline-none transition focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
+                className="h-[44px] flex-1 rounded-[24px] border border-[var(--chat-border)] bg-[var(--chat-elev)] px-4 font-['DM_Sans'] text-sm text-[var(--chat-text)] outline-none transition focus:border-[var(--chat-accent)] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
               />
               <button
                 onClick={handleSendMessage}
                 disabled={!activeConversation || sending || uploadingImage || !draft.trim() || Boolean(selectedImageFile)}
-                className="h-[42px] w-[42px] rounded-full bg-[#F4B400] font-['DM_Sans'] text-xs font-semibold text-[#0D0D0D] transition hover:bg-[#C49000] disabled:cursor-not-allowed disabled:bg-[#2A2A2A] disabled:text-[#5C5248]"
+                className="h-[42px] w-[42px] rounded-full bg-[var(--chat-accent)] font-['DM_Sans'] text-xs font-semibold text-[var(--chat-surface)] transition hover:bg-[var(--chat-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--chat-border-strong)] disabled:text-[var(--chat-text-muted)]"
               >
                 {sending ? "Sending..." : "Send"}
               </button>
@@ -6114,13 +6110,13 @@ export default function Chat() {
 
         {/* Group Chat Window */}
         {chatMode === "groups" && (!isMobileView || isMobileGroupDetailView) && (
-        <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
+        <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
           <div className="flex h-full min-h-0 overflow-hidden">
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           {activeGroupId ? (
             <>
               {/* Header */}
-              <div className="shrink-0 border-b border-[#1F1F1F] px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="shrink-0 border-b border-[var(--chat-border)] px-3 py-2.5 sm:px-4 sm:py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     {isMobileGroupDetailView && (
@@ -6130,7 +6126,7 @@ export default function Chat() {
                           setChatMode("groups")
                           navigate("/chat?tab=groups")
                         }}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] transition hover:bg-[#141414]"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)]"
                         aria-label="Back to groups list"
                       >
                         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -6140,10 +6136,10 @@ export default function Chat() {
                     )}
 
                     <div>
-                      <h2 className="text-base font-semibold text-[#F5F0E8]">
+                      <h2 className="text-base font-semibold text-[var(--chat-text)]">
                         {groups.find((g) => g.id === activeGroupId)?.name || "Group Chat"}
                       </h2>
-                      <p className="mt-1 text-xs text-[#A09080]">
+                      <p className="mt-1 text-xs text-[var(--chat-text-subtle)]">
                         {groupMembers.length} {groupMembers.length === 1 ? "member" : "members"}
                       </p>
                     </div>
@@ -6152,16 +6148,16 @@ export default function Chat() {
                   <div className="relative">
                     <button
                       onClick={() => setShowMembersDropdown(!showMembersDropdown)}
-                      className="px-3 py-2 text-sm font-medium text-[#F5F0E8] hover:bg-[#141414] rounded-lg transition-colors"
+                      className="px-3 py-2 text-sm font-medium text-[var(--chat-text)] hover:bg-[var(--chat-elev)] rounded-lg transition-colors"
                     >
                       Members
                     </button>
 
                     {showMembersDropdown && (
-                      <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] shadow-lg flex flex-col max-h-96">
+                      <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-lg flex flex-col max-h-96">
                         {/* Current Members */}
-                        <div className="border-b border-[#1F1F1F] px-3 py-2">
-                          <p className="text-xs font-semibold text-[#A09080] uppercase tracking-wide">Members</p>
+                        <div className="border-b border-[var(--chat-border)] px-3 py-2">
+                          <p className="text-xs font-semibold text-[var(--chat-text-subtle)] uppercase tracking-wide">Members</p>
                         </div>
                         <div className="min-h-0 flex-1 overflow-y-auto">
                           {groupMembers.map((member) => {
@@ -6170,7 +6166,7 @@ export default function Chat() {
                             return (
                               <div
                                 key={member.user_id}
-                                className="flex items-center gap-2 px-3 py-2.5 border-b border-[#1F1F1F] last:border-b-0 hover:bg-[#141414] transition-colors"
+                                className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--chat-border)] last:border-b-0 hover:bg-[var(--chat-elev)] transition-colors"
                               >
                                 {member.profiles?.avatar_url ? (
                                   <img
@@ -6179,18 +6175,18 @@ export default function Chat() {
                                     className="h-8 w-8 rounded-full object-cover flex-shrink-0"
                                   />
                                 ) : (
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#141414] text-xs font-semibold text-[#A09080] flex-shrink-0 bg-gradient-to-br from-[#2A2000] to-[#1C1C1C]">
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--chat-elev)] text-xs font-semibold text-[var(--chat-text-subtle)] flex-shrink-0 bg-gradient-to-br from-[var(--chat-accent-soft)] to-[var(--chat-hover)]">
                                     {(member.profiles?.name || member.profiles?.username || "?").charAt(0).toUpperCase()}
                                   </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium text-[#F5F0E8]">
+                                  <p className="truncate text-sm font-medium text-[var(--chat-text)]">
                                     {member.profiles?.name || member.profiles?.username}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                   {member.role === "admin" && (
-                                    <span className="text-[9px] font-bold text-[#F4B400] bg-[#2A2000] px-2 py-0.5 rounded whitespace-nowrap">
+                                    <span className="text-[9px] font-bold text-[var(--chat-accent)] bg-[var(--chat-accent-soft)] px-2 py-0.5 rounded whitespace-nowrap">
                                       Admin
                                     </span>
                                   )}
@@ -6199,7 +6195,7 @@ export default function Chat() {
                                       {member.role === 'member' && (
                                         <button
                                           onClick={() => handleMakeMemberAdmin(member.user_id)}
-                                          className="text-[10px] font-medium text-[#F5F0E8] hover:bg-[#2A2A2A] px-1.5 py-0.5 rounded transition-colors"
+                                          className="text-[10px] font-medium text-[var(--chat-text)] hover:bg-[var(--chat-border-strong)] px-1.5 py-0.5 rounded transition-colors"
                                           title="Make admin"
                                         >
                                           Make Admin
@@ -6221,14 +6217,14 @@ export default function Chat() {
                         </div>
 
                         {/* Add People Section */}
-                        <div className="border-t border-[#1F1F1F] px-3 py-2">
-                          <p className="text-xs font-semibold text-[#A09080] uppercase tracking-wide mb-2">Add People</p>
+                        <div className="border-t border-[var(--chat-border)] px-3 py-2">
+                          <p className="text-xs font-semibold text-[var(--chat-text-subtle)] uppercase tracking-wide mb-2">Add People</p>
                           <input
                             type="text"
                             value={memberSearchQuery}
                             onChange={(e) => setMemberSearchQuery(e.target.value)}
                             placeholder="Search by username..."
-                            className="w-full px-2 py-1.5 text-sm border border-[#1F1F1F] rounded bg-[#141414] text-[#F5F0E8] outline-none transition focus:border-[#F4B400] focus:bg-[#0D0D0D]"
+                            className="w-full px-2 py-1.5 text-sm border border-[var(--chat-border)] rounded bg-[var(--chat-elev)] text-[var(--chat-text)] outline-none transition focus:border-[var(--chat-accent)] focus:bg-[var(--chat-surface)]"
                           />
                           {memberSearchQuery.trim() && (
                             <div className="mt-2 max-h-32 overflow-y-auto space-y-0.5">
@@ -6241,7 +6237,7 @@ export default function Chat() {
                                       setMemberSearchQuery('')
                                       setMemberSearchResults([])
                                     }}
-                                    className="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm text-[#F5F0E8] hover:bg-[#141414] rounded transition-colors"
+                                    className="w-full text-left flex items-center gap-2 px-2 py-1.5 text-sm text-[var(--chat-text)] hover:bg-[var(--chat-elev)] rounded transition-colors"
                                   >
                                     {user.avatar_url ? (
                                       <img
@@ -6250,7 +6246,7 @@ export default function Chat() {
                                         className="h-6 w-6 rounded-full object-cover flex-shrink-0"
                                       />
                                     ) : (
-                                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#141414] text-[9px] font-semibold text-[#A09080] flex-shrink-0">
+                                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--chat-elev)] text-[9px] font-semibold text-[var(--chat-text-subtle)] flex-shrink-0">
                                         {(user.name || user.username || "?").charAt(0).toUpperCase()}
                                       </div>
                                     )}
@@ -6258,7 +6254,7 @@ export default function Chat() {
                                   </button>
                                 ))
                               ) : (
-                                <p className="text-xs text-[#A09080] text-center py-2">No users found</p>
+                                <p className="text-xs text-[var(--chat-text-subtle)] text-center py-2">No users found</p>
                               )}
                             </div>
                           )}
@@ -6280,11 +6276,11 @@ export default function Chat() {
               >
                 {loadingGroupMessages ? (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-[#A09080]">Loading messages...</p>
+                    <p className="text-[var(--chat-text-subtle)]">Loading messages...</p>
                   </div>
                 ) : groupMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-full">
-                    <p className="text-[#A09080]">No messages yet. Start the conversation!</p>
+                    <p className="text-[var(--chat-text-subtle)]">No messages yet. Start the conversation!</p>
                   </div>
                 ) : (
                   groupMessages.map((message) => {
@@ -6297,7 +6293,7 @@ export default function Chat() {
                     ).length
                     const totalMembers = Math.max(groupMembers.length - 1, 0)
                     const readCount = Math.min(seenCount, totalMembers)
-                    const groupTickMarks = totalMembers > 0 ? "✓✓" : "✓"
+                    const groupTickMarks = totalMembers > 0 ? "\u2713\u2713" : "\u2713"
 
                     if (isMine) {
                     }
@@ -6336,7 +6332,7 @@ export default function Chat() {
                                 className="h-6 w-6 rounded-full object-cover flex-shrink-0 mt-5"
                               />
                             ) : (
-                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#141414] text-[10px] font-semibold text-[#A09080] flex-shrink-0 mt-5">
+                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--chat-elev)] text-[10px] font-semibold text-[var(--chat-text-subtle)] flex-shrink-0 mt-5">
                                 {(sender?.name || sender?.username || "?").charAt(0).toUpperCase()}
                               </div>
                             )}
@@ -6347,25 +6343,25 @@ export default function Chat() {
                           className={`relative flex min-w-0 max-w-[82%] sm:max-w-[70%] flex-col ${isOwn ? "items-end" : "items-start"}`}
                         >
                           {!isOwn && (
-                            <p className="text-xs font-semibold text-[#A09080] mb-1">
+                            <p className="text-xs font-semibold text-[var(--chat-text-subtle)] mb-1">
                               {sender?.name || sender?.username || "Unknown"}
                             </p>
                           )}
 
                           {/* Reply preview */}
                           {message.reply_to_id && (
-                            <div className="mb-1.5 border-l-2 border-[#2A2A2A] border-[#2A2A2A] bg-[#141414] px-2 py-1 text-xs text-[#A09080]">
+                            <div className="mb-1.5 border-l-2 border-[var(--chat-border-strong)] border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2 py-1 text-xs text-[var(--chat-text-subtle)]">
                               {repliedTo ? (
                                 <>
-                                  <p className="font-semibold text-[#F5F0E8]">
+                                  <p className="font-semibold text-[var(--chat-text)]">
                                     {repliedTo.senderProfile?.name || repliedTo.senderProfile?.username || "Unknown"}
                                   </p>
-                                  <p className="line-clamp-1 italic text-[#A09080]">{repliedTo.content || "[Image]"}</p>
+                                  <p className="line-clamp-1 italic text-[var(--chat-text-subtle)]">{repliedTo.content || "[Image]"}</p>
                                 </>
                               ) : (
                                 <>
-                                  <p className="font-semibold text-[#F5F0E8]">Reply</p>
-                                  <p className="line-clamp-1 italic text-[#5C5248]">Original message unavailable</p>
+                                  <p className="font-semibold text-[var(--chat-text)]">Reply</p>
+                                  <p className="line-clamp-1 italic text-[var(--chat-text-muted)]">Original message unavailable</p>
                                 </>
                               )}
                             </div>
@@ -6404,7 +6400,7 @@ export default function Chat() {
                                   setActiveGroupMessageMenuId(null)
                                 }}
                                 disabled={!canReactMessage}
-                                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] shadow-sm transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                                 title="React"
                                 aria-label="React to message"
                               >
@@ -6419,7 +6415,7 @@ export default function Chat() {
                                   setActiveGroupMessageMenuId(null)
                                 }}
                                 disabled={!canReplyMessage}
-                                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] shadow-sm transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                                className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                                 title="Reply"
                                 aria-label="Reply to message"
                               >
@@ -6433,7 +6429,7 @@ export default function Chat() {
                                     setActiveGroupMessageMenuId((prev) => (prev === message.id ? null : message.id))
                                     setActiveGroupEmojiPickerMessageId(null)
                                   }}
-                                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#0D0D0D] text-[#A09080] shadow-sm transition hover:bg-[#141414]"
+                                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
                                   title="More options"
                                   aria-label="Open message options"
                                 >
@@ -6444,7 +6440,7 @@ export default function Chat() {
 
                             {isMessageMenuOpen && canShowActionTrigger && (
                               <div
-                                className={`absolute z-40 top-full mt-2 ${isOwn ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[#1F1F1F] bg-[#0D0D0D]/95 p-1.5 text-[#F5F0E8] shadow-2xl backdrop-blur transition-all duration-150`}
+                                className={`absolute z-40 top-full mt-2 ${isOwn ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)]/95 p-1.5 text-[var(--chat-text)] shadow-2xl backdrop-blur transition-all duration-150`}
                                 onClick={(event) => event.stopPropagation()}
                               >
                                 <button
@@ -6454,7 +6450,7 @@ export default function Chat() {
                                     setActiveGroupMessageMenuId(null)
                                   }}
                                   disabled={!canReplyMessage}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <Reply className="h-3.5 w-3.5" />
                                   Reply
@@ -6467,7 +6463,7 @@ export default function Chat() {
                                     setActiveGroupMessageMenuId(null)
                                   }}
                                   disabled={!canCopyMessage}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <Copy className="h-3.5 w-3.5" />
                                   {isImage && !message.content ? "Copy image link" : "Copy"}
@@ -6480,7 +6476,7 @@ export default function Chat() {
                                     setActiveGroupMessageMenuId(null)
                                   }}
                                   disabled={!canForwardMessage}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <Forward className="h-3.5 w-3.5" />
                                   Forward
@@ -6493,7 +6489,7 @@ export default function Chat() {
                                     setActiveGroupMessageMenuId(null)
                                   }}
                                   disabled={!canReactMessage}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-50"
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                   <SmilePlus className="h-3.5 w-3.5" />
                                   React
@@ -6519,7 +6515,7 @@ export default function Chat() {
                                     setGroupMessageInfoModalId(message.id)
                                     setActiveGroupMessageMenuId(null)
                                   }}
-                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[#141414]"
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-[var(--chat-elev)]"
                                 >
                                   <Info className="h-3.5 w-3.5" />
                                   Message info
@@ -6528,7 +6524,7 @@ export default function Chat() {
                             )}
 
                             {isReactionPickerOpen && (
-                              <div className={`absolute z-20 ${isOwn ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[#1F1F1F] bg-[#0D0D0D] px-2 py-1 shadow-md`}>
+                              <div className={`absolute z-20 ${isOwn ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2 py-1 shadow-md`}>
                                 {REACTION_EMOJIS.map((emoji) => (
                                   <button
                                     key={emoji}
@@ -6538,7 +6534,7 @@ export default function Chat() {
                                       handleAddGroupReaction(message.id, emoji)
                                       setActiveGroupEmojiPickerMessageId(null)
                                     }}
-                                    className="rounded-full p-1 text-sm transition hover:bg-[#141414]"
+                                    className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-elev)]"
                                     title={emoji}
                                   >
                                     {emoji}
@@ -6549,11 +6545,11 @@ export default function Chat() {
 
                             {/* Message bubble or deleted state */}
                             {isDeleted ? (
-                              <div className="rounded-lg px-3 py-2 text-sm text-[#5C5248] italic">
+                              <div className="rounded-lg px-3 py-2 text-sm text-[var(--chat-text-muted)] italic">
                                 This message was deleted
                               </div>
                             ) : isImage && message.storage_path ? (
-                              <div className="relative w-full max-w-full cursor-pointer overflow-hidden rounded-2xl bg-[#141414] shadow-sm">
+                              <div className="relative w-full max-w-full cursor-pointer overflow-hidden rounded-2xl bg-[var(--chat-elev)] shadow-sm">
                                 <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
                                   <button
                                     type="button"
@@ -6573,7 +6569,7 @@ export default function Chat() {
                                   onClick={() => setDisplayGroupImagePreviewUrl(message.storage_path)}
                                 />
                                 {message.caption && (
-                                  <p className="bg-[#141414] px-2 py-1.5 text-xs text-[#F5F0E8]">
+                                  <p className="bg-[var(--chat-elev)] px-2 py-1.5 text-xs text-[var(--chat-text)]">
                                     {message.caption}
                                   </p>
                                 )}
@@ -6582,8 +6578,8 @@ export default function Chat() {
                               <div
                                 className={`relative w-full rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
                                   isOwn
-                                    ? "bg-[#F4B400] text-[#0D0D0D]"
-                                    : "bg-[#141414] text-[#F5F0E8]"
+                                    ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                                    : "bg-[var(--chat-elev)] text-[var(--chat-text)]"
                                 }`}
                               >
                                 <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
@@ -6599,20 +6595,20 @@ export default function Chat() {
                                   key={emoji}
                                   onClick={() => handleAddGroupReaction(message.id, emoji)}
                                   type="button"
-                                  className="inline-flex items-center gap-1 rounded-full border border-[#1F1F1F] bg-[#0D0D0D] px-2 py-1 text-xs text-[#F5F0E8] hover:bg-[#141414] transition whitespace-nowrap"
+                                  className="inline-flex items-center gap-1 rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2 py-1 text-xs text-[var(--chat-text)] hover:bg-[var(--chat-elev)] transition whitespace-nowrap"
                                   title={`${count} ${count === 1 ? 'reaction' : 'reactions'}`}
                                 >
                                   <span className="text-sm">{emoji}</span>
-                                  <span className="text-[#A09080] font-medium">{count}</span>
+                                  <span className="text-[var(--chat-text-subtle)] font-medium">{count}</span>
                                 </button>
                               ))}
                             </div>
                           )}
 
-                          <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[#A09080]">
+                          <div className="mt-1.5 flex items-center gap-1 text-[10px] text-[var(--chat-text-subtle)]">
                             <span>
                               {dayjs(message.created_at).format("HH:mm")}
-                              {message.edited_at && " � edited"}
+                              {message.edited_at && " (edited)"}
                             </span>
                             {isOwn && (
                               <span
@@ -6621,7 +6617,7 @@ export default function Chat() {
                               >
                                 <span className="font-semibold tracking-[-0.08em]">{groupTickMarks}</span>
                                 {readCount > 0 && (
-                                  <span className="rounded-full bg-[#2A2A2A] px-1.5 py-0.5 text-[10px] font-medium text-[#F5F0E8]">
+                                  <span className="rounded-full bg-[var(--chat-border-strong)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--chat-text)]">
                                     {readCount}
                                   </span>
                                 )}
@@ -6647,7 +6643,7 @@ export default function Chat() {
                         {typingProfiles.slice(0, 3).map((p, i) => (
                           <div key={i} style={{
                             width: 26, height: 26, borderRadius: '50%',
-                            background: '#2A1F00', color: '#F4B400',
+                            background: '#2A1F00', color: 'var(--chat-accent)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: 10, fontWeight: 700, fontFamily: 'Sora, sans-serif',
                             marginLeft: i > 0 ? -8 : 0,
@@ -6660,18 +6656,18 @@ export default function Chat() {
                       </div>
                       <div style={{
                         display: 'flex', gap: 4, alignItems: 'center',
-                        background: '#1C1C1C', borderRadius: '16px 16px 16px 4px',
+                        background: 'var(--chat-hover)', borderRadius: '16px 16px 16px 4px',
                         padding: '10px 14px'
                       }}>
                         {[0, 150, 300].map((delay, i) => (
                           <div key={i} style={{
                             width: 6, height: 6, borderRadius: '50%',
-                            background: '#F4B400',
+                            background: 'var(--chat-accent)',
                             animation: `groupTypingBounce 1.2s ease-in-out ${delay}ms infinite`
                           }} />
                         ))}
                       </div>
-                      <span style={{ fontSize: 10, color: '#5C5248', fontStyle: 'italic' }}>
+                      <span style={{ fontSize: 10, color: 'var(--chat-text-muted)', fontStyle: 'italic' }}>
                         {typingLabel}
                       </span>
                     </motion.div>
@@ -6680,18 +6676,18 @@ export default function Chat() {
                 <div ref={groupBottomRef} />
               </div>
 
-              <div className="sticky bottom-0 z-10 shrink-0 border-t border-[#1F1F1F] bg-[#0D0D0D] px-2.5 py-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]">
+              <div className="sticky bottom-0 z-10 shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-surface)] px-2.5 py-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]">
               {/* Reply preview */}
               {groupReplyTo && (
-                <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[#1F1F1F] bg-[#141414] px-2.5 py-2">
+                <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--chat-border)] bg-[var(--chat-elev)] px-2.5 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-semibold text-[#A09080]">Replying to {groupReplyTo.senderProfile?.name || groupReplyTo.senderProfile?.username || "someone"}</p>
-                    <p className="truncate text-xs text-[#F5F0E8]">{groupReplyTo.content || "[Image]"}</p>
+                    <p className="text-[11px] font-semibold text-[var(--chat-text-subtle)]">Replying to {groupReplyTo.senderProfile?.name || groupReplyTo.senderProfile?.username || "someone"}</p>
+                    <p className="truncate text-xs text-[var(--chat-text)]">{groupReplyTo.content || "[Image]"}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setGroupReplyTo(null)}
-                    className="shrink-0 rounded-md p-1 text-[#5C5248] transition hover:bg-[#2A2A2A] hover:text-[#F5F0E8]"
+                    className="shrink-0 rounded-md p-1 text-[var(--chat-text-muted)] transition hover:bg-[var(--chat-border-strong)] hover:text-[var(--chat-text)]"
                     aria-label="Cancel reply"
                   >
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -6705,8 +6701,8 @@ export default function Chat() {
               {editingGroupMessage && (
                 <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-semibold text-[#F4B400]">Editing message</p>
-                    <p className="truncate text-xs text-[#F4B400]/80">{editingGroupMessage.content || "[Message]"}</p>
+                    <p className="text-[11px] font-semibold text-[var(--chat-accent)]">Editing message</p>
+                    <p className="truncate text-xs text-[var(--chat-accent)]/80">{editingGroupMessage.content || "[Message]"}</p>
                   </div>
                   <button
                     type="button"
@@ -6714,7 +6710,7 @@ export default function Chat() {
                       setEditingGroupMessage(null)
                       setGroupDraft("")
                     }}
-                    className="shrink-0 rounded-md p-1 text-[#F4B400] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[#F4B400]"
+                    className="shrink-0 rounded-md p-1 text-[var(--chat-accent)] transition hover:bg-[rgba(244,180,0,0.08)] hover:text-[var(--chat-accent)]"
                     aria-label="Cancel editing"
                   >
                     <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -6726,18 +6722,18 @@ export default function Chat() {
 
               {/* Image preview when selected */}
               {groupSelectedImageComposerUrl && (
-                <div className="mb-2 rounded-lg border border-[#1F1F1F] bg-[#141414] p-2">
+                <div className="mb-2 rounded-lg border border-[var(--chat-border)] bg-[var(--chat-elev)] p-2">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-medium text-[#A09080]">Image selected</p>
+                    <p className="text-xs font-medium text-[var(--chat-text-subtle)]">Image selected</p>
                     <button
                       onClick={() => {
                         setGroupSelectedImage(null)
                         setGroupSelectedImageComposerUrl('')
                         setGroupImageCaption('')
                       }}
-                      className="text-xs text-[#A09080] hover:text-[#F5F0E8]"
+                      className="text-xs text-[var(--chat-text-subtle)] hover:text-[var(--chat-text)]"
                     >
-                      �
+                      \u2715
                     </button>
                   </div>
                   <img
@@ -6750,7 +6746,7 @@ export default function Chat() {
                     value={groupImageCaption}
                     onChange={(e) => setGroupImageCaption(e.target.value)}
                     placeholder="Add a caption (optional)..."
-                    className="mt-2 w-full text-xs border border-[#1F1F1F] bg-[#0D0D0D] text-[#F5F0E8] rounded px-2 py-1 outline-none focus:border-[#F4B400]"
+                    className="mt-2 w-full text-xs border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text)] rounded px-2 py-1 outline-none focus:border-[var(--chat-accent)]"
                   />
                 </div>
               )}
@@ -6769,7 +6765,7 @@ export default function Chat() {
                     type="button"
                     onClick={() => groupFileInputRef.current?.click()}
                     disabled={groupSelectedImage !== null || uploadingGroupImage}
-                    className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-2.5 py-2 text-[#A09080] transition hover:bg-[#141414] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2.5 py-2 text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label="Attach image"
                     title="Attach image"
                   >
@@ -6790,7 +6786,7 @@ export default function Chat() {
                       }
                     }}
                     placeholder={editingGroupMessage ? "Edit message..." : "Type your message..."}
-                    className="flex-1 rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] text-[#F5F0E8] px-3 py-2 text-sm outline-none transition focus:border-[#f4b400] disabled:bg-[#141414]"
+                    className="flex-1 rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text)] px-3 py-2 text-sm outline-none transition focus:border-[#f4b400] disabled:bg-[var(--chat-elev)]"
                     disabled={editingGroupMessage ? false : uploadingGroupImage}
                   />
                   <button
@@ -6808,7 +6804,7 @@ export default function Chat() {
                       sendingGroup ||
                       uploadingGroupImage
                     }
-                    className="px-4 py-2 rounded-lg bg-[#F4B400] hover:bg-[#C49000] disabled:bg-[#2A2000] text-[#0D0D0D] font-medium transition-colors disabled:cursor-not-allowed"
+                    className="px-4 py-2 rounded-lg bg-[var(--chat-accent)] hover:bg-[var(--chat-accent-hover)] disabled:bg-[var(--chat-accent-soft)] text-[var(--chat-surface)] font-medium transition-colors disabled:cursor-not-allowed"
                   >
                     {uploadingGroupImage
                       ? "Uploading..."
@@ -6826,7 +6822,7 @@ export default function Chat() {
             </>
           ) : (
             <div className="flex h-full items-center justify-center">
-              <p className="text-[#A09080]">Select a group to start chatting</p>
+              <p className="text-[var(--chat-text-subtle)]">Select a group to start chatting</p>
             </div>
           )}
           </div>
@@ -6862,11 +6858,11 @@ export default function Chat() {
           onClick={() => setDeleteGroupConfirmationMessage(null)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+            className="w-full max-w-sm rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <h3 className="mb-2 text-base font-semibold text-[#F5F0E8]">Delete message?</h3>
-            <p className="mb-5 text-sm text-[#A09080]">
+            <h3 className="mb-2 text-base font-semibold text-[var(--chat-text)]">Delete message?</h3>
+            <p className="mb-5 text-sm text-[var(--chat-text-subtle)]">
               This will delete the message for everyone in the group.
             </p>
 
@@ -6874,7 +6870,7 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={() => setDeleteGroupConfirmationMessage(null)}
-                className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 text-sm text-[#A09080] transition hover:bg-[#141414]"
+                className="rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 text-sm text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)]"
               >
                 Cancel
               </button>
@@ -6915,10 +6911,10 @@ export default function Chat() {
             onClick={() => setGroupMessageInfoModalId(null)}
           >
             <div
-              className="w-full max-w-sm rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+              className="w-full max-w-sm rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
               onClick={(event) => event.stopPropagation()}
             >
-              <h3 className="mb-4 text-base font-semibold text-[#F5F0E8]">Message info</h3>
+              <h3 className="mb-4 text-base font-semibold text-[var(--chat-text)]">Message info</h3>
               
               <div className="space-y-4 text-sm max-h-[400px] overflow-y-auto">
                 {isOwnMessage ? (
@@ -6926,7 +6922,7 @@ export default function Chat() {
                     {/* Delivered To Section */}
                     {deliveredMembers.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-[#A09080] uppercase tracking-wide mb-2">Delivered to</p>
+                        <p className="text-xs font-semibold text-[var(--chat-text-subtle)] uppercase tracking-wide mb-2">Delivered to</p>
                         <div className="space-y-2">
                           {deliveredMembers.map((member) => (
                             <div key={member.user_id} className="flex items-center gap-2">
@@ -6937,11 +6933,11 @@ export default function Chat() {
                                   className="h-6 w-6 rounded-full object-cover shrink-0"
                                 />
                               ) : (
-                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#141414] text-[10px] font-semibold text-[#A09080] shrink-0">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--chat-elev)] text-[10px] font-semibold text-[var(--chat-text-subtle)] shrink-0">
                                   {getDisplayName(member.profiles).charAt(0).toUpperCase()}
                                 </div>
                               )}
-                              <p className="text-[#F5F0E8]">{getDisplayName(member.profiles)}</p>
+                              <p className="text-[var(--chat-text)]">{getDisplayName(member.profiles)}</p>
                             </div>
                           ))}
                         </div>
@@ -6951,7 +6947,7 @@ export default function Chat() {
                     {/* Read By Section */}
                     {readMembers.length > 0 && (
                       <div>
-                        <p className="text-xs font-semibold text-[#A09080] uppercase tracking-wide mb-2">Read by</p>
+                        <p className="text-xs font-semibold text-[var(--chat-text-subtle)] uppercase tracking-wide mb-2">Read by</p>
                         <div className="space-y-2">
                           {readMembers
                             .slice()
@@ -6965,13 +6961,13 @@ export default function Chat() {
                                     className="h-6 w-6 rounded-full object-cover shrink-0"
                                   />
                                 ) : (
-                                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#141414] text-[10px] font-semibold text-[#A09080] shrink-0">
+                                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--chat-elev)] text-[10px] font-semibold text-[var(--chat-text-subtle)] shrink-0">
                                     {getDisplayName(read.profile).charAt(0).toUpperCase()}
                                   </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-[#F5F0E8] truncate">{getDisplayName(read.profile)}</p>
-                                  <p className="text-[11px] text-[#A09080]">
+                                  <p className="text-[var(--chat-text)] truncate">{getDisplayName(read.profile)}</p>
+                                  <p className="text-[11px] text-[var(--chat-text-subtle)]">
                                     {read.read_at ? dayjs(read.read_at).format("h:mm A") : "Time unavailable"}
                                   </p>
                                 </div>
@@ -6983,21 +6979,21 @@ export default function Chat() {
                     
                     {/* No reads yet message */}
                     {deliveredMembers.length === 0 && readMembers.length === 0 && (
-                      <p className="text-[#A09080] text-sm">No members yet in this group.</p>
+                      <p className="text-[var(--chat-text-subtle)] text-sm">No members yet in this group.</p>
                     )}
                   </>
                 ) : (
                   <>
                     {/* For non-own messages, show sender and sent time */}
                     <div>
-                      <p className="text-xs font-semibold text-[#A09080] uppercase tracking-wide mb-1">From</p>
-                      <p className="text-[#F5F0E8]">{msg.senderProfile?.name || msg.senderProfile?.username || "Unknown"}</p>
+                      <p className="text-xs font-semibold text-[var(--chat-text-subtle)] uppercase tracking-wide mb-1">From</p>
+                      <p className="text-[var(--chat-text)]">{msg.senderProfile?.name || msg.senderProfile?.username || "Unknown"}</p>
                     </div>
                     
                     <div>
-                      <p className="text-xs font-semibold text-[#A09080] uppercase tracking-wide mb-1">Sent</p>
-                      <p className="text-[#F5F0E8]">
-                        {dayjs(msg.created_at).format("MMMM D, YYYY � h:mm A")}
+                      <p className="text-xs font-semibold text-[var(--chat-text-subtle)] uppercase tracking-wide mb-1">Sent</p>
+                      <p className="text-[var(--chat-text)]">
+                        {dayjs(msg.created_at).format("MMMM D, YYYY | h:mm A")}
                       </p>
                     </div>
                   </>
@@ -7008,7 +7004,7 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={() => setGroupMessageInfoModalId(null)}
-                  className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-2 text-sm text-[#A09080] transition hover:bg-[#141414]"
+                  className="rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-4 py-2 text-sm text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)]"
                 >
                   Close
                 </button>
@@ -7045,16 +7041,16 @@ export default function Chat() {
           onClick={closeForwardModal}
         >
           <div
-            className="w-full max-w-md rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+            className="w-full max-w-md rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[#F5F0E8]">Forward message</h3>
+              <h3 className="text-base font-semibold text-[var(--chat-text)]">Forward message</h3>
               <button
                 type="button"
                 onClick={closeForwardModal}
                 disabled={forwarding}
-                className="rounded-full p-1 text-[#A09080] transition hover:bg-[#141414] hover:text-[#F5F0E8] disabled:opacity-50"
+                className="rounded-full p-1 text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)] hover:text-[var(--chat-text)] disabled:opacity-50"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M6 18L18 6M6 6l12 12" />
@@ -7067,7 +7063,7 @@ export default function Chat() {
               value={forwardSearchQuery}
               onChange={(event) => setForwardSearchQuery(event.target.value)}
               placeholder="Search chats"
-              className="w-full rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 text-sm text-[#F5F0E8] placeholder:text-[#5C5248] outline-none transition focus:border-[#f4b400]"
+              className="w-full rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 text-sm text-[var(--chat-text)] placeholder:text-[var(--chat-text-muted)] outline-none transition focus:border-[#f4b400]"
             />
 
             <div className="mt-3 max-h-[320px] space-y-1 overflow-y-auto pr-1">
@@ -7091,22 +7087,22 @@ export default function Chat() {
                       onClick={() => toggleForwardConversation(conversation.id)}
                       className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
                         isSelected
-                          ? "border-[#2A2A2A] bg-[#2A2000]"
-                          : "border-[#1F1F1F] bg-[#0D0D0D] hover:bg-[#141414]"
+                          ? "border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)]"
+                          : "border-[var(--chat-border)] bg-[var(--chat-surface)] hover:bg-[var(--chat-elev)]"
                       }`}
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-[#F5F0E8]">{displayName}</p>
-                        <p className="truncate text-xs text-[#A09080]">@{conversation.partner?.username || "unknown"}</p>
+                        <p className="truncate text-sm font-medium text-[var(--chat-text)]">{displayName}</p>
+                        <p className="truncate text-xs text-[var(--chat-text-subtle)]">@{conversation.partner?.username || "unknown"}</p>
                       </div>
                       <span
                         className={`ml-3 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] ${
                           isSelected
-                            ? "border-[#F4B400] bg-[#f4b400] text-[#0D0D0D]"
-                            : "border-[#2A2A2A] bg-[#0D0D0D] text-transparent"
+                            ? "border-[var(--chat-accent)] bg-[#f4b400] text-[var(--chat-surface)]"
+                            : "border-[var(--chat-border-strong)] bg-[var(--chat-surface)] text-transparent"
                         }`}
                       >
-                        ✓
+                        {"\u2713"}
                       </span>
                     </button>
                   )
@@ -7118,7 +7114,7 @@ export default function Chat() {
                 type="button"
                 onClick={closeForwardModal}
                 disabled={forwarding}
-                className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 text-sm text-[#A09080] transition hover:bg-[#141414] disabled:opacity-50"
+                className="rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 text-sm text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)] disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -7141,11 +7137,11 @@ export default function Chat() {
           onClick={() => setDeleteConfirmationMessage(null)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
+            className="w-full max-w-sm rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-5 shadow-[0_24px_70px_rgba(15,23,42,0.2)]"
             onClick={(event) => event.stopPropagation()}
           >
-            <h3 className="mb-2 text-base font-semibold text-[#F5F0E8]">Unsend message?</h3>
-            <p className="mb-5 text-sm text-[#A09080]">
+            <h3 className="mb-2 text-base font-semibold text-[var(--chat-text)]">Unsend message?</h3>
+            <p className="mb-5 text-sm text-[var(--chat-text-subtle)]">
               This will unsend the message for both you and the recipient. This action cannot be undone.
             </p>
 
@@ -7153,7 +7149,7 @@ export default function Chat() {
               <button
                 type="button"
                 onClick={() => setDeleteConfirmationMessage(null)}
-                className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 text-sm text-[#A09080] transition hover:bg-[#141414]"
+                className="rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 text-sm text-[var(--chat-text-subtle)] transition hover:bg-[var(--chat-elev)]"
               >
                 Cancel
               </button>
@@ -7170,13 +7166,13 @@ export default function Chat() {
       )}
 
       {showNewGroupModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="w-full max-w-md rounded-xl bg-[#0D0D0D] p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-[#F5F0E8] mb-4">Create New Group</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)]">
+          <div className="w-full max-w-md rounded-xl bg-[var(--chat-surface)] p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-[var(--chat-text)] mb-4">Create New Group</h3>
 
             {/* Group Name Input */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-[#F5F0E8] mb-1">
+              <label className="block text-sm font-medium text-[var(--chat-text)] mb-1">
                 Group Name
               </label>
               <input
@@ -7184,13 +7180,13 @@ export default function Chat() {
                 value={newGroupName}
                 onChange={(e) => setNewGroupName(e.target.value)}
                 placeholder="Enter group name..."
-                className="w-full rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 text-sm text-[#F5F0E8] placeholder:text-[#5C5248] outline-none transition focus:border-[#f4b400]"
+                className="w-full rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 text-sm text-[var(--chat-text)] placeholder:text-[var(--chat-text-muted)] outline-none transition focus:border-[#f4b400]"
               />
             </div>
 
             {/* Add Members */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-[#F5F0E8] mb-1">
+              <label className="block text-sm font-medium text-[var(--chat-text)] mb-1">
                 Add Members
               </label>
               <input
@@ -7198,13 +7194,13 @@ export default function Chat() {
                 value={newGroupSearch}
                 onChange={(e) => setNewGroupSearch(e.target.value)}
                 placeholder="Search by username..."
-                className="w-full rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-3 py-2 text-sm text-[#F5F0E8] placeholder:text-[#5C5248] outline-none transition focus:border-[#f4b400]"
+                className="w-full rounded-lg border border-[var(--chat-border)] bg-[var(--chat-surface)] px-3 py-2 text-sm text-[var(--chat-text)] placeholder:text-[var(--chat-text-muted)] outline-none transition focus:border-[#f4b400]"
               />
 
               {newGroupSearch.trim() && (
-                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[#1F1F1F] bg-[#141414]">
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-[var(--chat-border)] bg-[var(--chat-elev)]">
                   {newGroupSearchResults.length === 0 ? (
-                    <p className="p-3 text-center text-sm text-[#A09080]">No users found.</p>
+                    <p className="p-3 text-center text-sm text-[var(--chat-text-subtle)]">No users found.</p>
                   ) : (
                     newGroupSearchResults.map((profile) => (
                       <button
@@ -7214,7 +7210,7 @@ export default function Chat() {
                           setNewGroupSearch("")
                           setNewGroupSearchResults([])
                         }}
-                        className="w-full flex items-center gap-2 border-b border-[#1F1F1F] px-3 py-2 text-left hover:bg-[#141414] last:border-0"
+                        className="w-full flex items-center gap-2 border-b border-[var(--chat-border)] px-3 py-2 text-left hover:bg-[var(--chat-elev)] last:border-0"
                       >
                         {profile.avatar_url ? (
                           <img
@@ -7223,11 +7219,11 @@ export default function Chat() {
                             className="h-7 w-7 rounded-full object-cover"
                           />
                         ) : (
-                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#2A2000] text-xs font-semibold text-[#F5F0E8]">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] text-xs font-semibold text-[var(--chat-text)]">
                             {(profile.name || profile.username || "?").charAt(0).toUpperCase()}
                           </div>
                         )}
-                        <span className="text-sm font-medium text-[#F5F0E8]">
+                        <span className="text-sm font-medium text-[var(--chat-text)]">
                           {profile.name || profile.username}
                         </span>
                       </button>
@@ -7242,9 +7238,9 @@ export default function Chat() {
                   {newGroupSelectedUsers.map((user) => (
                     <div
                       key={user.id}
-                      className="inline-flex items-center gap-2 rounded-full bg-[#2A2000] px-3 py-1"
+                      className="inline-flex items-center gap-2 rounded-full bg-[var(--chat-accent-soft)] px-3 py-1"
                     >
-                      <span className="text-sm font-medium text-[#F4B400]">
+                      <span className="text-sm font-medium text-[var(--chat-accent)]">
                         {user.name || user.username}
                       </span>
                       <button
@@ -7253,9 +7249,9 @@ export default function Chat() {
                             newGroupSelectedUsers.filter((u) => u.id !== user.id)
                           )
                         }
-                        className="text-[#F4B400] hover:text-[#F4B400]"
+                        className="text-[var(--chat-accent)] hover:text-[var(--chat-accent)]"
                       >
-                        ✕
+                        {"\u2715"}
                       </button>
                     </div>
                   ))}
@@ -7272,14 +7268,14 @@ export default function Chat() {
                   setNewGroupSelectedUsers([])
                   setNewGroupSearch("")
                 }}
-                className="px-4 py-2 text-sm font-medium text-[#F5F0E8] hover:bg-[#141414] rounded-lg transition-colors"
+                className="px-4 py-2 text-sm font-medium text-[var(--chat-text)] hover:bg-[var(--chat-elev)] rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateGroup}
                 disabled={creatingGroup || !newGroupName.trim() || newGroupSelectedUsers.length === 0}
-                className="px-4 py-2 text-sm font-medium text-[#F4B400] bg-[#F4B400] hover:bg-[#C49000] disabled:bg-[#2A2000] rounded-lg transition-colors disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm font-medium text-[var(--chat-accent)] bg-[var(--chat-accent)] hover:bg-[var(--chat-accent-hover)] disabled:bg-[var(--chat-accent-soft)] rounded-lg transition-colors disabled:cursor-not-allowed"
               >
                 {creatingGroup ? "Creating..." : "Create"}
               </button>
@@ -7300,3 +7296,4 @@ export default function Chat() {
     </div>
   )
 }
+

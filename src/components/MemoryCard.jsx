@@ -60,15 +60,15 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
 
     <div
       data-post-id={memory.id}
-      className={`cursor-pointer rounded-[16px] border bg-[#0D0D0D] p-4 text-[#F5F0E8] transition-all duration-200 ease-in-out hover:-translate-y-1 hover:shadow-lg ${
-        isRecent ? 'border-[rgba(244,180,0,0.4)] bg-[rgba(244,180,0,0.08)]' : 'border-[#1F1F1F]'
+      className={`cursor-pointer rounded-[16px] border bg-[var(--profile-surface)] p-4 text-[var(--profile-text)] transition-all duration-200 ease-in-out hover:-translate-y-1 hover:shadow-lg ${
+        isRecent ? 'border-[rgba(244,180,0,0.4)] bg-[rgba(244,180,0,0.08)]' : 'border-[var(--profile-border)]'
       }`}
       onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${memory.workspace_id}/memory/${memory.id}`))}
     >
 
       {/* Title & Star */}
       <div className="flex justify-between items-start gap-2">
-        <h2 className="flex-1 leading-snug text-lg font-bold text-[#F5F0E8]">
+        <h2 className="flex-1 leading-snug text-lg font-bold text-[var(--profile-text)]">
           {searchTerm && !searchTerm.startsWith('#')
             ? highlight(memory.title || "Untitled memory", searchTerm).map((seg, i) =>
                 seg.isMatch
@@ -83,8 +83,8 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
             e.stopPropagation()
             if (onFavoriteToggle) onFavoriteToggle(memory.id, memory.is_favorite)
           }}
-          className={`-mr-1 -mt-1 flex-shrink-0 rounded-full p-1 transition-all duration-200 hover:bg-[#1C1C1C] ${
-            memory.is_favorite ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#F4B400]"
+          className={`-mr-1 -mt-1 flex-shrink-0 rounded-full p-1 transition-all duration-200 hover:bg-[var(--profile-hover)] ${
+            memory.is_favorite ? "text-[#F4B400]" : "text-[var(--profile-text-muted)] hover:text-[#F4B400]"
           }`}
         >
           {memory.is_favorite ? (
@@ -120,9 +120,9 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
       )}
 
       {/* Content Preview */}
-      <p className="line-clamp-2 flex-1 text-sm leading-relaxed text-[#A09080]">
+      <p className="line-clamp-2 flex-1 text-sm leading-relaxed text-[var(--profile-text-subtle)]">
         {isEncrypted || plainContent?.includes("Join workspace to view") ? (
-          <span className="flex items-center gap-2 italic text-[#5C5248]">
+          <span className="flex items-center gap-2 italic text-[var(--profile-text-muted)]">
             🔒 <span>Content encrypted • Join workspace to view</span>
           </span>
         ) : plainContent
@@ -134,13 +134,13 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
                 )
               : getPreview(plainContent)
             )
-          : <span className="text-[#5C5248]">No content.</span>
+          : <span className="text-[var(--profile-text-muted)]">No content.</span>
         }
       </p>
 
       {/* Footer: Date and Delete button */}
-      <div className="mt-auto flex items-center justify-between border-t border-[#1F1F1F] pt-3">
-        <p className="text-xs font-medium text-[#5C5248]">
+      <div className="mt-auto flex items-center justify-between border-t border-[var(--profile-border)] pt-3">
+        <p className="text-xs font-medium text-[var(--profile-text-muted)]">
           {timeLabel} {relativeTime}
         </p>
         {canDelete(userRole) && (

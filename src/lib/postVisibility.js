@@ -48,9 +48,9 @@ export function getVisibilityStyles(visibility) {
   if (!config) return VISIBILITY_CONFIG.public
 
   const colorMap = {
-    blue: 'bg-[#2A2000] text-[#F4B400] border-[rgba(244,180,0,0.2)]',
+    blue: 'bg-[var(--visibility-public-bg)] text-[var(--visibility-public-text)] border-[var(--visibility-public-border)]',
     purple: 'bg-purple-100 text-purple-700 border-purple-200',
-    red: 'bg-[#1A1A1A] text-[#A09080] border-[#2A2A2A]'
+    red: 'bg-[var(--visibility-private-bg)] text-[var(--visibility-private-text)] border-[var(--visibility-private-border)]'
   }
 
   return colorMap[config.color]

@@ -1457,7 +1457,7 @@ export default function GroupChat() {
       </div>
 
       {newGroupModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4">
           <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
             <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Create New Group</h3>
 
@@ -1588,7 +1588,7 @@ export default function GroupChat() {
           : []
         
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4">
             <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Message info</h3>

@@ -951,7 +951,7 @@ export default function MemoryEditor() {
 
   return (
 
-    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+    <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
       <div style={{ maxWidth: '900px' }} className="mx-auto px-6 py-12">
 
         <button
@@ -964,17 +964,17 @@ export default function MemoryEditor() {
         </button>
 
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-[#F5F0E8]">
+          <h1 className="text-4xl font-bold text-[var(--profile-text)]">
             {memoryId ? "Edit Memory" : "New Memory"}
           </h1>
-          <p className="mt-1 text-sm text-[#5C5248]">Encrypted and secured</p>
+          <p className="mt-1 text-sm text-[var(--profile-text-muted)]">Encrypted and secured</p>
         </div>
 
         {/* Title Input */}
         <input
           type="text"
           placeholder="Memory title..."
-          className="mb-4 w-full rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-3 text-2xl font-semibold text-[#F5F0E8] transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
+          className="mb-4 w-full rounded-lg border border-[var(--profile-border)] bg-[var(--profile-surface)] px-4 py-3 text-2xl font-semibold text-[var(--profile-text)] transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
@@ -1027,7 +1027,7 @@ export default function MemoryEditor() {
         `}</style>
 
         {/* Unified Editor Card: toolbar + content */}
-        <div ref={editorRef} className="relative overflow-visible rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-md focus-within:border-[#F4B400]"
+        <div ref={editorRef} className="relative overflow-visible rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] shadow-md focus-within:border-[#F4B400]"
         >
 
           {/* Image Alignment & Rotation Toolbar */}
@@ -1104,7 +1104,7 @@ export default function MemoryEditor() {
 
           {/* Toolbar */}
           {editor && (
-            <div className="flex flex-wrap items-center gap-1 border-b border-[#1F1F1F] bg-[#141414] px-3 py-2">
+            <div className="flex flex-wrap items-center gap-1 border-b border-[var(--profile-border)] bg-[var(--profile-elev)] px-3 py-2">
               <button
                 type="button"
                 onClick={() => editor.chain().focus().toggleBold().run()}
@@ -1113,7 +1113,7 @@ export default function MemoryEditor() {
                 className={`px-2 py-1 rounded text-xs font-bold transition-all duration-200 ${
                   editor.isActive('bold')
                     ? 'bg-yellow-400 text-black'
-                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
+                    : 'text-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]'
                 }`}
               >
                 B
@@ -1126,13 +1126,13 @@ export default function MemoryEditor() {
                 className={`px-2 py-1 rounded text-xs italic font-semibold transition-all duration-200 ${
                   editor.isActive('italic')
                     ? 'bg-yellow-400 text-black'
-                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
+                    : 'text-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]'
                 }`}
               >
                 I
               </button>
 
-              <div className="mx-1 h-4 w-px bg-[#2A2A2A]" />
+              <div className="mx-1 h-4 w-px bg-[var(--profile-border-strong)]" />
 
               <button
                 type="button"
@@ -1141,7 +1141,7 @@ export default function MemoryEditor() {
                 className={`px-2 py-1 rounded text-xs transition-all duration-200 ${
                   editor.isActive('bulletList')
                     ? 'bg-yellow-400 text-black'
-                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
+                    : 'text-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]'
                 }`}
               >
                 • List
@@ -1153,13 +1153,13 @@ export default function MemoryEditor() {
                 className={`px-2 py-1 rounded text-xs font-mono transition-all duration-200 ${
                   editor.isActive('codeBlock')
                     ? 'bg-yellow-400 text-black'
-                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
+                    : 'text-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]'
                 }`}
               >
                 {'</>'}  
               </button>
 
-              <div className="mx-1 h-4 w-px bg-[#2A2A2A]" />
+              <div className="mx-1 h-4 w-px bg-[var(--profile-border-strong)]" />
 
               <button
                 type="button"
@@ -1168,20 +1168,20 @@ export default function MemoryEditor() {
                 title="Add Image"
                 className={`px-2 py-1 rounded text-xs transition-all duration-200 ${
                   uploadingImage
-                    ? 'cursor-not-allowed bg-[#1C1C1C] text-[#5C5248]'
-                    : 'text-[#A09080] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]'
+                    ? 'cursor-not-allowed bg-[#1C1C1C] text-[var(--profile-text-muted)]'
+                    : 'text-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]'
                 }`}
               >
                 {uploadingImage ? '⏳...' : '🖼️'}
               </button>
 
-              <div className="mx-1 h-4 w-px bg-[#2A2A2A]" />
+              <div className="mx-1 h-4 w-px bg-[var(--profile-border-strong)]" />
 
               <button
                 type="button"
                 onClick={() => handleImageAlignment('left')}
                 title="Float Image Left"
-                className="rounded px-2 py-1 text-xs text-[#A09080] transition-all duration-200 hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
+                className="rounded px-2 py-1 text-xs text-[var(--profile-text-subtle)] transition-all duration-200 hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]"
               >
                 ↙️ Left
               </button>
@@ -1190,7 +1190,7 @@ export default function MemoryEditor() {
                 type="button"
                 onClick={() => handleImageAlignment('right')}
                 title="Float Image Right"
-                className="rounded px-2 py-1 text-xs text-[#A09080] transition-all duration-200 hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
+                className="rounded px-2 py-1 text-xs text-[var(--profile-text-subtle)] transition-all duration-200 hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]"
               >
                 Right ↗️
               </button>
@@ -1199,7 +1199,7 @@ export default function MemoryEditor() {
                 type="button"
                 onClick={() => handleImageAlignment('center')}
                 title="Reset Image Position"
-                className="rounded px-2 py-1 text-xs text-[#A09080] transition-all duration-200 hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
+                className="rounded px-2 py-1 text-xs text-[var(--profile-text-subtle)] transition-all duration-200 hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]"
               >
                 🔄 Reset
               </button>
@@ -1207,9 +1207,9 @@ export default function MemoryEditor() {
           )}
 
           {/* Editor body */}
-          <div className="relative bg-[#0D0D0D] p-4">
+          <div className="relative bg-[var(--profile-surface)] p-4">
             {editor && editor.isEmpty && !content && (
-              <p className="pointer-events-none absolute px-4 pt-4 text-[15px] text-[#5C5248] select-none">
+              <p className="pointer-events-none absolute px-4 pt-4 text-[15px] text-[var(--profile-text-muted)] select-none">
                 Start writing your memory...
               </p>
             )}
@@ -1505,7 +1505,7 @@ export default function MemoryEditor() {
             onClick={(e) => handleNavigationClick(e, () => memoryId 
               ? navigate(`/workspace/${id}/memory/${memoryId}`)
               : navigate(`/workspace/${id}`))}
-            className="font-medium text-[#5C5248] transition-colors hover:text-[#F5F0E8]"
+            className="font-medium text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text)]"
           >
             Cancel
           </button>

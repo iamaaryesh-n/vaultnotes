@@ -10,6 +10,7 @@ import BottomNavigation from "./components/BottomNavigation"
 import CreatePostModal from "./components/CreatePostModal"
 import Navbar from "./components/Navbar"
 import ErrorBoundary from "./components/ErrorBoundary"
+import { initializeTheme } from "./utils/theme"
 
 // Eagerly load lightweight pages
 import Login from "./pages/Login"
@@ -33,19 +34,7 @@ function AppContent() {
   const [createPostOpen, setCreatePostOpen] = useState(false)
   useScrollToTop()
 
-  useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") || "system"
-    const root = document.documentElement
-
-    if (savedTheme === "dark") {
-      root.classList.add("dark")
-    } else if (savedTheme === "light") {
-      root.classList.remove("dark")
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-      root.classList.toggle("dark", prefersDark)
-    }
-  }, [])
+  useEffect(() => initializeTheme(), [])
 
   // Listen for Create Post event from floating action button
   useEffect(() => {
@@ -60,7 +49,7 @@ function AppContent() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in dark:from-slate-950 dark:to-slate-900 dark:text-[#F5F0E8]">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in dark:from-slate-950 dark:to-slate-900 dark:text-[var(--profile-text)]">
         <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
           <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Vaults</h1>
           <p className="text-slate-600 mb-8">Loading your vaults...</p>
@@ -81,7 +70,7 @@ function AppContent() {
   const isVaultRoute = location.pathname === "/workspaces" || location.pathname.startsWith("/workspace/")
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[#000000] dark:text-[#F5F0E8]">
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]">
       {user && <Navbar />}
       <ToastContainer />
       <LoadingBar />
@@ -102,7 +91,7 @@ function AppContent() {
           ? isChatRoute
             ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
             : isVaultRoute
-              ? "min-h-screen overflow-x-hidden bg-[#000000] pt-[64px] pb-20"
+              ? "min-h-screen overflow-x-hidden bg-[var(--profile-bg)] pt-[64px] pb-20"
               : "min-h-screen pt-[64px] pb-20"
           : "min-h-screen"}
       >

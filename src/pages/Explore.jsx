@@ -149,14 +149,14 @@ export default function Explore() {
   )
 
   return (
-    <div className="-mt-[64px] min-h-screen bg-[#000000]">
+    <div className="profile-theme -mt-[64px] min-h-screen bg-[var(--profile-bg)]">
       <div
-        className="sticky z-[90] border-b border-[#1F1F1F] bg-[#000000] px-4 pb-0 pt-3"
+        className="sticky z-[90] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-0 pt-3"
         style={{ top: "56px" }}
       >
         <div className="mb-[10px] flex items-baseline gap-[10px]">
-          <h1 className="font-['Sora'] text-[20px] font-bold text-[#F5F0E8]">Explore</h1>
-          <p className="text-[11px] text-[#5C5248]">Discover what's happening</p>
+          <h1 className="font-['Sora'] text-[20px] font-bold text-[var(--profile-text)]">Explore</h1>
+          <p className="text-[11px] text-[var(--profile-text-muted)]">Discover what's happening</p>
         </div>
 
         <div className="mb-3 flex gap-2">
@@ -169,8 +169,8 @@ export default function Explore() {
               onClick={() => setViewMode(mode.key)}
               className={`flex cursor-pointer items-center gap-[6px] rounded-[10px] border-none px-[18px] py-[7px] font-['DM_Sans'] text-[13px] font-bold transition-all ${
                 viewMode === mode.key
-                  ? "bg-[#F4B400] text-[#0D0D0D] shadow-[0_2px_14px_rgba(244,180,0,0.3)]"
-                  : "border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  ? "bg-[#F4B400] text-[var(--profile-on-accent)] shadow-[0_2px_14px_rgba(244,180,0,0.3)]"
+                  : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
               }`}
             >
               {mode.key === "posts" ? (
@@ -191,7 +191,7 @@ export default function Explore() {
         </div>
 
         {viewMode === "posts" && (
-          <div className="scrollbar-hide mb-3 flex gap-[2px] overflow-x-auto rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D] p-[3px]">
+          <div className="scrollbar-hide mb-3 flex gap-[2px] overflow-x-auto rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-[3px]">
             {[
               { key: "for-you", label: "For you" },
               { key: "following", label: "Following" },
@@ -203,8 +203,8 @@ export default function Explore() {
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex-1 whitespace-nowrap rounded-[9px] border-none px-3 py-[7px] text-center font-['DM_Sans'] text-[13px] font-semibold transition-all ${
                   activeTab === tab.key
-                    ? "bg-[#1C1C1C] text-[#F5F0E8]"
-                    : "bg-transparent text-[#5C5248] hover:text-[#A09080]"
+                    ? "bg-[var(--profile-hover)] text-[var(--profile-text)]"
+                    : "bg-transparent text-[var(--profile-text-muted)] hover:text-[var(--profile-text-subtle)]"
                 }`}
               >
                 {tab.label}
@@ -245,7 +245,7 @@ export default function Explore() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closePostModal}
-              className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm"
+              className="fixed inset-0 z-50 bg-[var(--overlay-backdrop)] backdrop-blur-sm"
             />
 
             <motion.div
@@ -254,10 +254,10 @@ export default function Explore() {
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               onClick={(event) => event.stopPropagation()}
-              className="fixed inset-0 z-50 m-auto max-h-[90vh] w-[90vw] max-w-3xl overflow-y-auto rounded-[20px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+              className="fixed inset-0 z-50 m-auto max-h-[90vh] w-[90vw] max-w-3xl overflow-y-auto rounded-[20px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]"
             >
               <div className="flex w-full flex-col">
-                <div className="flex-shrink-0 border-b border-[#1F1F1F] px-6 py-4">
+                <div className="flex-shrink-0 border-b border-[var(--overlay-border)] px-6 py-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <button
@@ -275,11 +275,11 @@ export default function Explore() {
                             alt={selectedPost?.profiles?.username}
                             width={40}
                             height={40}
-                            className="h-10 w-10 rounded-full border border-[#2A2A2A] object-cover"
+                            className="h-10 w-10 rounded-full border border-[var(--overlay-border-strong)] object-cover"
                             loading="lazy"
                           />
                         ) : (
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2A2000] text-xs font-bold text-[#F4B400]">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] text-xs font-bold text-[var(--chat-accent)]">
                             {selectedPost?.profiles?.name?.charAt(0) || selectedPost?.profiles?.username?.charAt(0) || "?"}
                           </div>
                         )}
@@ -293,11 +293,11 @@ export default function Explore() {
                               navigate(`/profile/${selectedPost?.profiles?.username}`)
                             }
                           }}
-                          className="text-sm font-semibold text-[#F5F0E8] transition-colors hover:text-[#F4B400]"
+                          className="text-sm font-semibold text-[var(--overlay-text)] transition-colors hover:text-[#F4B400]"
                         >
                           {selectedPost?.profiles?.name || selectedPost?.profiles?.username || "Unknown"}
                         </button>
-                        <p className="text-xs text-[#5C5248]">{formatPostTime(selectedPost?.created_at)}</p>
+                        <p className="text-xs text-[var(--overlay-text-muted)]">{formatPostTime(selectedPost?.created_at)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -311,8 +311,8 @@ export default function Explore() {
                           }}
                           className={`rounded-[16px] border px-3 py-[5px] text-xs font-semibold transition-all duration-200 ${
                             followedUsers.includes(selectedPost.user_id)
-                              ? "border-[#2A2A2A] bg-[#141414] text-[#F5F0E8]"
-                              : "border-transparent bg-[#F4B400] text-[#0D0D0D]"
+                              ? "border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] text-[var(--overlay-text)]"
+                              : "border-transparent bg-[#F4B400] text-[var(--profile-on-accent)]"
                           }`}
                         >
                           {followedUsers.includes(selectedPost.user_id) ? "Following" : "Follow"}
@@ -320,7 +320,7 @@ export default function Explore() {
                       )}
                       <button
                         onClick={closePostModal}
-                        className="rounded-full p-2 text-[#A09080] transition-colors hover:bg-[#141414] hover:text-[#F5F0E8]"
+                        className="rounded-full p-2 text-[var(--overlay-text-subtle)] transition-colors hover:bg-[var(--overlay-elev)] hover:text-[var(--overlay-text)]"
                       >
                         <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -334,16 +334,16 @@ export default function Explore() {
                   <img
                     src={selectedPost.image_url}
                     alt="Post"
-                    className="max-h-[60vh] w-full object-contain bg-[#141414]"
+                    className="max-h-[60vh] w-full object-contain bg-[var(--overlay-elev)]"
                     loading="lazy"
                   />
                 )}
 
-                <div className={`${selectedPost?.image_url ? "p-5" : "p-8"} text-base leading-7 text-[#F5F0E8]`}>
+                <div className={`${selectedPost?.image_url ? "p-5" : "p-8"} text-base leading-7 text-[var(--overlay-text)]`}>
                   {selectedPost?.content || "No content available"}
                 </div>
 
-                <div className="border-t border-[#1F1F1F] px-6 py-4">
+                <div className="border-t border-[var(--overlay-border)] px-6 py-4">
                   <PostInteractions
                     post={selectedPost}
                     initialComments={commentsByPost[selectedPost?.id] || []}
@@ -354,24 +354,24 @@ export default function Explore() {
                 </div>
 
                 {((commentsByPost[selectedPost?.id] || []).length > 0 || showModalComments) && (
-                  <div className="border-t border-[#1F1F1F] px-6 py-4">
+                  <div className="border-t border-[var(--overlay-border)] px-6 py-4">
                     <div className="mb-4 flex items-center gap-2">
-                      <p className="text-sm font-semibold text-[#F5F0E8]">
+                      <p className="text-sm font-semibold text-[var(--overlay-text)]">
                         Comments ({(commentsByPost[selectedPost?.id] || []).length})
                       </p>
                     </div>
 
                     {modalCommentsLoading && (
-                      <p className="mb-3 text-xs text-[#A09080]">Loading comments...</p>
+                      <p className="mb-3 text-xs text-[var(--overlay-text-subtle)]">Loading comments...</p>
                     )}
 
                     <div className="space-y-3">
                       {(commentsByPost[selectedPost?.id] || []).length === 0 ? (
-                        <p className="py-4 text-center text-xs text-[#5C5248]">No comments yet. Be the first!</p>
+                        <p className="py-4 text-center text-xs text-[var(--overlay-text-muted)]">No comments yet. Be the first!</p>
                       ) : (
                            (commentsByPost[selectedPost?.id] || []).map((comment, index) => (
                              comment ? (
-                          <div key={comment.id} className="rounded-[10px] bg-[#141414] p-3 transition-colors hover:bg-[#1C1C1C]">
+                          <div key={comment.id} className="rounded-[10px] bg-[var(--overlay-elev)] p-3 transition-colors hover:bg-[var(--overlay-hover)]">
                             <div className="flex items-start gap-2">
                               <button
                                 onClick={(event) => {
@@ -389,7 +389,7 @@ export default function Explore() {
                                     className="h-8 w-8 rounded-full object-cover"
                                   />
                                 ) : (
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2A2000] text-xs font-bold text-[#F4B400]">
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] text-xs font-bold text-[var(--chat-accent)]">
                                     {comment.profiles?.username?.charAt(0)?.toUpperCase() || "?"}
                                   </div>
                                 )}
@@ -403,17 +403,17 @@ export default function Explore() {
                                       navigate(`/profile/${comment.profiles.username}`)
                                     }
                                   }}
-                                  className="text-xs font-semibold text-[#F5F0E8] hover:text-[#F4B400]"
+                                  className="text-xs font-semibold text-[var(--overlay-text)] hover:text-[#F4B400]"
                                 >
                                   {comment.profiles?.username || "Unknown"}
                                 </button>
-                                <p className="mt-1 break-words text-xs leading-relaxed text-[#A09080]">{comment.content}</p>
-                                <p className="mt-1 text-[10px] text-[#5C5248]">{formatPostTime(comment.created_at)}</p>
+                                <p className="mt-1 break-words text-xs leading-relaxed text-[var(--overlay-text-subtle)]">{comment.content}</p>
+                                <p className="mt-1 text-[10px] text-[var(--overlay-text-muted)]">{formatPostTime(comment.created_at)}</p>
                               </div>
                             </div>
                           </div>
                              ) : (
-                               <div key={`comment-placeholder-${index}`} className="py-2 text-xs text-[#5C5248]">
+                               <div key={`comment-placeholder-${index}`} className="py-2 text-xs text-[var(--overlay-text-muted)]">
                                  Loading comment...
                                </div>
                              )
@@ -438,8 +438,8 @@ export default function Explore() {
         }
 
         .explore-feed [data-post-id] {
-          background: #0D0D0D !important;
-          border: 1px solid #1F1F1F !important;
+          background: var(--profile-surface) !important;
+          border: 1px solid var(--profile-border) !important;
           border-radius: 16px !important;
           padding: 16px !important;
           margin-bottom: 12px !important;
@@ -447,8 +447,8 @@ export default function Explore() {
         }
 
         .explore-feed [data-post-id]:hover {
-          border-color: #2A2A2A !important;
-          background: #111111 !important;
+          border-color: var(--profile-border-strong) !important;
+          background: var(--profile-elev) !important;
         }
 
         .explore-feed [data-post-id] [class*='border-b'],
@@ -460,20 +460,20 @@ export default function Explore() {
         .explore-feed [data-post-id] > div:last-child {
           margin-top: 12px !important;
           padding-top: 12px !important;
-          border-top: 1px solid #1F1F1F !important;
+          border-top: 1px solid var(--profile-border) !important;
         }
 
         .explore-feed [data-post-id] img[alt='Post'] {
           margin-top: 12px !important;
           border-radius: 12px !important;
-          border: 1px solid #1F1F1F !important;
+          border: 1px solid var(--profile-border) !important;
           overflow: hidden;
         }
 
         .explore-feed [data-post-id] button[class*='ml-auto'] {
-          border: 1px solid #2A2A2A !important;
+          border: 1px solid var(--profile-border-strong) !important;
           background: transparent !important;
-          color: #A09080 !important;
+          color: var(--profile-text-subtle) !important;
           border-radius: 16px !important;
           padding: 3px 12px !important;
           font-size: 12px !important;
@@ -486,9 +486,9 @@ export default function Explore() {
           color: #F4B400 !important;
         }
 
-        .explore-feed [data-post-id] button[class*='ml-auto'][class*='text-\[\#5C5248\]'] {
-          border-color: #1F1F1F !important;
-          color: #5C5248 !important;
+        .explore-feed [data-post-id] button[class*='ml-auto'][class*='text-\[\var(--profile-text-muted)\]'] {
+          border-color: var(--profile-border) !important;
+          color: var(--profile-text-muted) !important;
         }
       `}</style>
     </div>

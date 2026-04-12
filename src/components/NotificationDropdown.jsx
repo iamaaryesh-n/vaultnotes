@@ -333,10 +333,10 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
       initial={{ opacity: 0, y: -8, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      className="absolute right-0 z-50 mt-2 w-[320px] overflow-hidden rounded-[16px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_16px_48px_rgba(0,0,0,0.9)]"
+      className="absolute right-0 z-50 mt-2 w-[320px] overflow-hidden rounded-[16px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]"
     >
-      <div className="flex items-center justify-between border-b border-[#1F1F1F] px-4 pb-[10px] pt-[14px]">
-        <h3 className="font-['Sora'] text-[14px] font-bold text-[#F5F0E8]">Notifications</h3>
+      <div className="flex items-center justify-between border-b border-[var(--overlay-border)] px-4 pb-[10px] pt-[14px]">
+        <h3 className="font-['Sora'] text-[14px] font-bold text-[var(--overlay-text)]">Notifications</h3>
         <button
           type="button"
           onClick={handleMarkAllRead}
@@ -348,7 +348,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
 
       <div className="max-h-96 overflow-y-auto">
         {loading ? (
-          <div className="px-4 py-8 text-center text-[#A09080]">
+          <div className="px-4 py-8 text-center text-[var(--overlay-text-subtle)]">
             <svg className="m-auto h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 strokeLinecap="round"
@@ -359,7 +359,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
             </svg>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="px-4 py-8 text-center text-[#A09080]">
+          <div className="px-4 py-8 text-center text-[var(--overlay-text-subtle)]">
             <p className="text-sm">No notifications yet</p>
           </div>
         ) : (
@@ -372,9 +372,9 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
               return (
                 <div
                   key={notif.id}
-                  className={`w-full border-b border-[rgba(31,31,31,0.6)] px-4 py-[11px] text-left transition-colors duration-150 ${
-                    isRead ? "bg-transparent" : "bg-[rgba(244,180,0,0.04)]"
-                  } ${!isInvite ? "hover:bg-[#141414]" : ""}`}
+                  className={`w-full border-b border-[var(--overlay-border)] px-4 py-[11px] text-left transition-colors duration-150 ${
+                    isRead ? "bg-transparent" : "bg-[rgba(244,180,0,0.08)]"
+                  } ${!isInvite ? "hover:bg-[var(--overlay-hover)]" : ""}`}
                 >
                   <div className="flex gap-3">
                     {notif.actor?.avatar_url ? (
@@ -385,7 +385,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                         loading="lazy"
                       />
                     ) : (
-                      <div className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full bg-[#2A2000] font-['Sora'] text-[13px] font-bold text-[#F4B400]">
+                      <div className="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-[13px] font-bold text-[var(--chat-accent)]">
                         {notif.actor?.username?.charAt(0).toUpperCase() || getNotificationIcon(notif.type)}
                       </div>
                     )}
@@ -397,8 +397,8 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                         disabled={isInvite}
                         className={`w-full text-left ${isInvite ? "cursor-default" : "cursor-pointer"}`}
                       >
-                        <p className="truncate text-[12px] text-[#A09080]"><span className="font-semibold text-[#F5F0E8]">{notif.actor?.username || "User"}</span> {getNotificationText(notif).replace(`${notif.actor?.username || "User"} `, "")}</p>
-                        <p className="mt-0.5 text-[10px] text-[#5C5248]">{formatTime(notif.created_at)}</p>
+                        <p className="truncate text-[12px] text-[var(--overlay-text-subtle)]"><span className="font-semibold text-[var(--overlay-text)]">{notif.actor?.username || "User"}</span> {getNotificationText(notif).replace(`${notif.actor?.username || "User"} `, "")}</p>
+                        <p className="mt-0.5 text-[10px] text-[var(--overlay-text-muted)]">{formatTime(notif.created_at)}</p>
                       </button>
 
                       {isInvite && !isRead && (
@@ -407,7 +407,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                             type="button"
                             onClick={() => handleInviteAction(notif, "accept")}
                             disabled={Boolean(actionLoading)}
-                            className="flex-1 rounded-[8px] bg-[#F4B400] py-[7px] text-[12px] font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="flex-1 rounded-[8px] bg-[#F4B400] py-[7px] text-[12px] font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {actionLoading === "accept" ? "Accepting..." : "Accept"}
                           </button>
@@ -415,7 +415,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
                             type="button"
                             onClick={() => handleInviteAction(notif, "decline")}
                             disabled={Boolean(actionLoading)}
-                            className="flex-1 rounded-[8px] border border-[#2A2A2A] bg-[#141414] py-[7px] text-[12px] font-semibold text-[#A09080] transition-colors hover:border-[#EF4444] hover:text-[#EF4444] disabled:cursor-not-allowed disabled:opacity-60"
+                            className="flex-1 rounded-[8px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] py-[7px] text-[12px] font-semibold text-[var(--overlay-text-subtle)] transition-colors hover:border-[#EF4444] hover:text-[#EF4444] disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {actionLoading === "decline" ? "Declining..." : "Decline"}
                           </button>
@@ -433,7 +433,7 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
       </div>
 
       {notifications.length > 0 && (
-        <div className="border-t border-[#1F1F1F] py-[10px] text-center">
+        <div className="border-t border-[var(--overlay-border)] py-[10px] text-center">
           <button
             onClick={() => {
               navigate("/notifications")

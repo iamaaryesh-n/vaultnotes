@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from "react"
+﻿import { useState, useEffect, useCallback, lazy, Suspense } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate, useParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
@@ -11,6 +11,7 @@ import { EditProfileModal } from "../components/EditProfileModal"
 import { fetchUserPublicWorkspaces } from "../lib/globalSearch"
 import VisibilityBadge from "../components/VisibilityBadge"
 import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
+import { followUser, unfollowUser } from "../lib/followsLib"
 
 const FollowersModal = lazy(() =>
   import("../components/FollowersModal").then((module) => ({ default: module.FollowersModal }))
@@ -295,14 +296,9 @@ export default function Profile() {
       setIsFollowLoading(true)
 
       if (isFollowing) {
-        const { error } = await supabase
-          .from("follows")
-          .delete()
-          .eq("follower_id", user.id)
-          .eq("following_id", profile.id)
-
-        if (error) {
-          throw error
+        const result = await unfollowUser(user.id, profile.id)
+        if (!result.success) {
+          throw new Error(result.error || "Failed to unfollow user")
         }
 
         setIsFollowing(false)
@@ -310,15 +306,9 @@ export default function Profile() {
         return
       }
 
-      const { error } = await supabase
-        .from("follows")
-        .insert({
-          follower_id: user.id,
-          following_id: profile.id
-        })
-
-      if (error) {
-        throw error
+      const result = await followUser(user.id, profile.id)
+      if (!result.success) {
+        throw new Error(result.error || "Failed to follow user")
       }
 
       setIsFollowing(true)
@@ -881,18 +871,18 @@ export default function Profile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#000000]">
-        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-[#F5F0E8] md:px-6">
+      <div className="min-h-screen bg-[var(--profile-bg)]">
+        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-[var(--profile-text)] md:px-6">
         <div className="animate-pulse space-y-6">
           <div className="text-center space-y-4">
-            <div className="mx-auto h-32 w-32 rounded-full bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-            <div className="mx-auto h-8 w-3/4 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-            <div className="mx-auto h-4 w-1/2 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+            <div className="mx-auto h-32 w-32 rounded-full bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+            <div className="mx-auto h-8 w-3/4 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+            <div className="mx-auto h-4 w-1/2 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
           </div>
-          <div className="h-10 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+          <div className="h-10 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
           <div className="space-y-4">
             {Array(3).fill(0).map((_, i) => (
-              <div key={i} className="h-24 rounded-[8px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
+              <div key={i} className="h-24 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
             ))}
           </div>
         </div>
@@ -903,12 +893,12 @@ export default function Profile() {
 
   if (!user || !profile) {
     return (
-      <div className="min-h-screen bg-[#000000]">
-        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-center text-[#F5F0E8] md:px-6">
-        <p className="mb-4 text-[#A09080]">Unable to load profile data.</p>
+      <div className="min-h-screen bg-[var(--profile-bg)]">
+        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-center text-[var(--profile-text)] md:px-6">
+        <p className="mb-4 text-[var(--profile-text-subtle)]">Unable to load profile data.</p>
         <button
           onClick={() => navigate(-1)}
-          className="rounded-[10px] bg-[#F4B400] px-6 py-2 font-semibold text-[#0D0D0D] transition-colors hover:bg-[#C49000]"
+          className="rounded-[10px] bg-[var(--profile-accent)] px-6 py-2 font-semibold text-[var(--profile-on-accent)] transition-colors hover:bg-[var(--profile-accent-hover)]"
         >
           Back to Home
         </button>
@@ -920,13 +910,13 @@ export default function Profile() {
   const isOwnProfile = user?.id === profile?.id
 
   return (
-    <div className="-mt-[64px] min-h-screen bg-[#000000]">
-      <div className="mx-auto w-full max-w-5xl px-4 pb-8 pt-3 text-[#F5F0E8] md:px-6">
+    <div className="-mt-[64px] min-h-screen bg-[var(--profile-bg)]">
+      <div className="mx-auto w-full max-w-5xl px-4 pb-8 pt-3 text-[var(--profile-text)] md:px-6">
       {/* ========== Premium Social Header ========== */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-8 overflow-hidden rounded-3xl border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_20px_50px_-30px_rgba(0,0,0,0.7)]"
+        className="mb-8 overflow-hidden rounded-3xl border border-[var(--profile-border)] bg-[var(--profile-surface)] shadow-[0_20px_50px_-30px_rgba(0,0,0,0.7)]"
       >
         {/* Section 1: Cover only */}
         <div className="relative z-0 h-[280px] overflow-hidden rounded-t-3xl md:h-[320px]">
@@ -942,40 +932,40 @@ export default function Profile() {
               }}
             />
           ) : (
-            <div className="h-full w-full bg-gradient-to-br from-[#1A1200] via-[#2A2000] to-[#1A0A00]" style={{ backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(244,180,0,0.03) 40px, rgba(244,180,0,0.03) 80px)" }} />
+            <div className="h-full w-full bg-gradient-to-br from-[var(--profile-accent-soft)] via-[var(--profile-accent-soft)] to-[var(--profile-bg)]" style={{ backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(244,180,0,0.03) 40px, rgba(244,180,0,0.03) 80px)" }} />
           )}
         </div>
 
         {/* Section 2: Profile info row */}
-        <div className="relative z-20 border-b border-[#1F1F1F] bg-[#000000] px-5 pb-4">
+        <div className="relative z-20 border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-4">
           <div className="mb-6 flex flex-col items-start gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="flex items-end gap-[14px]">
-              <div className="relative z-10 -mt-[38px] shrink-0">
+            <div className="flex items-end gap-[20px]">
+              <div className="relative z-10 -mt-[42px] shrink-0">
                 {avatarUrl ? (
                   <img
                     src={avatarUrl}
                     alt="Avatar"
                     loading="lazy"
-                    className="h-[76px] w-[76px] shrink-0 rounded-full border-[3px] border-[#000000] object-cover"
+                    className="h-[144px] w-[144px] shrink-0 rounded-full border-[3px] border-[var(--profile-bg)] object-cover"
                   />
                 ) : (
-                  <div className="flex h-[76px] w-[76px] shrink-0 items-center justify-center rounded-full border-[3px] border-[#000000] bg-[#2A2000] font-['Sora'] text-[26px] font-bold text-[#F4B400]">
+                  <div className="flex h-[144px] w-[144px] shrink-0 items-center justify-center rounded-full border-[3px] border-[var(--profile-bg)] bg-[var(--profile-accent-soft)] font-['Sora'] text-[42px] font-bold text-[var(--profile-accent)]">
                     {profile?.name?.charAt(0)?.toUpperCase() || "?"}
                   </div>
                 )}
               </div>
 
               <div className="flex flex-col">
-                <h1 className="font-['Sora'] text-[18px] font-bold text-[#F5F0E8]">
+                <h1 className="font-['Sora'] text-[28px] font-bold text-[var(--profile-text)]">
                   {profile?.name || "User"}
                 </h1>
 
-                <p className="mt-[2px] text-[13px] text-[#5C5248]">
+                <p className="mt-[2px] text-[16px] text-[var(--profile-text-muted)]">
                   @{profile?.username || "username"}
                 </p>
 
                 {profile?.bio && (
-                  <p className="mt-[8px] max-w-[380px] text-[13px] leading-relaxed text-[#A09080]">
+                  <p className="mt-[8px] max-w-[380px] text-[13px] leading-relaxed text-[var(--profile-text-subtle)]">
                     {profile.bio}
                   </p>
                 )}
@@ -986,7 +976,7 @@ export default function Profile() {
               {isOwnProfile ? (
                 <motion.button
                   onClick={() => setEditProfileModalOpen(true)}
-                  className="w-full rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-4 py-[7px] font-['DM_Sans'] text-[13px] font-semibold text-[#F5F0E8] transition-colors hover:border-[#F4B400] hover:bg-[#1C1C1C] md:w-auto"
+                  className="w-full rounded-[10px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] px-4 py-[7px] font-['DM_Sans'] text-[13px] font-semibold text-[var(--profile-text)] transition-colors hover:border-[var(--profile-accent)] hover:bg-[var(--profile-hover)] md:w-auto"
                 >
                   Edit Profile
                 </motion.button>
@@ -997,8 +987,8 @@ export default function Profile() {
                     disabled={isFollowLoading}
                     className={`flex-1 rounded-[10px] px-5 py-[7px] font-['DM_Sans'] text-[13px] transition-all md:flex-none ${
                       isFollowing
-                        ? "border border-[#2A2A2A] bg-[#141414] font-semibold text-[#F5F0E8] hover:border-[#EF4444] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444]"
-                        : "bg-[#F4B400] font-bold text-[#0D0D0D] hover:scale-[1.03] hover:bg-[#C49000] active:scale-[0.96]"
+                        ? "border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] font-semibold text-[var(--profile-text)] hover:border-[#EF4444] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444]"
+                        : "bg-[var(--profile-accent)] font-bold text-[var(--profile-on-accent)] hover:scale-[1.03] hover:bg-[var(--profile-accent-hover)] active:scale-[0.96]"
                     }`}
                   >
                     {isFollowLoading ? "Please wait..." : isFollowing ? "Following" : "Follow"}
@@ -1006,7 +996,7 @@ export default function Profile() {
                   <button
                     onClick={handleStartChat}
                     disabled={isChatLoading}
-                    className="flex-1 rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-4 py-[7px] font-['DM_Sans'] text-[13px] font-semibold text-[#F5F0E8] transition-colors hover:border-[#A09080] hover:bg-[#1C1C1C] md:flex-none"
+                    className="flex-1 rounded-[10px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] px-4 py-[7px] font-['DM_Sans'] text-[13px] font-semibold text-[var(--profile-text)] transition-colors hover:border-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)] md:flex-none"
                   >
                     {isChatLoading ? "Opening..." : "Message"}
                   </button>
@@ -1016,7 +1006,7 @@ export default function Profile() {
           </div>
 
           {/* Stats */}
-          <div className="mt-4 flex overflow-hidden rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D]">
+          <div className="mt-4 flex overflow-hidden rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-surface)]">
             {[
               { label: "Posts", value: posts.length },
               { label: "Followers", value: followersCount, onClick: () => setFollowersModalOpen(true), clickable: true },
@@ -1026,13 +1016,13 @@ export default function Profile() {
             ].map((stat, i) => (
               <motion.button
                 key={i}
-                whileHover={{ backgroundColor: "#141414" }}
+                whileHover={{ backgroundColor: "var(--profile-elev)" }}
                 onClick={stat.onClick}
                 disabled={!stat.clickable}
-                className="flex-1 border-r border-[#1F1F1F] py-3 text-center transition-colors last:border-r-0"
+                className="flex-1 border-r border-[var(--profile-border)] py-3 text-center transition-colors last:border-r-0"
               >
-                <p className="font-['Sora'] text-[17px] font-bold text-[#F5F0E8]">{stat.value}</p>
-                <p className="mt-[2px] text-[10px] font-semibold uppercase tracking-[0.06em] text-[#5C5248]">{stat.label}</p>
+                <p className="font-['Sora'] text-[17px] font-bold text-[var(--profile-text)]">{stat.value}</p>
+                <p className="mt-[2px] text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--profile-text-muted)]">{stat.label}</p>
               </motion.button>
             ))}
           </div>
@@ -1044,7 +1034,7 @@ export default function Profile() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.1 }}
-        className="sticky top-0 z-20 mb-6 flex gap-1 overflow-x-auto border-b border-[#1F1F1F] bg-[#000000] px-5"
+        className="sticky top-0 z-20 mb-6 flex gap-1 overflow-x-auto border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5"
       >
         {["posts", "workspaces", "saved"].map((tab) => (
           <motion.button
@@ -1054,8 +1044,8 @@ export default function Profile() {
             onClick={() => setActiveTab(tab)}
             className={`whitespace-nowrap border-b-[2px] px-4 py-3 font-['DM_Sans'] text-[13px] font-semibold transition-colors ${
               activeTab === tab
-                ? "border-b-[#F4B400] text-[#F4B400]"
-                : "border-b-transparent text-[#5C5248] hover:text-[#A09080]"
+                ? "border-b-[var(--profile-accent)] text-[var(--profile-accent)]"
+                : "border-b-transparent text-[var(--profile-text-muted)] hover:text-[var(--profile-text-subtle)]"
             }`}
           >
             {tab === "workspaces" ? "Vaults" : tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -1076,27 +1066,27 @@ export default function Profile() {
             {postsLoading ? (
               <div className="space-y-3 px-5 py-4">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-4 animate-pulse">
+                  <div key={i} className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 animate-pulse">
                     <div className="mb-4 flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                      <div className="h-10 w-10 rounded-full bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
                       <div className="flex-1">
-                        <div className="mb-1 h-4 w-32 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                        <div className="h-3 w-24 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                        <div className="mb-1 h-4 w-32 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                        <div className="h-3 w-24 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
                       </div>
                     </div>
-                    <div className="mb-2 h-4 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                    <div className="mb-2 h-4 w-5/6 rounded bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                    <div className="h-40 rounded-[10px] bg-[#141414]" style={{ background: "linear-gradient(90deg, #141414 25%, #1C1C1C 50%, #141414 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    <div className="mb-2 h-4 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    <div className="mb-2 h-4 w-5/6 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    <div className="h-40 rounded-[10px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
                   </div>
                 ))}
               </div>
             ) : posts.length === 0 ? (
-              <div className="mx-5 my-4 bg-transparent p-10 text-center border border-dashed border-[#2A2A2A] rounded-[14px]">
-                <svg className="mx-auto mb-2 h-12 w-12 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="mx-5 my-4 bg-transparent p-10 text-center border border-dashed border-[var(--profile-border-strong)] rounded-[14px]">
+                <svg className="mx-auto mb-2 h-12 w-12 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v12a2 2 0 01-2 2z" />
                 </svg>
-                <p className="text-[14px] font-semibold text-[#A09080]">No posts yet</p>
-                <p className="text-[12px] text-[#5C5248]">Share your first post with the community!</p>
+                <p className="text-[14px] font-semibold text-[var(--profile-text-subtle)]">No posts yet</p>
+                <p className="text-[12px] text-[var(--profile-text-muted)]">Share your first post with the community!</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3 px-5 py-4">
@@ -1106,7 +1096,7 @@ export default function Profile() {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    className="rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-4 transition-colors hover:border-[#2A2A2A]"
+                    className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 transition-colors hover:border-[var(--profile-border-strong)]"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex flex-col gap-1">
@@ -1116,13 +1106,13 @@ export default function Profile() {
                               navigate(`/profile/${post.profiles.username}`)
                             }
                           }}
-                          className="text-left text-sm font-medium text-[#F4B400] hover:text-[#C49000] hover:underline"
+                          className="text-left text-sm font-medium text-[var(--profile-accent)] hover:text-[var(--profile-accent-hover)] hover:underline"
                         >
                           @{post.profiles?.username || "unknown"}
                         </button>
-                        <p className="flex items-center gap-2 text-[11px] text-[#5C5248]">
+                        <p className="flex items-center gap-2 text-[11px] text-[var(--profile-text-muted)]">
                           <span>{formatPostTime(post.created_at)}</span>
-                          <span>·</span>
+                          <span>Â·</span>
                           <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
                         </p>
                       </div>
@@ -1135,7 +1125,7 @@ export default function Profile() {
                               event.stopPropagation()
                               setActivePostMenuId((prev) => (prev === post.id ? null : post.id))
                             }}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#1F1F1F] bg-[#141414] text-[#A09080] transition-colors hover:border-[#2A2A2A] hover:bg-[#1C1C1C] hover:text-[#F5F0E8]"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] transition-colors hover:border-[var(--profile-border-strong)] hover:bg-[var(--profile-hover)] hover:text-[var(--profile-text)]"
                             aria-label="Open post actions"
                           >
                             <MoreHorizontal className="h-4 w-4" />
@@ -1144,13 +1134,13 @@ export default function Profile() {
                           {activePostMenuId === post.id && (
                             <div
                               data-post-menu="true"
-                              className="absolute right-0 top-10 z-20 min-w-[170px] rounded-[12px] border border-[#1F1F1F] bg-[#111111] p-1.5 shadow-2xl"
+                              className="absolute right-0 top-10 z-20 min-w-[170px] rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-1.5 shadow-2xl"
                               onClick={(event) => event.stopPropagation()}
                             >
                               <button
                                 type="button"
                                 onClick={() => handleStartEditingPost(post)}
-                                className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-[12px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#141414]"
+                                className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-[12px] font-semibold text-[var(--profile-text)] transition-colors hover:bg-[var(--profile-elev)]"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                                 Edit post
@@ -1174,26 +1164,26 @@ export default function Profile() {
                     </div>
 
                     {editingPostId === post.id ? (
-                      <div className="mb-3 rounded-[10px] border border-[#2A2A2A] bg-[#141414] p-3">
+                      <div className="mb-3 rounded-[10px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] p-3">
                         <textarea
                           value={editingPostContent}
                           onChange={(event) => setEditingPostContent(event.target.value)}
                           placeholder="Edit your post..."
                           rows={4}
-                          className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[#F5F0E8] outline-none placeholder:text-[#5C5248]"
+                          className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--profile-text)] outline-none placeholder:text-[var(--profile-text-muted)]"
                         />
                         <div className="mt-3 flex items-center justify-end gap-2">
                           <button
                             type="button"
                             onClick={handleCancelEditingPost}
-                            className="rounded-[8px] border border-[#2A2A2A] bg-[#141414] px-3 py-1.5 text-[12px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#1C1C1C]"
+                            className="rounded-[8px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] px-3 py-1.5 text-[12px] font-semibold text-[var(--profile-text)] transition-colors hover:bg-[var(--profile-hover)]"
                           >
                             Cancel
                           </button>
                           <button
                             type="button"
                             onClick={handleSaveEditingPostFrontend}
-                            className="rounded-[8px] bg-[#F4B400] px-3 py-1.5 text-[12px] font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000]"
+                            className="rounded-[8px] bg-[var(--profile-accent)] px-3 py-1.5 text-[12px] font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[var(--profile-accent-hover)]"
                           >
                             Save (UI only)
                           </button>
@@ -1201,7 +1191,7 @@ export default function Profile() {
                       </div>
                     ) : (
                       (postContentOverrides[post.id] || post.content) && (
-                        <p className="mb-3 whitespace-pre-wrap text-[14px] leading-relaxed text-[#F5F0E8]">
+                        <p className="mb-3 whitespace-pre-wrap text-[14px] leading-relaxed text-[var(--profile-text)]">
                           {postContentOverrides[post.id] || post.content}
                         </p>
                       )
@@ -1211,7 +1201,7 @@ export default function Profile() {
                       <img
                         src={post.image_url}
                         alt="Post"
-                        className="mb-3 max-h-96 w-full rounded-[10px] border border-[#1F1F1F] object-cover"
+                        className="mb-3 max-h-96 w-full rounded-[10px] border border-[var(--profile-border)] object-cover"
                       />
                     )}
 
@@ -1236,15 +1226,15 @@ export default function Profile() {
             transition={{ duration: 0.2 }}
           >
             {workspacesLoading ? (
-              <div className="mx-5 my-4 rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-10 text-center">
-                <p className="text-[14px] font-semibold text-[#A09080]">Loading vaults...</p>
+              <div className="mx-5 my-4 rounded-[14px] border border-dashed border-[var(--profile-border-strong)] bg-transparent p-10 text-center">
+                <p className="text-[14px] font-semibold text-[var(--profile-text-subtle)]">Loading vaults...</p>
               </div>
             ) : workspaces.length === 0 ? (
-              <div className="mx-5 my-4 rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-10 text-center">
-                <svg className="mx-auto mb-2 h-12 w-12 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="mx-5 my-4 rounded-[14px] border border-dashed border-[var(--profile-border-strong)] bg-transparent p-10 text-center">
+                <svg className="mx-auto mb-2 h-12 w-12 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 5a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h2zm0 0a2 2 0 012 2v12a2 2 0 01-2 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2zm6 0v2M7 9h2" />
                 </svg>
-                <p className="text-[14px] font-semibold text-[#A09080]">No vaults yet</p>
+                <p className="text-[14px] font-semibold text-[var(--profile-text-subtle)]">No vaults yet</p>
               </div>
             ) : (
               <div className="px-5 py-4 space-y-6">
@@ -1258,8 +1248,8 @@ export default function Profile() {
                       {/* Public Vaults Section */}
                       {publicWorkspaces.length > 0 && (
                         <div>
-                          <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5C5248]">
-                            <span>🌍</span> Public Vaults
+                          <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--profile-text-muted)]">
+                            <span>ðŸŒ</span> Public Vaults
                           </h3>
                           <div className="space-y-2">
                             {publicWorkspaces.map((workspace) => (
@@ -1267,20 +1257,20 @@ export default function Profile() {
                                 key={workspace.id}
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="mb-2 flex cursor-pointer items-center justify-between rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-[14px] transition-colors hover:border-[#2A2A2A] hover:bg-[#141414]"
+                                className="mb-2 flex cursor-pointer items-center justify-between rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-surface)] px-4 py-[14px] transition-colors hover:border-[var(--profile-border-strong)] hover:bg-[var(--profile-elev)]"
                                 onClick={() => navigate(`/workspace/${workspace.id}`)}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <p className="font-['DM_Sans'] text-[14px] font-semibold text-[#F5F0E8]">{workspace.name}</p>
+                                      <p className="font-['DM_Sans'] text-[14px] font-semibold text-[var(--profile-text)]">{workspace.name}</p>
                                       <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
                                     </div>
-                                    <p className="mt-[3px] text-[11px] text-[#5C5248]">
+                                    <p className="mt-[3px] text-[11px] text-[var(--profile-text-muted)]">
                                       Created {new Date(workspace.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                                     </p>
                                   </div>
-                                  <svg className="h-5 w-5 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="h-5 w-5 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
@@ -1293,8 +1283,8 @@ export default function Profile() {
                       {/* Private Vaults Section (Own profile only) */}
                       {isOwnProfile && privateWorkspaces.length > 0 && (
                         <div>
-                          <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5C5248]">
-                            <span>🔒</span> Private Vaults
+                          <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--profile-text-muted)]">
+                            <span>ðŸ”’</span> Private Vaults
                           </h3>
                           <div className="space-y-2">
                             {privateWorkspaces.map((workspace) => (
@@ -1302,20 +1292,20 @@ export default function Profile() {
                                 key={workspace.id}
                                 initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
-                                className="mb-2 flex cursor-pointer items-center justify-between rounded-[12px] border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-[14px] transition-colors hover:border-[#2A2A2A] hover:bg-[#141414]"
+                                className="mb-2 flex cursor-pointer items-center justify-between rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-surface)] px-4 py-[14px] transition-colors hover:border-[var(--profile-border-strong)] hover:bg-[var(--profile-elev)]"
                                 onClick={() => navigate(`/workspace/${workspace.id}`)}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <p className="font-['DM_Sans'] text-[14px] font-semibold text-[#F5F0E8]">{workspace.name}</p>
+                                      <p className="font-['DM_Sans'] text-[14px] font-semibold text-[var(--profile-text)]">{workspace.name}</p>
                                       <WorkspaceVisibilityBadge isPublic={workspace.is_public} size="xs" />
                                     </div>
-                                    <p className="mt-[3px] text-[11px] text-[#5C5248]">
+                                    <p className="mt-[3px] text-[11px] text-[var(--profile-text-muted)]">
                                       Created {new Date(workspace.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
                                     </p>
                                   </div>
-                                  <svg className="h-5 w-5 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="h-5 w-5 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                   </svg>
                                 </div>
@@ -1339,12 +1329,12 @@ export default function Profile() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
-            className="mx-5 my-4 rounded-[14px] border border-dashed border-[#2A2A2A] bg-transparent p-10 text-center"
+            className="mx-5 my-4 rounded-[14px] border border-dashed border-[var(--profile-border-strong)] bg-transparent p-10 text-center"
           >
-            <svg className="mx-auto mb-2 h-12 w-12 text-[#5C5248]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto mb-2 h-12 w-12 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5h14v14H5zM8 3v4M16 3v4M8 17h8" />
             </svg>
-            <p className="text-[14px] font-semibold text-[#A09080]">Saved items coming soon</p>
+            <p className="text-[14px] font-semibold text-[var(--profile-text-subtle)]">Saved items coming soon</p>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1391,3 +1381,5 @@ export default function Profile() {
     </div>
   )
 }
+
+
