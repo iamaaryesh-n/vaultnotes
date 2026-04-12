@@ -568,21 +568,36 @@ export default function Navbar() {
                   <div className="my-1 border-t border-[var(--chat-border)]" />
                   <button
                     onClick={() => handleThemeChange("light")}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
-                    {selectedTheme === "light" ? "âœ“ " : ""}Light Mode
+                    <span>Light Mode</span>
+                    {selectedTheme === "light" && (
+                      <svg className="h-4 w-4 text-[var(--chat-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
                   </button>
                   <button
                     onClick={() => handleThemeChange("dark")}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
-                    {selectedTheme === "dark" ? "âœ“ " : ""}Dark Mode
+                    <span>Dark Mode</span>
+                    {selectedTheme === "dark" && (
+                      <svg className="h-4 w-4 text-[var(--chat-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
                   </button>
                   <button
                     onClick={() => handleThemeChange("system")}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
-                    {selectedTheme === "system" ? "âœ“ " : ""}System Default
+                    <span>System Default</span>
+                    {selectedTheme === "system" && (
+                      <svg className="h-4 w-4 text-[var(--chat-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
                   </button>
                   <button
                     onClick={handleSwitchAccount}

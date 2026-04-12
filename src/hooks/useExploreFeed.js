@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { supabase } from "../lib/supabase"
 import { fetchCommentCountsForPosts, fetchLikeCountsForPosts } from "../lib/postInteractions"
+import { usePostCacheStore } from "../stores/postCacheStore"
 
 const BATCH_SIZE = 3
 
 export function useExploreFeed() {
-  const [posts, setPosts] = useState([])
+  const initialCachedPosts = (() => {
+    const state = usePostCacheStore.getState()
+    return Object.values(state.posts || {})
+      .filter((post) => state.isCacheValid(post.id))
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  })()
+
+  const setCachedPosts = usePostCacheStore((state) => state.setCachedPosts)
+  const [posts, setPosts] = useState(initialCachedPosts)
   const [commentsByPost, setCommentsByPost] = useState({})
   const [likesByPost, setLikesByPost] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(initialCachedPosts.length === 0)
   const [error, setError] = useState(null)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
@@ -59,6 +68,7 @@ export function useExploreFeed() {
         }
 
         if (fetchedPosts.length > 0) {
+          setCachedPosts(fetchedPosts)
           const postIds = fetchedPosts.map((post) => post.id)
           const [commentCounts, likeData] = await Promise.all([
             fetchCommentCountsForPosts(postIds),
@@ -80,7 +90,7 @@ export function useExploreFeed() {
         return []
       }
     },
-    [currentUserId]
+    [currentUserId, setCachedPosts]
   )
 
   const loadMorePosts = useCallback(
@@ -137,11 +147,13 @@ export function useExploreFeed() {
 
   useEffect(() => {
     const loadInitialPosts = async () => {
-      setLoading(true)
+      setLoading(initialCachedPosts.length === 0)
       try {
         const initialPosts = await fetchPostsBatch(0)
         loadedPagesRef.current = new Set([0])
-        setPosts(initialPosts)
+        if (initialPosts.length > 0) {
+          setPosts(initialPosts)
+        }
         setPage(0)
       } catch (err) {
         setError(err.message || "Failed to load posts")

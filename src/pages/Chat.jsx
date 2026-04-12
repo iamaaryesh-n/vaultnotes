@@ -11,6 +11,8 @@ import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
 import { AnimatePresence, motion } from "framer-motion"
+import { useChatStore } from "../stores/chatStore"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 
 dayjs.extend(relativeTime)
 dayjs.extend(utc)
@@ -31,13 +33,22 @@ export default function Chat() {
   const { conversationId: routeConversationId, groupId: routeGroupId } = useParams()
   const { user: contextUser } = useAuth()
   const { success: showSuccess, error: showToastError } = useToast()
+  const cachedConversations = useChatStore((state) => state.conversations)
+  const cachedCurrentChatId = useChatStore((state) => state.currentChatId)
+  const cachedUnreadCountsByConversation = useChatStore((state) => state.unreadCountsByConversation)
+  const shouldFetchConversations = useChatStore((state) => state.shouldFetchConversations)
+  const shouldFetchMessages = useChatStore((state) => state.shouldFetchMessages)
+  const setConversationsCache = useChatStore((state) => state.setConversations)
+  const setMessagesCache = useChatStore((state) => state.setMessages)
+  const setUnreadCountsCache = useChatStore((state) => state.setUnreadCountsByConversation)
+  const setCurrentChatIdCache = useChatStore((state) => state.setCurrentChatId)
   const [searchParams] = useSearchParams()
-  const [conversations, setConversations] = useState([])
-  const [activeConversationId, setActiveConversationId] = useState(null)
+  const [conversations, setConversations] = useState(cachedConversations || [])
+  const [activeConversationId, setActiveConversationId] = useState(cachedCurrentChatId || null)
   const [messages, setMessages] = useState([])
   const [profilesById, setProfilesById] = useState({})
   const [draft, setDraft] = useState("")
-  const [loadingConversations, setLoadingConversations] = useState(true)
+  const [loadingConversations, setLoadingConversations] = useState((cachedConversations || []).length === 0)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
   const [userSearchQuery, setUserSearchQuery] = useState("")
@@ -64,7 +75,7 @@ export default function Chat() {
   const [matchedMessageIds, setMatchedMessageIds] = useState([])
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [presenceNow, setPresenceNow] = useState(Date.now())
-  const [unreadCountsByConversation, setUnreadCountsByConversation] = useState({})
+  const [unreadCountsByConversation, setUnreadCountsByConversation] = useState(cachedUnreadCountsByConversation || {})
   const [typingByConversation, setTypingByConversation] = useState({})
   const [onlineUsersById, setOnlineUsersById] = useState({})
   const [replyToMessage, setReplyToMessage] = useState(null)
@@ -164,6 +175,8 @@ export default function Chat() {
   const isMobileConversationView = isMobileView && Boolean(routeConversationId)
   const isMobileGroupDetailView = isMobileView && Boolean(routeGroupId)
   const isMobileDetailView = isMobileConversationView || isMobileGroupDetailView
+
+  useRouteScrollRestoration(`chat-${chatMode}`)
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 767px)")
@@ -1265,13 +1278,21 @@ export default function Chat() {
     []
   )
 
-  const fetchMessages = useCallback(async (conversationId) => {
+  const fetchMessages = useCallback(async (conversationId, { force = false, silent = false } = {}) => {
     if (!conversationId) return
+
+    const cachedMessages = useChatStore.getState().messagesByConversationId[conversationId] || []
+    if (!force && cachedMessages.length > 0 && !shouldFetchMessages(conversationId)) {
+      setMessages(cachedMessages)
+      return
+    }
 
     try {
       console.log("[Chat] conversationId:", conversationId)
       console.log("[Chat] fetchMessages called for conversation:", conversationId)
-      setLoadingMessages(true)
+      if (!silent) {
+        setLoadingMessages(true)
+      }
       setError("")
 
       const { data, error: fetchError } = await supabase
@@ -1327,6 +1348,7 @@ export default function Chat() {
       
       // First set messages without reactions (to show them immediately)
       setMessages(decryptedMessages)
+      setMessagesCache(conversationId, decryptedMessages)
       
       // Then fetch and attach reactions
       await fetchReactionsForMessages(decryptedMessages)
@@ -1334,15 +1356,24 @@ export default function Chat() {
       console.error("[Chat] Messages exception:", err)
       setError("Failed to load messages")
     } finally {
-      setLoadingMessages(false)
+      if (!silent) {
+        setLoadingMessages(false)
+      }
     }
-  }, [fetchProfilesByIds, fetchReactionsForMessages, getMessageType])
+  }, [fetchProfilesByIds, fetchReactionsForMessages, getMessageType, setMessagesCache, shouldFetchMessages])
 
-  const fetchConversations = useCallback(async (userId) => {
+  const fetchConversations = useCallback(async (userId, { force = false, silent = false } = {}) => {
     if (!userId) return
 
+    if (!force && cachedConversations.length > 0 && !shouldFetchConversations()) {
+      setLoadingConversations(false)
+      return
+    }
+
     try {
-      setLoadingConversations(true)
+      if (!silent) {
+        setLoadingConversations(true)
+      }
       setError("")
 
       const { data, error: fetchError } = await supabase
@@ -1508,6 +1539,8 @@ export default function Chat() {
 
       setConversations(sortedHydrated)
       setUnreadCountsByConversation(unreadMap)
+      setConversationsCache(sortedHydrated)
+      setUnreadCountsCache(unreadMap)
       dispatchUnreadBadgeUpdate(unreadMap)
 
       if (sortedHydrated.length === 0) {
@@ -1519,13 +1552,19 @@ export default function Chat() {
       setError("Failed to load conversations")
       setConversations([])
     } finally {
-      setLoadingConversations(false)
+      if (!silent) {
+        setLoadingConversations(false)
+      }
     }
-  }, [dispatchUnreadBadgeUpdate, fetchProfilesByIds, getMessageType, sortConversationsByPriority])
+  }, [cachedConversations.length, dispatchUnreadBadgeUpdate, fetchProfilesByIds, getMessageType, setConversationsCache, setUnreadCountsCache, shouldFetchConversations, sortConversationsByPriority])
 
   useEffect(() => {
     setConversations((prev) => sortConversationsByPriority(prev, unreadCountsByConversation, typingByConversation))
   }, [sortConversationsByPriority, unreadCountsByConversation, typingByConversation])
+
+  useEffect(() => {
+    setUnreadCountsCache(unreadCountsByConversation)
+  }, [unreadCountsByConversation, setUnreadCountsCache])
 
   useEffect(() => {
     if (!contextUser?.id) {
@@ -1536,8 +1575,12 @@ export default function Chat() {
       return
     }
 
-    fetchConversations(contextUser.id)
-  }, [contextUser?.id, fetchConversations])
+    fetchConversations(contextUser.id, { silent: cachedConversations.length > 0 })
+  }, [contextUser?.id, fetchConversations, cachedConversations.length])
+
+  useEffect(() => {
+    setCurrentChatIdCache(activeConversationId)
+  }, [activeConversationId, setCurrentChatIdCache])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -1763,6 +1806,10 @@ export default function Chat() {
   useEffect(() => {
     if (activeConversationId) {
       console.log("[Chat] messages fetch effect triggered for conversation:", activeConversationId)
+      const cachedMessages = useChatStore.getState().messagesByConversationId[activeConversationId] || []
+      if (cachedMessages.length > 0) {
+        setMessages(cachedMessages)
+      }
       // Clear stale keys from memory cache for this conversation
       delete conversationCryptoKeysRef.current[activeConversationId]
       // Clear cached image signed URLs when switching conversations
@@ -1770,11 +1817,11 @@ export default function Chat() {
       // Fetch fresh key from DB (overwrites any stale cache)
       getOrCreateConversationKey(activeConversationId)
         .then(() => {
-          fetchMessages(activeConversationId)
+          fetchMessages(activeConversationId, { silent: cachedMessages.length > 0 })
         })
         .catch((err) => {
           console.error("[Chat] Error loading conversation key:", err)
-          fetchMessages(activeConversationId)
+          fetchMessages(activeConversationId, { silent: cachedMessages.length > 0 })
         })
     }
   }, [activeConversationId, fetchMessages, getOrCreateConversationKey])

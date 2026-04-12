@@ -87,12 +87,26 @@ export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCo
   const handleCommentsRealtime = useCallback(
     async (payload) => {
       if (payload.eventType === "INSERT" && payload.new?.post_id) {
+        let profile = { username: "unknown", avatar_url: null, name: null }
+
+        if (payload.new.user_id) {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("id, username, avatar_url, name")
+            .eq("id", payload.new.user_id)
+            .maybeSingle()
+
+          if (profileData) {
+            profile = profileData
+          }
+        }
+
         const comment = {
           id: payload.new.id,
           user_id: payload.new.user_id,
           content: payload.new.content,
           created_at: payload.new.created_at,
-          profiles: { username: "unknown", avatar_url: null }
+          profiles: profile
         }
 
         setCommentsByPost((prev) => ({

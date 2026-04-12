@@ -4,16 +4,26 @@ import RemoveUserModal from "../components/RemoveUserModal"
 import { canCreate, canDelete, canShare, getUserRole, isViewer } from "../utils/rolePermissions"
 import { verifyWorkspaceAccess } from "../lib/workspaceMembers"
 import { isWorkspacePublic, getMemoryViewMode, debugAccessDecision } from "../lib/workspaceAccess"
-import { useEffect, useState, useRef, useMemo, lazy, Suspense } from "react"
+import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { MemoryGridSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
+import { useWorkspaceStore } from "../stores/workspaceStore"
+import { useNavigationStore } from "../stores/navigationStore"
 
 const InviteUserModal = lazy(() => import("../components/InviteUserModal"))
+const EMPTY_MEMORIES = []
+
+function readCachedSortOrder(workspaceId) {
+  if (!workspaceId || typeof window === "undefined") return null
+  const value = sessionStorage.getItem(`sort_preference_${workspaceId}`)
+  return value === "newest" || value === "oldest" ? value : null
+}
 
 export default function WorkspaceDetail() {
 
@@ -21,14 +31,28 @@ export default function WorkspaceDetail() {
   const navigate = useNavigate()
   const { success, error: showError } = useToast()
   const searchInputRef = useRef(null)
+  const cachedSortPreference = readCachedSortOrder(id)
+  const hasInitialSortPreference = Boolean(cachedSortPreference)
 
-  const [workspace, setWorkspace] = useState(null)
-  const [memories, setMemories] = useState([])
-  const [loading, setLoading] = useState(true)
+  const cachedWorkspace = useWorkspaceStore((state) =>
+    state.currentWorkspace?.id === id ? state.currentWorkspace : null
+  )
+  const cachedMemories = useWorkspaceStore((state) => state.workspaceMemoriesById[id] || EMPTY_MEMORIES)
+  const setCurrentWorkspaceStore = useWorkspaceStore((state) => state.setCurrentWorkspace)
+  const setWorkspaceMemoriesStore = useWorkspaceStore((state) => state.setWorkspaceMemories)
+  const setDecryptedPreview = useWorkspaceStore((state) => state.setDecryptedPreview)
+  const setLastOpenedWorkspaceId = useNavigationStore((state) => state.setLastOpenedWorkspaceId)
+
+  useRouteScrollRestoration(`workspace-detail-${id}`)
+
+  const [workspace, setWorkspace] = useState(cachedWorkspace)
+  const [memories, setMemories] = useState(cachedMemories)
+  const [loading, setLoading] = useState(!(cachedWorkspace || cachedMemories.length) || !hasInitialSortPreference)
   const [workspaceKey, setWorkspaceKey] = useState(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
-  const [sortOrder, setSortOrder] = useState("newest")
+  const [sortOrder, setSortOrder] = useState(cachedSortPreference || "newest")
+  const [sortPreferenceResolved, setSortPreferenceResolved] = useState(hasInitialSortPreference)
   const [deletingId, setDeletingId] = useState(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [showRemoveUserModal, setShowRemoveUserModal] = useState(false)
@@ -41,6 +65,17 @@ export default function WorkspaceDetail() {
   const [workspaceAttribution, setWorkspaceAttribution] = useState(null) // { invitedBy, invitedAt, invitedByUsername }
   const [members, setMembers] = useState([]) // Phase 1: Workspace members list
   const [recentActivity, setRecentActivity] = useState([]) // Phase 2: Recent activity feed
+
+  const applyMemories = useCallback((nextMemories) => {
+    const normalized = Array.isArray(nextMemories) ? nextMemories : []
+    setMemories(normalized)
+    setWorkspaceMemoriesStore(id, normalized)
+    normalized.forEach((memory) => {
+      if (memory?.id && typeof memory?.content === "string") {
+        setDecryptedPreview(memory.id, memory.content)
+      }
+    })
+  }, [id, setWorkspaceMemoriesStore, setDecryptedPreview])
 
   // Track initialization to prevent duplicate loads
   const initializeControllerRef = useRef(null)
@@ -122,8 +157,10 @@ export default function WorkspaceDetail() {
 
     const startTime = Date.now()
     
-    // Set loading state immediately to show skeleton
-    setLoading(true)
+    // Keep cached UI visible while revalidating in background.
+    if (!(cachedWorkspace || cachedMemories.length) || !sortPreferenceResolved) {
+      setLoading(true)
+    }
 
     try {
       console.log(`[WorkspaceDetail] Starting initialization for workspace ${id}`)
@@ -172,10 +209,12 @@ export default function WorkspaceDetail() {
       setWorkspaceAttribution(accessVerification.isMember ? invitationAttribution : null)
 
       // Apply cached sort order
-      if (cachedSortOrder) {
-        console.log("[WorkspaceDetail] Applied cached sort order:", cachedSortOrder)
-        setSortOrder(cachedSortOrder)
-      }
+      const resolvedSortOrder = cachedSortOrder === "oldest" || cachedSortOrder === "newest"
+        ? cachedSortOrder
+        : "newest"
+      console.log("[WorkspaceDetail] Applied cached sort order:", resolvedSortOrder)
+      setSortOrder(resolvedSortOrder)
+      setSortPreferenceResolved(true)
 
       // Check if user can access this workspace
       // Block ONLY non-members trying to access private workspaces
@@ -206,6 +245,9 @@ export default function WorkspaceDetail() {
       // Single source of truth: workspace data from Step 4 (not state)
       const workspaceVisibility = workspaceData.visibility ?? (workspaceData.is_public ? "public" : "private")
       const canViewMemories = accessVerification.isMember || workspaceVisibility === "public"
+
+      setCurrentWorkspaceStore(workspaceData)
+      setLastOpenedWorkspaceId(workspaceData.id)
       
       console.log("workspace fetched:", workspaceData)
       console.log("visibility resolved:", workspaceVisibility)
@@ -243,6 +285,7 @@ export default function WorkspaceDetail() {
     } catch (err) {
       console.error("[WorkspaceDetail] ❌ Initialization error:", err)
       showError("Failed to load vault")
+      setSortPreferenceResolved(true)
       setLoading(false)
       isInitializingRef.current = false
       return
@@ -366,7 +409,7 @@ export default function WorkspaceDetail() {
     if (!key) {
       console.error("[WorkspaceDetail/fetchMemoriesOptimized] ❌ No encryption key provided!")
       showError("Encryption key missing. Cannot load memories.")
-      setMemories([])
+      applyMemories([])
       return
     }
 
@@ -390,7 +433,7 @@ export default function WorkspaceDetail() {
     if (error) {
       console.error("[WorkspaceDetail/fetchMemoriesOptimized] ❌ Database error:", error)
       showError("Failed to load memories")
-      setMemories([])
+      applyMemories([])
       return
     }
 
@@ -415,19 +458,24 @@ export default function WorkspaceDetail() {
         )
 
         console.log(`[WorkspaceDetail/fetchMemoriesOptimized] ✅ Successfully decrypted ${decrypted.length} memories`)
-        setMemories(decrypted)
+        applyMemories(decrypted)
       } catch (decryptErr) {
         console.error("[WorkspaceDetail/fetchMemoriesOptimized] ❌ Decryption failed:", decryptErr)
         showError("Failed to decrypt memories")
-        setMemories([])
+        applyMemories([])
       }
     } else {
       console.log("[WorkspaceDetail/fetchMemoriesOptimized] ℹ️  No memories found in workspace")
-      setMemories([])
+      applyMemories([])
     }
   }
 
   const fetchWorkspaceWithCache = async () => {
+    if (cachedWorkspace?.id === id) {
+      setWorkspace(cachedWorkspace)
+      return cachedWorkspace
+    }
+
     // Try to get cached workspace data from sessionStorage
     const cacheKey = `workspace_cache_${id}`
     const cachedData = sessionStorage.getItem(cacheKey)
@@ -440,6 +488,7 @@ export default function WorkspaceDetail() {
         if (cacheAge < 5 * 60 * 1000) {
           console.log("[WorkspaceDetail/fetchWorkspaceWithCache] Using cached workspace data")
           setWorkspace(cached.data)
+          setCurrentWorkspaceStore(cached.data)
           return cached.data
         }
       } catch (err) {
@@ -468,6 +517,7 @@ export default function WorkspaceDetail() {
     }))
 
     setWorkspace(data)
+    setCurrentWorkspaceStore(data)
     return data
   }
 
@@ -476,7 +526,7 @@ export default function WorkspaceDetail() {
       // Try to get from window sessionStorage first (faster than DB)
       const cacheKey = `sort_preference_${id}`
       const cached = sessionStorage.getItem(cacheKey)
-      if (cached) {
+      if (cached === "newest" || cached === "oldest") {
         console.log("[loadSortPreferenceAsync] Using cached sort preference:", cached)
         return cached
       }
@@ -753,7 +803,7 @@ export default function WorkspaceDetail() {
     if (!key) {
       console.error("[WorkspaceDetail/fetchMemories] ❌ No encryption key provided! Cannot decrypt memories.")
       showError("Encryption key missing. Cannot load memories.")
-      setMemories([])
+      applyMemories([])
       setLoading(false)
       return
     }
@@ -778,7 +828,7 @@ export default function WorkspaceDetail() {
       console.error("[WorkspaceDetail/fetchMemories]   Error code:", error.code)
       console.error("[WorkspaceDetail/fetchMemories]   Error message:", error.message)
       showError("Failed to load memories")
-      setMemories([])
+      applyMemories([])
       setLoading(false)
       return
     }
@@ -806,16 +856,16 @@ export default function WorkspaceDetail() {
         )
 
         console.log(`[WorkspaceDetail/fetchMemories] ✅ Successfully decrypted ${decrypted.length} memories`)
-        setMemories(decrypted)
+        applyMemories(decrypted)
       } catch (decryptErr) {
         console.error("[WorkspaceDetail/fetchMemories] ❌ Decryption failed:", decryptErr)
         showError("Failed to decrypt memories")
-        setMemories([])
+        applyMemories([])
       }
 
     } else {
       console.log("[WorkspaceDetail/fetchMemories] ℹ️  No memories found in workspace")
-      setMemories([])
+      applyMemories([])
     }
 
     setLoading(false)
@@ -912,10 +962,10 @@ export default function WorkspaceDetail() {
         )
 
         console.log(`[WorkspaceDetail/fetchMemoriesPublic] ✅ Successfully decrypted ${decrypted.length} memories for public viewer`)
-        setMemories(decrypted)
+        applyMemories(decrypted)
       } else {
         console.log("[WorkspaceDetail/fetchMemoriesPublic] No memories found in this workspace")
-        setMemories([])
+        applyMemories([])
       }
 
     } catch (err) {
@@ -946,7 +996,7 @@ export default function WorkspaceDetail() {
 
     if (error) {
       console.error("[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] ❌ Error:", error)
-      setMemories([])
+      applyMemories([])
       return
     }
 
@@ -958,10 +1008,10 @@ export default function WorkspaceDetail() {
       }))
 
       console.log(`[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] ✅ Loaded ${memories.length} memory titles (encrypted)`)
-      setMemories(memories)
+      applyMemories(memories)
     } else {
       console.log("[WorkspaceDetail/fetchMemoriesPublicMetadataOnly] No memories found")
-      setMemories([])
+      applyMemories([])
     }
   }
 
@@ -1192,23 +1242,50 @@ export default function WorkspaceDetail() {
   }
 
   const filteredMemories = useMemo(() => {
-    return memories
+    const safeMemories = Array.isArray(memories)
+      ? memories.filter((memory) => memory && typeof memory === "object")
+      : []
+
+    const normalizeTags = (value) => {
+      if (Array.isArray(value)) {
+        return value.map((tag) => String(tag || "").trim()).filter(Boolean)
+      }
+
+      if (typeof value === "string") {
+        return value
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      }
+
+      return []
+    }
+
+    return safeMemories
       .filter((memory) => {
         if (showFavoritesOnly && !memory.is_favorite) return false
         const term = searchTerm.toLowerCase()
+        const normalizedTags = normalizeTags(memory.tags)
+
         if (!term) return true
         // Tag-specific search
         if (term.startsWith("#")) {
           const tagQuery = term.slice(1).trim()
           if (!tagQuery) return true
-          return memory.tags?.some(tag => tag.toLowerCase().includes(tagQuery))
+          return normalizedTags.some((tag) => tag.toLowerCase().includes(tagQuery))
         }
         // Full text search (case-insensitive)
-        const matchTitle = memory.title?.toLowerCase().includes(term)
-        const matchContent = memory.content?.toLowerCase().replace(/<[^>]+>/g, ' ').includes(term)
-        const matchTags = memory.tags?.some(tag => tag.toLowerCase().includes(term))
+        const safeTitle = typeof memory.title === "string" ? memory.title : String(memory.title || "")
+        const matchTitle = safeTitle.toLowerCase().includes(term)
+        const safeContent = typeof memory.content === "string" ? memory.content : ""
+        const matchContent = safeContent.toLowerCase().replace(/<[^>]+>/g, " ").includes(term)
+        const matchTags = normalizedTags.some((tag) => tag.toLowerCase().includes(term))
         return matchTitle || matchContent || matchTags
       })
+      .map((memory) => ({
+        ...memory,
+        tags: normalizeTags(memory.tags),
+      }))
       // Client-side sort: favorites on top, then by created_at based on sortOrder
       .sort((a, b) => {
         if (a.is_favorite === b.is_favorite) {
@@ -1360,13 +1437,13 @@ export default function WorkspaceDetail() {
         )}
 
         {/* Members Section - Phase 1 */}
-        {members.length > 0 && (
+        {Array.isArray(members) && members.length > 0 && (
           <div className="mb-8">
             <h2 className="mb-3 text-lg font-semibold text-[var(--profile-text)]">
               Vault Members ({members.length})
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {members.map((member) => (
+              {members.filter(Boolean).map((member) => (
                 <div
                   key={member.user_id}
                   className="flex items-center gap-3 rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-3 transition-colors duration-200 hover:border-[var(--profile-border-strong)]"
@@ -1408,13 +1485,13 @@ export default function WorkspaceDetail() {
         )}
 
         {/* Recent Activity Section - Phase 2 */}
-        {recentActivity.length > 0 && (
+        {Array.isArray(recentActivity) && recentActivity.length > 0 && (
           <div className="mb-8">
             <h2 className="mb-3 text-lg font-semibold text-[var(--profile-text)]">
               Recent Activity
             </h2>
             <div className="space-y-2 overflow-hidden rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)]">
-              {recentActivity.map((activity, index) => (
+              {recentActivity.filter(Boolean).map((activity, index) => (
                 <div
                   key={activity.id}
                   className={`flex items-center gap-3 p-4 ${

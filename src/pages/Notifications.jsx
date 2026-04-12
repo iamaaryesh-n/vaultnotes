@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useNotifications } from "../hooks/useNotifications"
 import { useToast } from "../hooks/useToast"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { NotificationListSkeleton } from "../components/SkeletonLoader"
 import { supabase } from "../lib/supabase"
 
@@ -20,11 +21,17 @@ export function Notifications() {
   const [markingAsRead, setMarkingAsRead] = useState(false)
   const [actionLoadingById, setActionLoadingById] = useState({})
 
+  useRouteScrollRestoration("notifications")
+
   useEffect(() => {
+    if (dropdownLoading) {
+      return
+    }
+
     if (dropdownNotifications && dropdownNotifications.length > 0) {
       setNotifications(dropdownNotifications)
       setLoading(false)
-    } else if (!dropdownLoading) {
+    } else {
       fetchAllNotifications()
     }
   }, [dropdownNotifications, dropdownLoading])

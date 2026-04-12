@@ -121,7 +121,7 @@ export default function PostInteractions({
     }
 
     setAddingComment(true)
-    const result = await addComment(post.id, commentInput)
+    const result = await addComment(post.id, commentInput, post.user_id)
 
     if (result.success) {
       setCommentInput("")

@@ -9,10 +9,6 @@ const notificationsCache = {
   TTL: 5 * 60 * 1000 // 5 minutes
 }
 
-// Subscription reference to prevent duplicate subscriptions
-let activeSubscription = null
-let subscriptionUser = null
-
 /**
  * Hook to fetch and subscribe to user's notifications
  * Returns notifications list and utilities
@@ -25,6 +21,8 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState(0)
   const isMountedRef = useRef(true)
   const fetchTimeoutRef = useRef(null)
+  const activeSubscriptionRef = useRef(null)
+  const subscriptionUserRef = useRef(null)
 
   useEffect(() => {
     isMountedRef.current = true
@@ -40,11 +38,10 @@ export function useNotifications() {
         clearTimeout(fetchTimeoutRef.current)
       }
       // Cleanup realtime subscription on unmount
-      if (activeSubscription) {
-        console.log('[useNotifications] Cleaning up realtime subscription on unmount')
-        activeSubscription.unsubscribe()
-        activeSubscription = null
-        subscriptionUser = null
+      if (activeSubscriptionRef.current) {
+        activeSubscriptionRef.current.unsubscribe()
+        activeSubscriptionRef.current = null
+        subscriptionUserRef.current = null
       }
     }
   }, [user])
@@ -52,12 +49,9 @@ export function useNotifications() {
   const initializeNotifications = async () => {
     try {
       if (!user) {
-        console.log('[useNotifications] User not authenticated')
         if (isMountedRef.current) setLoading(false)
         return
       }
-
-      console.log('[useNotifications] 🚀 Initializing notifications for user:', user.id)
 
       // Always fetch fresh data on initialization to ensure we have current state from DB
       // Don't trust cache on first load after refresh
@@ -75,8 +69,6 @@ export function useNotifications() {
     async () => {
       try {
         if (!isMountedRef.current || !user) return
-
-        console.log('[useNotifications] 👤 Current auth user ID:', user.id)
 
         setLoading(true)
 
@@ -109,30 +101,10 @@ export function useNotifications() {
           console.error('[useNotifications] Error fetching notifications:', error)
           return
         }
-
-        console.log('[useNotifications] 📥 Fetched notifications from DB:', data?.length || 0)
-        
-        // ✅ VERIFY IDs ARE NOT CORRUPTED
-        if (data && data.length > 0) {
-          console.log('[useNotifications] 🔍 Verification - Fetched notification IDs:')
-          data.forEach((n, idx) => {
-            console.log(`  [${idx}] ID: ${n.id}`)
-          })
-          
-          console.log('[useNotifications] First notification details:')
-          console.log('  - notification.id:', data[0].id)
-          console.log('  - recipient_id:', data[0].recipient_id)
-          console.log('  - is_read:', data[0].is_read)
-          console.log('  - actor:', data[0].actor)
-        }
         
         // Count unread
         const unreadCount = (data || []).filter(n => !n.is_read).length
-        console.log('[useNotifications] Total notifications:', data?.length || 0)
-        console.log('[useNotifications] Unread notifications in DB:', unreadCount)
 
-        // ✅ NO TRANSFORMATION - data already has correct structure with actor field
-        // Keep notification.id intact - do NOT use object spreading
         const notificationsData = data || []
 
         // Update cache
@@ -142,7 +114,6 @@ export function useNotifications() {
         if (isMountedRef.current) {
           setNotifications(notificationsData)
           setUnreadCount(unreadCount)
-          console.log('[useNotifications] ✅ State updated - unreadCount:', unreadCount)
           setLoading(false)
         }
       } catch (err) {
@@ -156,21 +127,18 @@ export function useNotifications() {
   const subscribeToNotifications = async () => {
     try {
       if (!user) {
-        console.log('[useNotifications] User not authenticated for subscription')
         return
       }
 
       // Prevent duplicate subscriptions for same user
-      if (activeSubscription && subscriptionUser === user.id) {
-        console.log('[useNotifications] Already subscribed to notifications')
+      if (activeSubscriptionRef.current && subscriptionUserRef.current === user.id) {
         return
       }
 
       // Clean up old subscription if user changed
-      if (activeSubscription && subscriptionUser !== user.id) {
-        console.log('[useNotifications] Cleaning up old subscription')
-        await activeSubscription.unsubscribe()
-        activeSubscription = null
+      if (activeSubscriptionRef.current && subscriptionUserRef.current !== user.id) {
+        await activeSubscriptionRef.current.unsubscribe()
+        activeSubscriptionRef.current = null
       }
 
       // Subscribe to new notifications
@@ -185,7 +153,6 @@ export function useNotifications() {
             filter: `recipient_id=eq.${user.id}`
           },
           (payload) => {
-            console.log('[useNotifications] 🔔 New notification received')
             if (isMountedRef.current) {
               handleNewNotification(payload.new)
             }
@@ -200,7 +167,6 @@ export function useNotifications() {
             filter: `recipient_id=eq.${user.id}`
           },
           (payload) => {
-            console.log('[useNotifications] Notification updated:', payload)
             if (isMountedRef.current) {
               handleNotificationUpdate(payload.new)
             }
@@ -208,9 +174,8 @@ export function useNotifications() {
         )
         .subscribe()
 
-      activeSubscription = channel
-      subscriptionUser = user.id
-      console.log('[useNotifications] ✅ Realtime connected for notifications')
+      activeSubscriptionRef.current = channel
+      subscriptionUserRef.current = user.id
     } catch (err) {
       console.error('[useNotifications] Exception subscribing to notifications:', err)
     }
@@ -221,7 +186,7 @@ export function useNotifications() {
       // Fetch actor profile
       const { data: actorProfile, error } = await supabase
         .from('profiles')
-        .select('username, avatar_url, name')
+        .select('id, username, avatar_url, name')
         .eq('id', newNotif.actor_id)
         .maybeSingle()
 
@@ -252,24 +217,18 @@ export function useNotifications() {
 
   const handleNotificationUpdate = (updatedNotif) => {
     if (isMountedRef.current) {
-      setNotifications(prev =>
-        prev.map(notif =>
-          notif.id === updatedNotif.id ? { ...notif, ...updatedNotif } : notif
-        )
-      )
-
-      // Update cache
-      if (notificationsCache.data) {
-        notificationsCache.data = notificationsCache.data.map(notif =>
-          notif.id === updatedNotif.id ? { ...notif, ...updatedNotif } : notif
-        )
-      }
-
-      // Recalculate unread count
       setNotifications(prev => {
-        const unread = prev.filter(n => !n.is_read).length
-        setUnreadCount(unread)
-        return prev
+        const updated = prev.map(notif =>
+          notif.id === updatedNotif.id ? { ...notif, ...updatedNotif } : notif
+        )
+
+        if (notificationsCache.data) {
+          notificationsCache.data = updated
+          notificationsCache.timestamp = Date.now()
+        }
+
+        setUnreadCount(updated.filter(n => !n.is_read).length)
+        return updated
       })
     }
   }
@@ -281,21 +240,8 @@ export function useNotifications() {
         return false
       }
 
-      console.log('[useNotifications] ========== MARK AS READ START ==========')
-      console.log('[useNotifications] 👤 Auth user ID:', user.id)
-      console.log('[useNotifications] 📋 Notification IDs to mark:', notificationIds)
-
-      // First, let's do a manual count of what we're about to update
-      const { data: beforeUpdate, error: countError } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact' })
-        .eq('recipient_id', user.id)
-        .eq('is_read', false)
-
-      console.log('[useNotifications] Notifications with is_read=false BEFORE update:', beforeUpdate?.length || 0)
-
       // Update only requested notification IDs for current user
-      const { data: updatedData, error } = await supabase
+      const { error } = await supabase
         .from('notifications')
         .update({ is_read: true })
         .in('id', notificationIds)
@@ -305,24 +251,6 @@ export function useNotifications() {
         console.error('[useNotifications] ❌ Error marking as read:', error)
         console.error('[useNotifications] Error details:', error.details || error.message)
         return false
-      }
-
-      console.log('[useNotifications] ✅ Update query executed')
-      console.log('[useNotifications] Updated data returned:', updatedData?.length || 0, 'rows')
-
-      // Verify the update worked by fetching again
-      const { data: afterUpdate, error: verifyError } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact' })
-        .eq('recipient_id', user.id)
-        .eq('is_read', false)
-
-      console.log('[useNotifications] Notifications with is_read=false AFTER update:', afterUpdate?.length || 0)
-      
-      if (afterUpdate && afterUpdate.length === 0) {
-        console.log('[useNotifications] ✅ Verification passed - all notifications are now marked as read')
-      } else {
-        console.warn('[useNotifications] ⚠️  Verification failed - still have unread notifications')
       }
 
       const idSet = new Set(notificationIds)
@@ -335,7 +263,6 @@ export function useNotifications() {
           ))
           const unread = updated.filter(n => !n.is_read).length
           setUnreadCount(unread)
-          console.log('[useNotifications] 📝 Updated local state for selected notifications')
           return updated
         })
 
@@ -345,13 +272,8 @@ export function useNotifications() {
             idSet.has(notif.id) ? { ...notif, is_read: true } : notif
           ))
           notificationsCache.timestamp = Date.now()
-          console.log('[useNotifications] 💾 Updated cache')
         }
-
-        console.log('[useNotifications] 🔔 Updated unread count after selective mark-as-read')
       }
-
-      console.log('[useNotifications] ========== MARK AS READ END ==========')
       return true
     } catch (err) {
       console.error('[useNotifications] ❌ Exception marking as read:', err)
@@ -360,7 +282,6 @@ export function useNotifications() {
   }, [user])
 
   const refetch = useCallback(() => {
-    console.log('[useNotifications] Manual refetch triggered')
     // Invalidate cache
     notificationsCache.data = null
     notificationsCache.timestamp = null

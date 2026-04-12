@@ -7,6 +7,9 @@ import { useAuth } from "../hooks/useAuth"
 import { useToast } from "../hooks/useToast"
 import { decrypt, encrypt, exportKey, generateKey, importKey } from "../utils/encryption"
 import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2 } from "lucide-react"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
+import { useNavigationStore } from "../stores/navigationStore"
+import { useChatStore } from "../stores/chatStore"
 
 dayjs.extend(relativeTime)
 dayjs.extend(utc)
@@ -17,10 +20,18 @@ const GROUP_BATCH_SIZE = 15
 export default function GroupChat() {
   const { user: contextUser } = useAuth()
   const { success: showSuccess, error: showToastError } = useToast()
+  const cachedGroups = useChatStore((state) => state.groupConversations)
+  const cachedActiveGroupId = useChatStore((state) => state.activeGroupId)
+  const setGroupConversationsCache = useChatStore((state) => state.setGroupConversations)
+  const setActiveGroupIdCache = useChatStore((state) => state.setActiveGroupId)
+  const setGroupMessagesCache = useChatStore((state) => state.setGroupMessages)
+  const shouldFetchGroupConversations = useChatStore((state) => state.shouldFetchGroupConversations)
+  const shouldFetchGroupMessages = useChatStore((state) => state.shouldFetchGroupMessages)
+  const setScrollPosition = useNavigationStore((state) => state.setScrollPosition)
 
-  const [groups, setGroups] = useState([])
-  const [activeGroupId, setActiveGroupId] = useState(null)
-  const [loadingGroups, setLoadingGroups] = useState(true)
+  const [groups, setGroups] = useState(cachedGroups || [])
+  const [activeGroupId, setActiveGroupId] = useState(cachedActiveGroupId || null)
+  const [loadingGroups, setLoadingGroups] = useState((cachedGroups || []).length === 0)
   const [groupPage, setGroupPage] = useState(0)
   const [hasMoreGroups, setHasMoreGroups] = useState(true)
   const [loadingMoreGroups, setLoadingMoreGroups] = useState(false)
@@ -60,6 +71,19 @@ export default function GroupChat() {
   const readReceiptsChannelRef = useRef(null)
   const messageIdsRef = useRef(new Set())
   const isPrependingOlderRef = useRef(false)
+  const isRestoringMessageScrollRef = useRef(true)
+
+  useRouteScrollRestoration("group-chat-page")
+
+  const applyMessages = useCallback((nextValue) => {
+    setMessages((prev) => {
+      const next = typeof nextValue === "function" ? nextValue(prev) : (nextValue || [])
+      if (activeGroupId) {
+        setGroupMessagesCache(activeGroupId, next)
+      }
+      return next
+    })
+  }, [activeGroupId, setGroupMessagesCache])
 
   const activeGroup = useMemo(
     () => groups.find((group) => group.id === activeGroupId) || null,
@@ -109,11 +133,18 @@ export default function GroupChat() {
     [contextUser?.id]
   )
 
-  const fetchGroups = useCallback(async () => {
+  const fetchGroups = useCallback(async ({ force = false, silent = false } = {}) => {
     if (!contextUser?.id) return
 
+    if (!force && groups.length > 0 && !shouldFetchGroupConversations()) {
+      setLoadingGroups(false)
+      return
+    }
+
     try {
-      setLoadingGroups(true)
+      if (!silent) {
+        setLoadingGroups(true)
+      }
       setError("")
       setGroupPage(0)
       setHasMoreGroups(true)
@@ -145,6 +176,7 @@ export default function GroupChat() {
         last_message_at: group.last_message_at
       }))
       setGroups(list)
+      setGroupConversationsCache(list)
 
       if (list.length < GROUP_BATCH_SIZE) {
         setHasMoreGroups(false)
@@ -161,9 +193,11 @@ export default function GroupChat() {
       console.error("[GroupChat] Exception fetching groups:", err)
       setError("Failed to load groups")
     } finally {
-      setLoadingGroups(false)
+      if (!silent) {
+        setLoadingGroups(false)
+      }
     }
-  }, [contextUser?.id])
+  }, [contextUser?.id, groups.length, setGroupConversationsCache, shouldFetchGroupConversations])
 
   const loadMoreGroups = useCallback(async () => {
     if (!contextUser?.id || loadingGroups || loadingMoreGroups || !hasMoreGroups) {
@@ -207,7 +241,9 @@ export default function GroupChat() {
       setGroups((prev) => {
         const existingIds = new Set(prev.map((group) => group.id))
         const newUniqueGroups = nextRows.filter((group) => !existingIds.has(group.id))
-        return [...prev, ...newUniqueGroups]
+        const merged = [...prev, ...newUniqueGroups]
+        setGroupConversationsCache(merged)
+        return merged
       })
 
       setGroupPage(nextPage)
@@ -216,16 +252,18 @@ export default function GroupChat() {
     } finally {
       setLoadingMoreGroups(false)
     }
-  }, [contextUser?.id, groupPage, hasMoreGroups, loadingGroups, loadingMoreGroups])
+  }, [contextUser?.id, groupPage, hasMoreGroups, loadingGroups, loadingMoreGroups, setGroupConversationsCache])
 
   const handleGroupListScroll = useCallback(() => {
     const container = groupListRef.current
     if (!container) return
 
+    setScrollPosition("groupchat-group-list", container.scrollTop)
+
     if (container.scrollHeight - container.scrollTop - container.clientHeight < 80) {
       void loadMoreGroups()
     }
-  }, [loadMoreGroups])
+  }, [loadMoreGroups, setScrollPosition])
 
   const fetchGroupMembers = useCallback(async (groupId) => {
     if (!groupId) return
@@ -395,11 +433,19 @@ export default function GroupChat() {
     [fetchGroupMessageReads, hydrateMessages, markGroupMessagesAsRead]
   )
 
-  const fetchGroupMessages = useCallback(async () => {
+  const fetchGroupMessages = useCallback(async ({ force = false, silent = false } = {}) => {
     if (!activeGroupId) return
 
+    const cachedMessages = useChatStore.getState().groupMessagesByGroupId[activeGroupId] || []
+    if (!force && cachedMessages.length > 0 && !shouldFetchGroupMessages(activeGroupId)) {
+      applyMessages(cachedMessages)
+      return
+    }
+
     try {
-      setLoadingMessages(true)
+      if (!silent) {
+        setLoadingMessages(true)
+      }
       setMessagePage(0)
       setHasMoreMessages(true)
 
@@ -422,7 +468,7 @@ export default function GroupChat() {
 
       if (fetchError) {
         console.error("[GroupChat] Error fetching messages:", fetchError)
-        setMessages([])
+        applyMessages([])
         return
       }
 
@@ -435,11 +481,13 @@ export default function GroupChat() {
       }
     } catch (err) {
       console.error("[GroupChat] Exception fetching messages:", err)
-      setMessages([])
+      applyMessages([])
     } finally {
-      setLoadingMessages(false)
+      if (!silent) {
+        setLoadingMessages(false)
+      }
     }
-  }, [activeGroupId, hydrateAndSetMessages])
+  }, [activeGroupId, applyMessages, hydrateAndSetMessages, shouldFetchGroupMessages])
 
   const loadOlderMessages = useCallback(async () => {
     if (!activeGroupId || loadingOlderMessages || loadingMessages || !hasMoreMessages) {
@@ -485,7 +533,7 @@ export default function GroupChat() {
       const hydratedOlderMessages = await hydrateMessages(orderedMessages)
 
       let prependedMessages = []
-      setMessages((prev) => {
+      applyMessages((prev) => {
         const existingIds = new Set(prev.map((item) => item.id))
         prependedMessages = hydratedOlderMessages.filter((item) => !existingIds.has(item.id))
         if (prependedMessages.length === 0) {
@@ -524,6 +572,7 @@ export default function GroupChat() {
     }
   }, [
     activeGroupId,
+    applyMessages,
     fetchGroupMessageReads,
     hasMoreMessages,
     hydrateMessages,
@@ -538,10 +587,14 @@ export default function GroupChat() {
     const container = messageListRef.current
     if (!container) return
 
+    if (activeGroupId) {
+      setScrollPosition(`groupchat-messages-${activeGroupId}`, container.scrollTop)
+    }
+
     if (container.scrollTop < 50) {
       void loadOlderMessages()
     }
-  }, [loadOlderMessages])
+  }, [activeGroupId, loadOlderMessages, setScrollPosition])
 
   const sendMessage = useCallback(async () => {
     if (!activeGroupId || !contextUser?.id || !groupKey || !draft.trim()) {
@@ -581,7 +634,7 @@ export default function GroupChat() {
 
       const inserted = insertedRows?.[0]
       if (inserted) {
-        setMessages((prev) => [
+        applyMessages((prev) => [
           ...prev,
           {
             ...inserted,
@@ -623,6 +676,7 @@ export default function GroupChat() {
     getDisplayName,
     getMemberProfileById,
     groupKey,
+    applyMessages,
     replyTarget,
     showToastError
   ])
@@ -736,10 +790,10 @@ export default function GroupChat() {
         return
       }
 
-      setMessages((prev) => prev.filter((item) => item.id !== message.id))
+      applyMessages((prev) => prev.filter((item) => item.id !== message.id))
       showSuccess("Message deleted")
     },
-    [contextUser?.id, showSuccess, showToastError]
+    [contextUser?.id, showSuccess, showToastError, applyMessages]
   )
 
   const handleReactToMessage = useCallback(() => {
@@ -749,8 +803,8 @@ export default function GroupChat() {
   useEffect(() => {
     if (!contextUser?.id) return
 
-    fetchGroups()
-  }, [contextUser?.id, fetchGroups])
+    fetchGroups({ silent: groups.length > 0 })
+  }, [contextUser?.id, fetchGroups, groups.length])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -831,7 +885,7 @@ export default function GroupChat() {
 
   useEffect(() => {
     if (!activeGroupId) {
-      setMessages([])
+      applyMessages([])
       setMessagePage(0)
       setHasMoreMessages(true)
       setLoadingOlderMessages(false)
@@ -843,12 +897,23 @@ export default function GroupChat() {
 
     fetchGroupMembers(activeGroupId)
     fetchGroupKey(activeGroupId)
-  }, [activeGroupId, fetchGroupKey, fetchGroupMembers])
+  }, [activeGroupId, fetchGroupKey, fetchGroupMembers, applyMessages])
 
   useEffect(() => {
     if (!activeGroupId || !groupKey) return
-    fetchGroupMessages()
+    const cachedMessages = useChatStore.getState().groupMessagesByGroupId[activeGroupId] || []
+    isRestoringMessageScrollRef.current = true
+    fetchGroupMessages({ silent: cachedMessages.length > 0 })
   }, [activeGroupId, fetchGroupMessages, groupKey])
+
+  useEffect(() => {
+    const container = groupListRef.current
+    if (!container) return
+    const restoreTop = useNavigationStore.getState().scrollPositions["groupchat-group-list"] || 0
+    if (restoreTop > 0) {
+      container.scrollTop = restoreTop
+    }
+  }, [])
 
   useEffect(() => {
     if (!activeGroupId || !groupKey) return
@@ -883,7 +948,7 @@ export default function GroupChat() {
               }
             }
 
-            setMessages((prev) => {
+            applyMessages((prev) => {
               if (prev.some((item) => item.id === row.id)) {
                 return prev
               }
@@ -912,7 +977,7 @@ export default function GroupChat() {
             const oldRow = payload.old
             if (!oldRow?.id) return
 
-            setMessages((prev) => prev.filter((item) => item.id !== oldRow.id))
+            applyMessages((prev) => prev.filter((item) => item.id !== oldRow.id))
             setMessageReadsById((prev) => {
               const next = { ...prev }
               delete next[oldRow.id]
@@ -936,7 +1001,7 @@ export default function GroupChat() {
               }
             }
 
-            setMessages((prev) =>
+            applyMessages((prev) =>
               prev.map((item) =>
                 item.id === updated.id
                   ? {
@@ -963,6 +1028,7 @@ export default function GroupChat() {
     }
   }, [
     activeGroupId,
+    applyMessages,
     contextUser?.id,
     fetchGroupMessageReads,
     getMemberProfileById,
@@ -1032,6 +1098,16 @@ export default function GroupChat() {
   useEffect(() => {
     if (!activeGroupId) return
 
+    if (isRestoringMessageScrollRef.current) {
+      const restoreKey = `groupchat-messages-${activeGroupId}`
+      const restoreTop = useNavigationStore.getState().scrollPositions[restoreKey] || 0
+      if (restoreTop > 0 && messageListRef.current) {
+        messageListRef.current.scrollTop = restoreTop
+      }
+      isRestoringMessageScrollRef.current = false
+      return
+    }
+
     if (isPrependingOlderRef.current) {
       return
     }
@@ -1057,6 +1133,10 @@ export default function GroupChat() {
   useEffect(() => {
     setOpenMessageOptionsId(null)
   }, [activeGroupId])
+
+  useEffect(() => {
+    setActiveGroupIdCache(activeGroupId)
+  }, [activeGroupId, setActiveGroupIdCache])
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-144px)] min-w-0 w-full max-w-[1300px] flex-col overflow-hidden px-2 pt-1 md:px-3 dark:text-slate-100">

@@ -6,8 +6,11 @@ import { leaveWorkspace, deleteWorkspaceCompletely } from "../lib/workspaceMembe
 import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import Modal from "../components/Modal"
 import { useWorkspaceCacheStore } from "../stores/workspaceCacheStore"
+import { useWorkspaceStore } from "../stores/workspaceStore"
+import { useNavigationStore } from "../stores/navigationStore"
 
 export default function Dashboard({ session }) {
 
@@ -18,11 +21,19 @@ export default function Dashboard({ session }) {
   const getCachedWorkspaces = useWorkspaceCacheStore(state => state.getCachedWorkspaces)
   const setCachedWorkspaces = useWorkspaceCacheStore(state => state.setCachedWorkspaces)
   const clearCache = useWorkspaceCacheStore(state => state.clearCache)
+  const workspaceListCache = useWorkspaceStore((state) => state.workspaceList)
+  const shouldFetchWorkspaceList = useWorkspaceStore((state) => state.shouldFetchWorkspaceList)
+  const setWorkspaceListStore = useWorkspaceStore((state) => state.setWorkspaceList)
+  const setCurrentWorkspaceStore = useWorkspaceStore((state) => state.setCurrentWorkspace)
+  const setLastOpenedWorkspaceId = useNavigationStore((state) => state.setLastOpenedWorkspaceId)
+
+  useRouteScrollRestoration("workspaces-list")
 
   // Initialize state from cache if available
   const cachedData = getCachedWorkspaces()
-  const [workspaces, setWorkspaces] = useState(cachedData?.workspaces || [])
-  const [loading, setLoading] = useState(!cachedData) // Only show loading if no cached data
+  const initialWorkspaces = cachedData?.workspaces?.length ? cachedData.workspaces : workspaceListCache
+  const [workspaces, setWorkspaces] = useState(initialWorkspaces || [])
+  const [loading, setLoading] = useState(!initialWorkspaces?.length) // Only show loading if no cached data
   const [hasResolvedInitialFetch, setHasResolvedInitialFetch] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
@@ -42,16 +53,24 @@ export default function Dashboard({ session }) {
   const [updatingVisibility, setUpdatingVisibility] = useState(false)
   const [authReadyForWorkspaceCreate, setAuthReadyForWorkspaceCreate] = useState(false)
   const [authReadyUserId, setAuthReadyUserId] = useState(null)
+  const [headerVisible, setHeaderVisible] = useState(true)
+  const lastScrollY = useRef(0)
 
   // Track fetch state to prevent duplicate calls
   const fetchControllerRef = useRef(null)
   const lastFetchTimeRef = useRef(0)
   const isFetchingRef = useRef(false)
 
-  const fetchWorkspaces = useCallback(async () => {
+  const fetchWorkspaces = useCallback(async ({ force = false, silent = false } = {}) => {
     try {
-      // Set loading to true at the start of the fetch
-      setLoading(true)
+      if (!force && !shouldFetchWorkspaceList()) {
+        setHasResolvedInitialFetch(true)
+        return
+      }
+
+      if (!silent) {
+        setLoading(true)
+      }
       
       // Prevent multiple concurrent fetches
       if (isFetchingRef.current) {
@@ -165,6 +184,7 @@ export default function Dashboard({ session }) {
       }
 
       setWorkspaces(workspaceData || [])
+      setWorkspaceListStore(workspaceData || [])
 
       console.log(`[Dashboard] Step 3: Counting owners for ${workspaceIds.length} workspace(s)...`)
 
@@ -196,11 +216,13 @@ export default function Dashboard({ session }) {
     } catch (err) {
       console.error("[Dashboard] Error fetching workspaces:", err)
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
       setHasResolvedInitialFetch(true)
       isFetchingRef.current = false
     }
-  }, [setCachedWorkspaces])
+  }, [setCachedWorkspaces, setWorkspaceListStore, shouldFetchWorkspaceList])
 
   useEffect(() => {
     let canceled = false
@@ -505,6 +527,8 @@ export default function Dashboard({ session }) {
       // Navigate to the new workspace
       console.log(`[Dashboard/createWorkspace] ✅ Navigating to /workspace/${workspace.id}`)
       setTimeout(() => {
+        setCurrentWorkspaceStore(workspace)
+        setLastOpenedWorkspaceId(workspace.id)
         navigate(`/workspace/${workspace.id}`)
       }, 500)
 
@@ -516,7 +540,7 @@ export default function Dashboard({ session }) {
       showError(`Failed to create vault: ${err.message}`)
       setCreating(false)
     }
-  }, [workspaceName, workspaceIsPublic, success, showError, fetchWorkspaces, navigate, authReadyForWorkspaceCreate, session?.user?.id, authReadyUserId])
+  }, [workspaceName, workspaceIsPublic, success, showError, fetchWorkspaces, authReadyForWorkspaceCreate, session?.user?.id, authReadyUserId, navigate, setCurrentWorkspaceStore, setLastOpenedWorkspaceId])
 
   useKeyboardShortcuts({
     onNewWorkspace: createWorkspace,
@@ -524,7 +548,7 @@ export default function Dashboard({ session }) {
 
   useEffect(() => {
     if (session) {
-      fetchWorkspaces()
+      fetchWorkspaces({ silent: (workspaces?.length || 0) > 0 })
     }
 
     // Cleanup: cancel pending fetch requests on unmount
@@ -534,7 +558,23 @@ export default function Dashboard({ session }) {
         console.log("[Dashboard] Cancelled pending fetch on unmount")
       }
     }
-  }, [session, fetchWorkspaces])
+  }, [session, fetchWorkspaces, workspaces?.length])
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentY = window.scrollY
+      if (currentY < 10) {
+        setHeaderVisible(true)
+      } else if (currentY > lastScrollY.current + 6) {
+        setHeaderVisible(false)
+      } else if (currentY < lastScrollY.current - 6) {
+        setHeaderVisible(true)
+      }
+      lastScrollY.current = currentY
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true })
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
 
   useEffect(() => {
     const handleCreateWorkspace = () => {
@@ -559,7 +599,7 @@ export default function Dashboard({ session }) {
       console.log(`[Dashboard] Membership changed, refetching in ${delayMs}ms`)
 
       membershipChangeTimeoutRef.current = setTimeout(() => {
-        fetchWorkspaces()
+        fetchWorkspaces({ force: true, silent: true })
       }, delayMs)
     }
 
@@ -571,6 +611,13 @@ export default function Dashboard({ session }) {
       }
     }
   }, [fetchWorkspaces])
+
+  const openWorkspace = useCallback((workspace) => {
+    if (!workspace?.id) return
+    setCurrentWorkspaceStore(workspace)
+    setLastOpenedWorkspaceId(workspace.id)
+    navigate(`/workspace/${workspace.id}`)
+  }, [navigate, setCurrentWorkspaceStore, setLastOpenedWorkspaceId])
 
   const runWorkspaceAction = useCallback(async (workspaceId, action) => {
     const userRole = userRoles[workspaceId]
@@ -729,7 +776,7 @@ export default function Dashboard({ session }) {
   if (shouldShowLoadingSkeleton) {
     return (
       <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
-        <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5">
+        <div className={`fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5 transition-transform duration-300 ease-in-out ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
               <h1 className="font-['Sora'] text-[24px] font-[800] text-[var(--profile-text)]">My Vaults</h1>
@@ -744,7 +791,7 @@ export default function Dashboard({ session }) {
             <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Public</div>
           </div>
         </div>
-        <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
+        <div style={{ maxWidth: "900px" }} className={`mx-auto px-4 pb-[90px] ${headerVisible ? "pt-[170px]" : "pt-[70px]"}`}>
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="mb-[10px] rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 shadow-none">
               <div className="mb-3 h-2 w-1/2 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
@@ -760,7 +807,7 @@ export default function Dashboard({ session }) {
 
   return (
     <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
-      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5">
+      <div className={`fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5 transition-transform duration-300 ease-in-out ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h1 className="font-['Sora'] text-[24px] font-[800] text-[var(--profile-text)]">My Vaults</h1>
@@ -814,7 +861,7 @@ export default function Dashboard({ session }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
+      <div style={{ maxWidth: "900px" }} className={`mx-auto px-4 pb-[90px] ${headerVisible ? "pt-[170px]" : "pt-[70px]"}`}>
 
         {hasResolvedInitialFetch && filteredWorkspaces.length === 0 ? (
           <div className="rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-12 text-center">
@@ -833,11 +880,11 @@ export default function Dashboard({ session }) {
           filteredWorkspaces.map((workspace) => (
             <div
               key={workspace.id}
-              onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${workspace.id}`))}
+              onClick={(e) => handleNavigationClick(e, () => openWorkspace(workspace))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault()
-                  navigate(`/workspace/${workspace.id}`)
+                  openWorkspace(workspace)
                 }
               }}
               role="button"

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useToast } from '../hooks/useToast'
+import { useRouteScrollRestoration } from '../hooks/useRouteScrollRestoration'
 import Modal from '../components/Modal'
 import WorkspaceVisibilityBadge from '../components/WorkspaceVisibilityBadge'
 
@@ -19,6 +20,8 @@ export default function PublicWorkspaceLanding() {
   const [notesCount, setNotesCount] = useState(0)
   const [requestingAccess, setRequestingAccess] = useState(false)
   const [modalConfig, setModalConfig] = useState({ open: false, title: '', message: '', onConfirm: null })
+
+  useRouteScrollRestoration(`workspace-preview-${workspaceId}`)
 
   useEffect(() => {
     console.log('[PublicWorkspaceLanding] Route param workspaceId:', workspaceId)

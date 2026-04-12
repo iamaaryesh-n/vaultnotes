@@ -6,8 +6,10 @@ import { canEdit, canDelete, getUserRole } from "../utils/rolePermissions"
 import DOMPurify from "dompurify"
 import { handleNavigationClick } from "../utils/navigation"
 import { useToast } from "../hooks/useToast"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { MemoryViewSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
+import { useWorkspaceStore } from "../stores/workspaceStore"
 
 const isTiptapContentEmpty = (value) => {
   if (value == null || value === "") return true
@@ -33,8 +35,25 @@ export default function MemoryView() {
   const [userRole, setUserRole] = useState("viewer")
   const [showDeleteModal, setShowDeleteModal] = useState(false)
 
+  const selectedMemory = useWorkspaceStore((state) => state.selectedMemory)
+  const decryptedPreview = useWorkspaceStore((state) => state.decryptedPreviewsByMemoryId[memoryId])
+  const setSelectedMemory = useWorkspaceStore((state) => state.setSelectedMemory)
+  const setDecryptedPreview = useWorkspaceStore((state) => state.setDecryptedPreview)
+
+  useRouteScrollRestoration(`memory-view-${id}-${memoryId}`)
+
   const loadControllerRef = useRef(null)
   const isLoadingMemoryRef = useRef(false)
+
+  useEffect(() => {
+    if (selectedMemory?.id === memoryId) {
+      setMemory(selectedMemory)
+      setContent(selectedMemory.content || decryptedPreview || "")
+      setLoading(false)
+    } else if (decryptedPreview) {
+      setContent(decryptedPreview)
+    }
+  }, [memoryId, selectedMemory, decryptedPreview])
 
   useEffect(() => {
     loadMemory()
@@ -57,7 +76,9 @@ export default function MemoryView() {
     loadControllerRef.current = new AbortController()
     const startTime = Date.now()
 
-    setLoading(true)
+    if (!memory || memory.id !== memoryId) {
+      setLoading(true)
+    }
 
     try {
       console.log("[MemoryView] Starting memory load for ID:", memoryId)
@@ -179,6 +200,8 @@ export default function MemoryView() {
 
         setMemory(memoryWithContent)
         setContent(decryptedText)
+        setSelectedMemory(memoryWithContent)
+        setDecryptedPreview(memoryId, decryptedText)
 
         console.log("[MemoryView] Memory decrypted successfully")
       } catch (decryptErr) {

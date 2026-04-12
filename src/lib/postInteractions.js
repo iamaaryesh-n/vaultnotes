@@ -282,7 +282,7 @@ export async function fetchComments(postId) {
 /**
  * Add a comment to a post
  */
-export async function addComment(postId, content) {
+export async function addComment(postId, content, postOwnerId = null) {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -327,17 +327,10 @@ export async function addComment(postId, content) {
       profiles: profile || { username: "unknown", avatar_url: null }
     }
 
-    // Fetch post to get owner and create notification
-    const { data: post } = await supabase
-      .from("posts")
-      .select("user_id")
-      .eq("id", postId)
-      .maybeSingle()
-
-    if (post && post.user_id !== user.id) {
+    if (postOwnerId && postOwnerId !== user.id) {
       // Don't notify user of their own comments
       await createNotification({
-        recipientId: post.user_id,
+        recipientId: postOwnerId,
         actorId: user.id,
         type: "comment",
         postId: postId,

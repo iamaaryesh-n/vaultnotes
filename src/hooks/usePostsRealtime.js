@@ -40,7 +40,6 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
     const uniquePostIds = postIdsKey ? postIdsKey.split(",") : []
 
     if (uniquePostIds.length === 0) {
-      console.log("[usePostsRealtime] No post IDs provided")
       if (channelsRef.current) {
         supabase.removeChannel(channelsRef.current.likes)
         supabase.removeChannel(channelsRef.current.comments)
@@ -57,8 +56,6 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
       channelsRef.current = null
     }
 
-    console.log("[usePostsRealtime] ✅ Subscribing to realtime for posts:", uniquePostIds)
-
     // ============================================
     // LIKES CHANNEL - Handle INSERT and DELETE
     // ============================================
@@ -73,19 +70,12 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
           filter: `post_id=in.(${uniquePostIds.join(",")})`
         },
         (payload) => {
-          console.log("LIKE EVENT:", payload)
-          const postId = payload.eventType === "DELETE" ? payload.old?.post_id : payload.new?.post_id
-          if (postId) {
-            console.log("Updating post:", postId)
-          }
           if (onLikesChangeRef.current) {
             onLikesChangeRef.current(payload)
           }
         }
       )
-      .subscribe((status) => {
-        console.log("LIKE CHANNEL STATUS:", status)
-      })
+      .subscribe()
 
     // ============================================
     // COMMENTS CHANNEL - Handle INSERT and DELETE
@@ -101,8 +91,6 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
           filter: `post_id=in.(${uniquePostIds.join(",")})`
         },
         (payload) => {
-          console.log("Realtime event:", payload)
-          console.log("Updating post:", payload.new?.post_id)
           if (onCommentsChangeRef.current) {
             onCommentsChangeRef.current(payload)
           }
@@ -117,20 +105,12 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
           filter: `post_id=in.(${uniquePostIds.join(",")})`
         },
         (payload) => {
-          console.log("DELETE EVENT FULL:", payload)
-          console.log("OLD DATA:", payload.old)
-          console.log("DELETE COMMENT:", payload.old)
-          console.log("Realtime DELETE event:", payload)
-          console.log("Realtime event:", payload)
-          console.log("Updating post:", payload.old?.post_id)
           if (onCommentsChangeRef.current) {
             onCommentsChangeRef.current(payload)
           }
         }
       )
-      .subscribe((status) => {
-        console.log("[usePostsRealtime] Comments channel status:", status)
-      })
+      .subscribe()
 
     // Store channel references for cleanup
     channelsRef.current = {
@@ -140,7 +120,6 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
 
     // Cleanup on unmount
     return () => {
-      console.log("[usePostsRealtime] Cleaning up realtime subscriptions on unmount")
       if (channelsRef.current) {
         supabase.removeChannel(channelsRef.current.likes)
         supabase.removeChannel(channelsRef.current.comments)

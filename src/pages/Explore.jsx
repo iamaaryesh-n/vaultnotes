@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "../lib/supabase"
@@ -12,6 +12,7 @@ import PublicWorkspaceShelf from "../components/PublicWorkspaceShelf"
 import { getAvatarImageUrl } from "../utils/imageOptimization"
 import { useExploreFeed } from "../hooks/useExploreFeed"
 import { useExploreRealtime } from "../hooks/useExploreRealtime"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 
 export default function Explore() {
   const navigate = useNavigate()
@@ -24,6 +25,10 @@ export default function Explore() {
   const [showModalComments, setShowModalComments] = useState(false)
   const [modalCommentsLoading, setModalCommentsLoading] = useState(false)
   const [followedUsers, setFollowedUsers] = useState([])
+  const [headerVisible, setHeaderVisible] = useState(true)
+  const lastScrollY = useRef(0)
+
+  useRouteScrollRestoration("explore-feed")
 
   const {
     posts,
@@ -46,6 +51,7 @@ export default function Explore() {
 
   useEffect(() => {
     if (!contextUser?.id) return
+    let canceled = false
 
     const fetchFollowedUsers = async () => {
       const { data, error: fetchError } = await supabase
@@ -53,7 +59,7 @@ export default function Explore() {
         .select("following_id")
         .eq("follower_id", contextUser.id)
 
-      if (fetchError) {
+      if (fetchError || canceled) {
         return
       }
 
@@ -61,7 +67,27 @@ export default function Explore() {
     }
 
     fetchFollowedUsers()
+
+    return () => {
+      canceled = true
+    }
   }, [contextUser?.id])
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentY = window.scrollY
+      if (currentY < 10) {
+        setHeaderVisible(true)
+      } else if (currentY > lastScrollY.current + 6) {
+        setHeaderVisible(false)
+      } else if (currentY < lastScrollY.current - 6) {
+        setHeaderVisible(true)
+      }
+      lastScrollY.current = currentY
+    }
+    window.addEventListener("scroll", handleScroll, { passive: true })
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
 
   const formatPostTime = (value) => {
     if (!value) return ""
@@ -151,7 +177,7 @@ export default function Explore() {
   return (
     <div className="profile-theme -mt-[64px] min-h-screen bg-[var(--profile-bg)]">
       <div
-        className="sticky z-[90] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-0 pt-3"
+        className={`sticky z-[90] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-0 pt-3 transition-transform duration-300 ease-in-out ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}
         style={{ top: "56px" }}
       >
         <div className="mb-[10px] flex items-baseline gap-[10px]">
@@ -215,7 +241,7 @@ export default function Explore() {
       </div>
 
       {viewMode === "posts" ? (
-        <div className="explore-feed flex flex-col gap-3 px-4 py-4">
+        <div className={`explore-feed flex flex-col gap-3 px-4 pb-4 ${headerVisible ? "pt-[16px]" : "pt-[6px]"}`}>
           <PostFeed
             activeTab={activeTab}
             contextUser={contextUser}

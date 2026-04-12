@@ -1,6 +1,5 @@
-import { Routes, Route, useLocation } from "react-router-dom"
-import { useEffect, useState, Suspense, lazy } from "react"
-import { useScrollToTop } from "./hooks/useScrollToTop"
+import { Routes, Route, useLocation, Navigate, Outlet, useNavigationType } from "react-router-dom"
+import { useEffect, useState, Suspense, lazy, useRef } from "react"
 import { useAuth } from "./hooks/useAuth"
 import { ToastProvider } from "./context/ToastContext"
 import { AuthProvider } from "./context/AuthContext"
@@ -11,10 +10,10 @@ import CreatePostModal from "./components/CreatePostModal"
 import Navbar from "./components/Navbar"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { initializeTheme } from "./utils/theme"
+import { useNavigationStore } from "./stores/navigationStore"
 
 // Eagerly load lightweight pages
 import Login from "./pages/Login"
-import PublicWorkspaceLanding from "./pages/PublicWorkspaceLanding"
 import DiscoverWorkspaces from "./pages/DiscoverWorkspaces"
 
 // Lazy load heavy routes (code splitting for better performance)
@@ -27,14 +26,79 @@ const MemoryEditor = lazy(() => import("./pages/MemoryEditor"))
 const Profile = lazy(() => import("./pages/Profile"))
 const Chat = lazy(() => import("./pages/Chat"))
 const GroupChat = lazy(() => import("./pages/GroupChat"))
+const PublicWorkspaceLanding = lazy(() => import("./pages/PublicWorkspaceLanding"))
+
+function ProtectedRoute({ user, children }) {
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  return children
+}
+
+function AppShell({ user, createPostOpen, setCreatePostOpen }) {
+  const location = useLocation()
+
+  const isChatRoute = location.pathname.startsWith("/chat") || location.pathname === "/groups"
+  const isVaultRoute = location.pathname === "/workspaces" || location.pathname.startsWith("/workspace/")
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]">
+      <Navbar />
+      <ToastContainer />
+      <LoadingBar />
+      <BottomNavigation />
+      <CreatePostModal
+        isOpen={createPostOpen}
+        onClose={() => setCreatePostOpen(false)}
+        user={user}
+        onPostCreated={() => {
+          window.dispatchEvent(new CustomEvent("postCreated"))
+        }}
+      />
+      <main
+        className={
+          isChatRoute
+            ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
+            : isVaultRoute
+              ? "min-h-screen overflow-x-hidden bg-[var(--profile-bg)] pt-[64px] pb-20"
+              : "min-h-screen pt-[64px] pb-20"
+        }
+      >
+        <Outlet />
+      </main>
+    </div>
+  )
+}
 
 function AppContent() {
   const location = useLocation()
+  const navigationType = useNavigationType()
   const { user, session, authLoading } = useAuth()
   const [createPostOpen, setCreatePostOpen] = useState(false)
-  useScrollToTop()
+  const setActiveRouteMeta = useNavigationStore((state) => state.setActiveRouteMeta)
+  const setBackNavigationState = useNavigationStore((state) => state.setBackNavigationState)
+  const previousPathRef = useRef(location.pathname)
 
   useEffect(() => initializeTheme(), [])
+
+  useEffect(() => {
+    setActiveRouteMeta({
+      pathname: location.pathname,
+      search: location.search,
+      navigationType,
+      updatedAt: Date.now(),
+    })
+  }, [location.pathname, location.search, navigationType, setActiveRouteMeta])
+
+  useEffect(() => {
+    if (previousPathRef.current !== location.pathname) {
+      setBackNavigationState({ fromPath: previousPathRef.current, toPath: location.pathname })
+      previousPathRef.current = location.pathname
+    } else if (navigationType === "POP") {
+      setBackNavigationState({ fromPath: previousPathRef.current, toPath: location.pathname })
+    }
+  }, [location.pathname, navigationType, setBackNavigationState])
 
   // Listen for Create Post event from floating action button
   useEffect(() => {
@@ -66,232 +130,172 @@ function AppContent() {
     )
   }
 
-  const isChatRoute = location.pathname.startsWith("/chat") || location.pathname === "/groups"
-  const isVaultRoute = location.pathname === "/workspaces" || location.pathname.startsWith("/workspace/")
-
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]">
-      {user && <Navbar />}
-      <ToastContainer />
-      <LoadingBar />
-      {user && <BottomNavigation />}
-      {user && (
-        <CreatePostModal
-          isOpen={createPostOpen}
-          onClose={() => setCreatePostOpen(false)}
-          user={user}
-          onPostCreated={() => {
-            // Dispatch event to refresh posts if on profile page
-            window.dispatchEvent(new CustomEvent('postCreated'))
-          }}
-        />
-      )}
-      <main
-        className={user
-          ? isChatRoute
-            ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
-            : isVaultRoute
-              ? "min-h-screen overflow-x-hidden bg-[var(--profile-bg)] pt-[64px] pb-20"
-              : "min-h-screen pt-[64px] pb-20"
-          : "min-h-screen"}
+    <Routes>
+      <Route path="/login" element={!user ? <Login /> : <Navigate to="/explore" replace />} />
+      <Route path="/" element={<Navigate to={user ? "/explore" : "/login"} replace />} />
+
+      <Route
+        element={
+          <ProtectedRoute user={user}>
+            <AppShell user={user} createPostOpen={createPostOpen} setCreatePostOpen={setCreatePostOpen} />
+          </ProtectedRoute>
+        }
       >
-        <Routes>
-          <Route
-            path="/login"
-            element={!user ? <Login /> : (
+        <Route
+          path="/explore"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
               <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
                 <Explore />
               </Suspense>
-            )}
-          />
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                  <Explore />
-                </Suspense>
-              </ErrorBoundary>
-            ) : <Login />}
-          />
+        <Route
+          path="/workspaces"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Dashboard session={session} />
+            </Suspense>
+          }
+        />
 
-          <Route
-            path="/explore"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                  <Explore />
-                </Suspense>
-              </ErrorBoundary>
-            ) : <Login />}
-          />
-
-          <Route
-            path="/workspaces"
-            element={user ? (
+        <Route
+          path="/profile"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
               <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <Dashboard session={session} />
+                <Profile />
               </Suspense>
-            ) : <Login />}
-          />
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/profile"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                  <Profile />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
+        <Route
+          path="/profile/:username"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <Profile />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/profile/:username"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                  <Profile />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
-
-          <Route
-            path="/chat"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
-                  <Chat />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
-
-          <Route
-            path="/chat/group/:groupId"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
-                  <Chat />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
-
-          <Route
-            path="/chat/direct/:conversationId"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
-                  <Chat />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
-
-          <Route
-            path="/chat/:conversationId"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
-                  <Chat />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
-
-          <Route
-            path="/groups"
-            element={user ? (
+        <Route
+          path="/chat"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
               <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
-                <GroupChat />
+                <Chat />
               </Suspense>
-            ) : (
-              <Login />
-            )}
-          />
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/workspace/:id"
-            element={user ? (
-              <ErrorBoundary>
-                <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                  <WorkspaceDetail />
-                </Suspense>
-              </ErrorBoundary>
-            ) : (
-              <Login />
-            )}
-          />
+        <Route
+          path="/chat/group/:groupId"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                <Chat />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/workspace-preview/:id"
-            element={user ? <PublicWorkspaceLanding /> : <Login />}
-          />
+        <Route
+          path="/chat/direct/:conversationId"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                <Chat />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/discover-workspaces"
-            element={user ? <DiscoverWorkspaces /> : <Login />}
-          />
+        <Route
+          path="/chat/:conversationId"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+                <Chat />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/workspace/:id/new"
-            element={user ? (
+        <Route
+          path="/groups"
+          element={
+            <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+              <GroupChat />
+            </Suspense>
+          }
+        />
+
+        <Route
+          path="/workspace/:id"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
               <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <MemoryEditor />
+                <WorkspaceDetail />
               </Suspense>
-            ) : (
-              <Login />
-            )}
-          />
+            </ErrorBoundary>
+          }
+        />
 
-          <Route
-            path="/workspace/:id/memory/:memoryId"
-            element={user ? (
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <MemoryView />
-              </Suspense>
-            ) : (
-              <Login />
-            )}
-          />
+        <Route
+          path="/workspace-preview/:id"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <PublicWorkspaceLanding />
+            </Suspense>
+          }
+        />
 
-          <Route
-            path="/workspace/:id/memory/:memoryId/edit"
-            element={user ? (
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <MemoryEditor />
-              </Suspense>
-            ) : (
-              <Login />
-            )}
-          />
+        <Route path="/discover-workspaces" element={<DiscoverWorkspaces />} />
 
-          <Route
-            path="/notifications"
-            element={user ? (
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-                <Notifications />
-              </Suspense>
-            ) : <Login />}
-          />
-        </Routes>
-      </main>
-    </div>
+        <Route
+          path="/workspace/:id/new"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <MemoryEditor />
+            </Suspense>
+          }
+        />
+
+        <Route
+          path="/workspace/:id/memory/:memoryId"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <MemoryView />
+            </Suspense>
+          }
+        />
+
+        <Route
+          path="/workspace/:id/memory/:memoryId/edit"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <MemoryEditor />
+            </Suspense>
+          }
+        />
+
+        <Route
+          path="/notifications"
+          element={
+            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Notifications />
+            </Suspense>
+          }
+        />
+      </Route>
+    </Routes>
   )
 }
 

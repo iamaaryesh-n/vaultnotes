@@ -9,6 +9,17 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
   const navigate = useNavigate()
   const [showDeleteModal, setShowDeleteModal] = useState(false)
 
+  const safeTitle = typeof memory?.title === "string" ? memory.title : ""
+  const safeContentHtml = typeof memory?.content === "string" ? memory.content : ""
+  const safeTags = Array.isArray(memory?.tags)
+    ? memory.tags
+    : (typeof memory?.tags === "string" && memory.tags.trim()
+        ? memory.tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+        : [])
+
   // Calculate relative time (e.g., "2 hours ago")
   const getRelativeTime = (dateString) => {
     if (!dateString) return ""
@@ -35,7 +46,7 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
   const relativeTime = getRelativeTime(relevantDate)
 
   // Strip HTML tags from TipTap content for plain-text preview
-  const plainContent = memory.content ? memory.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ""
+  const plainContent = safeContentHtml ? safeContentHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : ""
   
   // Get first meaningful preview (skip empty lines)
   const getPreview = (text) => {
@@ -70,12 +81,12 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
       <div className="flex justify-between items-start gap-2">
         <h2 className="flex-1 leading-snug text-lg font-bold text-[var(--profile-text)]">
           {searchTerm && !searchTerm.startsWith('#')
-            ? highlight(memory.title || "Untitled memory", searchTerm).map((seg, i) =>
+            ? highlight(safeTitle || "Untitled memory", searchTerm).map((seg, i) =>
                 seg.isMatch
                   ? <mark key={i} className="bg-yellow-200 text-yellow-900 rounded px-0.5">{seg.text}</mark>
                   : <span key={i}>{seg.text}</span>
               )
-            : (memory.title || "Untitled memory")
+            : (safeTitle || "Untitled memory")
           }
         </h2>
         <button
@@ -100,9 +111,9 @@ function MemoryCard({ memory, onDelete, onFavoriteToggle, onTagClick, searchTerm
       </div>
 
       {/* Tags */}
-      {memory.tags && memory.tags.length > 0 && (
+      {safeTags.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {memory.tags.map((tag, index) => (
+          {safeTags.map((tag, index) => (
             <span
               key={index}
               onClick={(e) => {

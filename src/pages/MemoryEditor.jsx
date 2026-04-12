@@ -9,8 +9,10 @@ import Image from '@tiptap/extension-image'
 import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { EditorSkeleton } from "../components/SkeletonLoader"
 import Modal from "../components/Modal"
+import { useWorkspaceStore } from "../stores/workspaceStore"
 
 const FloatingImage = Image.extend({
   addAttributes() {
@@ -168,6 +170,14 @@ export default function MemoryEditor() {
   const handlersRef = useRef(null)
   const selectedImageRef = useRef(null)
   const selectedImageElementRef = useRef(null)
+  const selectedMemory = useWorkspaceStore((state) => state.selectedMemory)
+  const previewContent = useWorkspaceStore((state) => (memoryId ? state.decryptedPreviewsByMemoryId[memoryId] : ""))
+  const workspaceMemories = useWorkspaceStore((state) => state.workspaceMemoriesById[id] || [])
+  const setSelectedMemory = useWorkspaceStore((state) => state.setSelectedMemory)
+  const setDecryptedPreview = useWorkspaceStore((state) => state.setDecryptedPreview)
+  const setWorkspaceMemories = useWorkspaceStore((state) => state.setWorkspaceMemories)
+
+  useRouteScrollRestoration(`memory-editor-${id}-${memoryId || "new"}`)
 
   // Track to prevent concurrent loads
   const loadControllerRef = useRef(null)
@@ -641,6 +651,14 @@ export default function MemoryEditor() {
     
     setLoading(true)
 
+    if (selectedMemory?.id === memoryId) {
+      const cachedContent = selectedMemory.content || previewContent || ""
+      setTitle(selectedMemory.title || "")
+      setContent(cachedContent)
+      setIsLoaded(true)
+      setLoading(false)
+    }
+
     try {
       console.log("[MemoryEditor] Starting memory load for ID:", memoryId)
 
@@ -697,6 +715,8 @@ export default function MemoryEditor() {
         setTitle(memory.title)
         setContent(normalizedContent)
         setIsLoaded(true)
+        setSelectedMemory({ ...memory, content: normalizedContent })
+        setDecryptedPreview(memory.id, normalizedContent)
         
         console.log("[MemoryEditor] ✅ Memory decrypted successfully")
       } catch (decryptErr) {
@@ -808,6 +828,8 @@ export default function MemoryEditor() {
       }
 
       let error
+      let savedMemoryId = memoryId || null
+      const nowIso = new Date().toISOString()
 
       if (memoryId) {
         // Step 5a: Update existing memory
@@ -831,10 +853,13 @@ export default function MemoryEditor() {
           created_by: user.id
         }
 
-        const { error: insertError } = await supabase
+        const { data: insertData, error: insertError } = await supabase
           .from("memories")
           .insert(insertPayload)
+          .select("id")
+          .single()
         error = insertError
+        savedMemoryId = insertData?.id || null
 
         if (!error) {
           console.log("[MemoryEditor] ✅ Memory created")
@@ -850,6 +875,24 @@ export default function MemoryEditor() {
 
       const elapsedMs = Date.now() - startTime
       console.log(`[MemoryEditor] ✅ Memory ${action} completed in ${elapsedMs}ms`)
+
+      const optimisticMemory = {
+        id: savedMemoryId || memoryId,
+        workspace_id: id,
+        title: title || "Untitled",
+        content: normalizedContent,
+        updated_at: nowIso,
+      }
+      if (optimisticMemory.id) {
+        setSelectedMemory(optimisticMemory)
+        setDecryptedPreview(optimisticMemory.id, optimisticMemory.content)
+        const existing = workspaceMemories || []
+        const hasExisting = existing.some((item) => item.id === optimisticMemory.id)
+        const nextMemories = hasExisting
+          ? existing.map((item) => (item.id === optimisticMemory.id ? { ...item, ...optimisticMemory } : item))
+          : [{ ...optimisticMemory }, ...existing]
+        setWorkspaceMemories(id, nextMemories)
+      }
       
       success("Memory saved")
       setSaving(false)

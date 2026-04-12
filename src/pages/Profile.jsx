@@ -7,6 +7,7 @@ import Modal from "../components/Modal"
 import PostInteractions from "../components/PostInteractions"
 import { useSmartFetchPosts } from "../hooks/useSmartFetchPosts"
 import { usePostsRealtime } from "../hooks/usePostsRealtime"
+import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { EditProfileModal } from "../components/EditProfileModal"
 import { fetchUserPublicWorkspaces } from "../lib/globalSearch"
 import VisibilityBadge from "../components/VisibilityBadge"
@@ -51,6 +52,8 @@ export default function Profile() {
   const [editingPostId, setEditingPostId] = useState(null)
   const [editingPostContent, setEditingPostContent] = useState("")
   const [postContentOverrides, setPostContentOverrides] = useState({})
+
+  useRouteScrollRestoration(`profile-${username || "me"}`)
   
   // Smart fetch posts with caching
   const {
