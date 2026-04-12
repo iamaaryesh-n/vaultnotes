@@ -103,7 +103,7 @@ export default function PostInteractions({
     )
 
     setLikingInProgress(true)
-    const result = await toggleLike(post.id)
+    const result = await toggleLike(post.id, post.user_id)
 
     if (!result.success || result.liked !== nextLiked) {
       // Roll back optimistic state on failure/mismatch

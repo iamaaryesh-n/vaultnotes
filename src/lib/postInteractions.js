@@ -104,7 +104,7 @@ export async function fetchLikeInfo(postId) {
 /**
  * Toggle like on a post (add or remove)
  */
-export async function toggleLike(postId) {
+export async function toggleLike(postId, postOwnerId = null) {
   try {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -144,17 +144,22 @@ export async function toggleLike(postId) {
         throw insertError
       }
 
-      // Fetch post to get owner and create notification
-      const { data: post } = await supabase
-        .from("posts")
-        .select("user_id")
-        .eq("id", postId)
-        .maybeSingle()
+      let recipientId = postOwnerId
 
-      if (post && post.user_id !== user.id) {
-        // Don't notify user of their own likes
+      // Fallback lookup if caller did not provide post owner
+      if (!recipientId) {
+        const { data: post } = await supabase
+          .from("posts")
+          .select("user_id")
+          .eq("id", postId)
+          .maybeSingle()
+
+        recipientId = post?.user_id || null
+      }
+
+      if (recipientId && recipientId !== user.id) {
         await createNotification({
-          recipientId: post.user_id,
+          recipientId,
           actorId: user.id,
           type: "like",
           postId: postId
@@ -327,10 +332,22 @@ export async function addComment(postId, content, postOwnerId = null) {
       profiles: profile || { username: "unknown", avatar_url: null }
     }
 
-    if (postOwnerId && postOwnerId !== user.id) {
-      // Don't notify user of their own comments
+    let recipientId = postOwnerId
+
+    // Fallback lookup if caller did not provide post owner
+    if (!recipientId) {
+      const { data: post } = await supabase
+        .from("posts")
+        .select("user_id")
+        .eq("id", postId)
+        .maybeSingle()
+
+      recipientId = post?.user_id || null
+    }
+
+    if (recipientId && recipientId !== user.id) {
       await createNotification({
-        recipientId: postOwnerId,
+        recipientId,
         actorId: user.id,
         type: "comment",
         postId: postId,

@@ -1,4 +1,14 @@
 import { supabase } from "./supabase"
+import { dispatchPushNotification } from "./pushNotifications"
+
+function isValidUuid(value) {
+  if (typeof value !== "string") {
+    return false
+  }
+
+  const uuid = value.trim()
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)
+}
 
 /**
  * Create a notification for a user
@@ -10,32 +20,79 @@ export async function createNotification({
   postId = null,
   commentId = null,
   workspaceId = null,
-  message = null
+  message = null,
+  route = null
 }) {
   if (!recipientId || !actorId || !type) {
     console.error("[notificationHelpers] Missing required fields for notification")
     return false
   }
 
+  if (recipientId === actorId) {
+    return true
+  }
+
   try {
+    const payload = {
+      recipient_id: recipientId,
+      actor_id: actorId,
+      type,
+      is_read: false
+    }
+
+    if (isValidUuid(postId)) {
+      payload.post_id = postId
+    }
+
+    if (isValidUuid(commentId)) {
+      payload.comment_id = commentId
+    }
+
+    if (isValidUuid(workspaceId)) {
+      payload.workspace_id = workspaceId
+    }
+
+    if (typeof message === "string" && message.trim()) {
+      payload.message = message
+    }
+
     const { error } = await supabase
       .from("notifications")
-      .insert({
-        recipient_id: recipientId,
-        actor_id: actorId,
-        type,
-        post_id: postId,
-        comment_id: commentId,
-        workspace_id: workspaceId,
-        message,
-        is_read: false,
-        created_at: new Date().toISOString()
-      })
+      .insert(payload)
 
     if (error) {
+      console.log(error.message, error.details, error.code)
       console.error("[notificationHelpers] Error creating notification:", error)
       return false
     }
+
+    const pushTitles = {
+      like: "New like",
+      comment: "New comment",
+      follow: "New follower",
+    }
+
+    const pushBodies = {
+      like: "Someone liked your post",
+      comment: "Someone commented on your post",
+      follow: "Someone started following you",
+    }
+
+    await dispatchPushNotification({
+      recipientId,
+      actorId,
+      title: pushTitles[type] || "New notification",
+      body: message || pushBodies[type] || "You have a new notification",
+      route: route || ((type === "like" || type === "comment") && postId ? `/explore?postId=${postId}` : null),
+      data: {
+        type,
+        recipient_id: recipientId,
+        actor_id: actorId,
+        post_id: postId,
+        comment_id: commentId,
+        workspace_id: workspaceId,
+      },
+    })
 
     console.log("[notificationHelpers] Notification created:", type)
     return true

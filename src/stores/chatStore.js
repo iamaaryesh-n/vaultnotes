@@ -72,7 +72,13 @@ export const useChatStore = create((set, get) => ({
     set((state) => ({
       messagesByConversationId: {
         ...state.messagesByConversationId,
-        [conversationId]: [...(state.messagesByConversationId[conversationId] || []), message],
+        [conversationId]: (() => {
+          const existing = state.messagesByConversationId[conversationId] || []
+          if (existing.some((item) => item?.id && item.id === message.id)) {
+            return existing
+          }
+          return [...existing, message]
+        })(),
       },
       updatedAt: {
         ...state.updatedAt,

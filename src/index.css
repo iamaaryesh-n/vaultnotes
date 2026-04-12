@@ -211,6 +211,8 @@ button, a, input {
   --chat-accent-hover: #c49000;
   --chat-accent-soft: #fff8dc;
   --chat-on-accent: #1a1612;
+  --chat-tick: #2a231c;
+  --chat-tick-read: #0ea5e9;
 }
 
 html.dark {
@@ -227,6 +229,8 @@ html.dark {
   --chat-accent-hover: #c49000;
   --chat-accent-soft: #2a2000;
   --chat-on-accent: #1a1612;
+  --chat-tick: #2a231c;
+  --chat-tick-read: #38bdf8;
 }
 
 .chat-theme {

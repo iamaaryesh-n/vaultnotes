@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation, Navigate, Outlet, useNavigationType } from "react-router-dom"
+import { Routes, Route, useLocation, useNavigate, Navigate, Outlet, useNavigationType } from "react-router-dom"
 import { useEffect, useState, Suspense, lazy, useRef } from "react"
 import { useAuth } from "./hooks/useAuth"
 import { ToastProvider } from "./context/ToastContext"
@@ -11,6 +11,8 @@ import Navbar from "./components/Navbar"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { initializeTheme } from "./utils/theme"
 import { useNavigationStore } from "./stores/navigationStore"
+import { initializeWebPush } from "./lib/firebaseMessaging"
+import { supabase } from "./lib/supabase"
 
 // Eagerly load lightweight pages
 import Login from "./pages/Login"
@@ -38,16 +40,26 @@ function ProtectedRoute({ user, children }) {
 
 function AppShell({ user, createPostOpen, setCreatePostOpen }) {
   const location = useLocation()
+  const [postDetailFocusMode, setPostDetailFocusMode] = useState(false)
 
   const isChatRoute = location.pathname.startsWith("/chat") || location.pathname === "/groups"
   const isVaultRoute = location.pathname === "/workspaces" || location.pathname.startsWith("/workspace/")
 
+  useEffect(() => {
+    const handlePostDetailFocusMode = (event) => {
+      setPostDetailFocusMode(Boolean(event?.detail?.enabled))
+    }
+
+    window.addEventListener("postDetailFocusMode", handlePostDetailFocusMode)
+    return () => window.removeEventListener("postDetailFocusMode", handlePostDetailFocusMode)
+  }, [])
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]">
-      <Navbar />
+      {!postDetailFocusMode && <Navbar />}
       <ToastContainer />
       <LoadingBar />
-      <BottomNavigation />
+      {!postDetailFocusMode && <BottomNavigation />}
       <CreatePostModal
         isOpen={createPostOpen}
         onClose={() => setCreatePostOpen(false)}
@@ -61,8 +73,8 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
           isChatRoute
             ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
             : isVaultRoute
-              ? "min-h-screen overflow-x-hidden bg-[var(--profile-bg)] pt-[64px] pb-20"
-              : "min-h-screen pt-[64px] pb-20"
+              ? `min-h-screen overflow-x-hidden bg-[var(--profile-bg)] ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-20"}`
+              : `min-h-screen ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-20"}`
         }
       >
         <Outlet />
@@ -73,6 +85,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
 
 function AppContent() {
   const location = useLocation()
+  const navigate = useNavigate()
   const navigationType = useNavigationType()
   const { user, session, authLoading } = useAuth()
   const [createPostOpen, setCreatePostOpen] = useState(false)
@@ -99,6 +112,61 @@ function AppContent() {
       setBackNavigationState({ fromPath: previousPathRef.current, toPath: location.pathname })
     }
   }, [location.pathname, navigationType, setBackNavigationState])
+
+  useEffect(() => {
+    if (!user?.id) {
+      return
+    }
+
+    initializeWebPush(user.id)
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) {
+      return
+    }
+
+    const params = new URLSearchParams(location.search)
+    const action = params.get("action")
+    const notificationId = params.get("notificationId")
+
+    if (action !== "mark-read" || !notificationId) {
+      return
+    }
+
+    const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(notificationId)
+    if (!isValidUuid) {
+      params.delete("action")
+      params.delete("notificationId")
+      const nextSearch = params.toString()
+      navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ""}`, { replace: true })
+      return
+    }
+
+    const redirect = params.get("redirect")
+
+    const markRead = async () => {
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", notificationId)
+        .eq("recipient_id", user.id)
+
+      params.delete("action")
+      params.delete("notificationId")
+      params.delete("redirect")
+
+      if (redirect) {
+        navigate(redirect, { replace: true })
+        return
+      }
+
+      const nextSearch = params.toString()
+      navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ""}`, { replace: true })
+    }
+
+    markRead()
+  }, [location.pathname, location.search, navigate, user?.id])
 
   // Listen for Create Post event from floating action button
   useEffect(() => {

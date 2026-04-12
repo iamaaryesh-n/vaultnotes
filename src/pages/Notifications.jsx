@@ -9,11 +9,7 @@ import { supabase } from "../lib/supabase"
 export function Notifications() {
   const navigate = useNavigate()
   const { addToast } = useToast()
-  const {
-    notifications: dropdownNotifications,
-    loading: dropdownLoading,
-    markAsRead: hookMarkAsRead
-  } = useNotifications()
+  const { markAsRead: hookMarkAsRead } = useNotifications()
 
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,20 +19,7 @@ export function Notifications() {
 
   useRouteScrollRestoration("notifications")
 
-  useEffect(() => {
-    if (dropdownLoading) {
-      return
-    }
-
-    if (dropdownNotifications && dropdownNotifications.length > 0) {
-      setNotifications(dropdownNotifications)
-      setLoading(false)
-    } else {
-      fetchAllNotifications()
-    }
-  }, [dropdownNotifications, dropdownLoading])
-
-  const fetchAllNotifications = async () => {
+  const fetchAllNotifications = useCallback(async () => {
     try {
       setLoading(true)
 
@@ -87,7 +70,11 @@ export function Notifications() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [addToast, navigate])
+
+  useEffect(() => {
+    fetchAllNotifications()
+  }, [fetchAllNotifications])
 
   const handleMarkAllAsRead = useCallback(async () => {
     try {

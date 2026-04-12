@@ -144,6 +144,12 @@ enabled = false
 max_buckets = 10
 max_indexes = 5
 
+[functions.send-push]
+verify_jwt = false
+
+[functions.mark-chat-read]
+verify_jwt = false
+
 # Vector Buckets is available to Supabase Pro plan.
 # [storage.vector.buckets.documents-openai]
 

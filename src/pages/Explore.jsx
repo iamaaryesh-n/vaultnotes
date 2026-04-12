@@ -26,6 +26,7 @@ export default function Explore() {
   const [modalCommentsLoading, setModalCommentsLoading] = useState(false)
   const [followedUsers, setFollowedUsers] = useState([])
   const [headerVisible, setHeaderVisible] = useState(true)
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.matchMedia("(max-width: 767px)").matches)
   const lastScrollY = useRef(0)
 
   useRouteScrollRestoration("explore-feed")
@@ -74,6 +75,23 @@ export default function Explore() {
   }, [contextUser?.id])
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    const handleMediaQueryChange = (event) => {
+      setIsMobileViewport(event.matches)
+    }
+
+    setIsMobileViewport(mediaQuery.matches)
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleMediaQueryChange)
+      return () => mediaQuery.removeEventListener("change", handleMediaQueryChange)
+    }
+
+    mediaQuery.addListener(handleMediaQueryChange)
+    return () => mediaQuery.removeListener(handleMediaQueryChange)
+  }, [])
+
+  useEffect(() => {
     const handleScroll = () => {
       const currentY = window.scrollY
       if (currentY < 10) {
@@ -107,7 +125,6 @@ export default function Explore() {
     setSelectedPost(post)
     setModalOpen(true)
     setShowModalComments(false)
-    document.body.style.overflow = "hidden"
   }
 
   const closePostModal = () => {
@@ -115,8 +132,25 @@ export default function Explore() {
     setSelectedPost(null)
     setShowModalComments(false)
     setModalCommentsLoading(false)
-    document.body.style.overflow = "unset"
   }
+
+  useEffect(() => {
+    document.body.style.overflow = modalOpen ? "hidden" : "unset"
+    window.dispatchEvent(
+      new CustomEvent("postDetailFocusMode", {
+        detail: { enabled: modalOpen }
+      })
+    )
+
+    return () => {
+      document.body.style.overflow = "unset"
+      window.dispatchEvent(
+        new CustomEvent("postDetailFocusMode", {
+          detail: { enabled: false }
+        })
+      )
+    }
+  }, [modalOpen])
 
   useEffect(() => {
     if (!modalOpen || !selectedPost?.id) return
@@ -271,16 +305,16 @@ export default function Explore() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closePostModal}
-              className="fixed inset-0 z-50 bg-[var(--overlay-backdrop)] backdrop-blur-sm"
+              className="fixed inset-0 z-[120] bg-[var(--overlay-backdrop)] backdrop-blur-sm"
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              initial={isMobileViewport ? { opacity: 0, y: 48 } : { opacity: 0, scale: 0.95, y: 20 }}
+              animate={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 1, scale: 1, y: 0 }}
+              exit={isMobileViewport ? { opacity: 0, y: 48 } : { opacity: 0, scale: 0.95, y: 20 }}
+              transition={isMobileViewport ? { duration: 0.24, ease: "easeOut" } : { type: "spring", stiffness: 300, damping: 30 }}
               onClick={(event) => event.stopPropagation()}
-              className="fixed inset-0 z-50 m-auto max-h-[90vh] w-[90vw] max-w-3xl overflow-y-auto rounded-[20px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]"
+              className="fixed inset-0 z-[130] h-[100dvh] w-[100vw] overflow-y-auto border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)] md:m-auto md:h-auto md:max-h-[90vh] md:w-[90vw] md:max-w-3xl md:rounded-[20px]"
             >
               <div className="flex w-full flex-col">
                 <div className="flex-shrink-0 border-b border-[var(--overlay-border)] px-6 py-4">

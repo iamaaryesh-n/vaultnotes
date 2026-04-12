@@ -7,6 +7,7 @@ import { useToast } from "../hooks/useToast"
 import { encrypt, decrypt, importKey, generateKey, exportKey, validateKey, debugLogKey } from "../utils/encryption"
 import { getSignedImageUrl, uploadImageToPrivateStorage, isSignedUrlValid, deletePrivateImage } from "../lib/privateImageStorage"
 import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
+import { dispatchPushNotification } from "../lib/pushNotifications"
 import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown } from "lucide-react"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
@@ -39,6 +40,7 @@ export default function Chat() {
   const shouldFetchMessages = useChatStore((state) => state.shouldFetchMessages)
   const setConversationsCache = useChatStore((state) => state.setConversations)
   const setMessagesCache = useChatStore((state) => state.setMessages)
+  const appendMessageToCache = useChatStore((state) => state.appendMessage)
   const setUnreadCountsCache = useChatStore((state) => state.setUnreadCountsByConversation)
   const setCurrentChatIdCache = useChatStore((state) => state.setCurrentChatId)
   const [searchParams] = useSearchParams()
@@ -156,6 +158,7 @@ export default function Chat() {
   const typingListenerChannelsRef = useRef([])
   const isTypingRef = useRef(false)
   const lastTypingBroadcastAtRef = useRef(0)
+  const updateMessageSeenStatusRef = useRef(null)
   const conversationCryptoKeysRef = useRef({})
   const signedImageUrlCacheRef = useRef({}) // Cache: storagePath -> { url, expiresAt }
   const groupMessagesChannelRef = useRef(null)
@@ -235,6 +238,37 @@ export default function Chat() {
 
     return profilesById[activeConversation.partner.id] || activeConversation.partner
   }, [activeConversation, profilesById])
+
+  const currentUserProfile = useMemo(() => {
+    if (!contextUser?.id) {
+      return null
+    }
+
+    return profilesById[contextUser.id] || null
+  }, [contextUser?.id, profilesById])
+
+  const senderDisplayName = useMemo(
+    () =>
+      contextUser?.full_name ||
+      contextUser?.name ||
+      contextUser?.username ||
+      currentUserProfile?.display_name ||
+      currentUserProfile?.full_name ||
+      currentUserProfile?.name ||
+      currentUserProfile?.username ||
+      contextUser?.email ||
+      "User",
+    [
+      contextUser?.full_name,
+      contextUser?.name,
+      contextUser?.username,
+      contextUser?.email,
+      currentUserProfile?.display_name,
+      currentUserProfile?.full_name,
+      currentUserProfile?.name,
+      currentUserProfile?.username,
+    ]
+  )
 
   const isPartnerTyping = useMemo(
     () => Boolean(activeConversationId && typingByConversation[activeConversationId]),
@@ -872,6 +906,29 @@ export default function Chat() {
     })
   }, [dispatchUnreadBadgeUpdate])
 
+  const decrementUnreadForConversation = useCallback((conversationId) => {
+    if (!conversationId) return
+
+    setUnreadCountsByConversation((prev) => {
+      const current = prev[conversationId] || 0
+      if (current <= 0) {
+        return prev
+      }
+
+      const next = { ...prev }
+      const updated = current - 1
+
+      if (updated <= 0) {
+        delete next[conversationId]
+      } else {
+        next[conversationId] = updated
+      }
+
+      dispatchUnreadBadgeUpdate(next)
+      return next
+    })
+  }, [dispatchUnreadBadgeUpdate])
+
   const navigateToConversation = useCallback((conversationId, options = {}) => {
     if (conversationId) {
       navigate(`/chat/direct/${conversationId}`, { replace: options.replace === true })
@@ -1115,6 +1172,10 @@ export default function Chat() {
       )
     )
   }, [])
+
+  useEffect(() => {
+    updateMessageSeenStatusRef.current = updateMessageSeenStatus
+  }, [updateMessageSeenStatus])
 
   const addReactionToState = useCallback((newReaction) => {
     const { message_id, emoji, user_id } = newReaction
@@ -1939,6 +2000,11 @@ export default function Chat() {
           const nextMessage = payload.new
           if (!nextMessage?.id) return
 
+          console.log("[Chat][Realtime] MESSAGE_RECEIVED", {
+            conversationId: activeConversationId,
+            messageId: nextMessage.id
+          })
+
           console.log("[Chat] Active conversation INSERT event:", {
             messageId: nextMessage.id,
             sender: nextMessage.sender_id,
@@ -1976,6 +2042,7 @@ export default function Chat() {
             if (prev.some((item) => item.id === normalizedNextMessage.id)) {
               return prev
             }
+            appendMessageToCache(activeConversationId, normalizedNextMessage)
             return [...prev, normalizedNextMessage]
           })
 
@@ -2162,11 +2229,17 @@ export default function Chat() {
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           activeConversationChannelRef.current = channel
+          console.log("[Chat][Realtime] SUBSCRIBED", { conversationId: activeConversationId })
+        }
+
+        if (status === "CLOSED") {
+          console.log("[Chat][Realtime] CHANNEL_CLOSED", { conversationId: activeConversationId })
         }
         console.log("[Chat] Realtime status:", status)
       })
 
     return () => {
+      console.log("[Chat][Realtime] CHANNEL_CLOSED", { conversationId: activeConversationId })
       console.log("[Chat] Cleaning active conversation realtime channel:", activeConversationId)
       if (isTypingRef.current) {
         channel.send({
@@ -2189,7 +2262,7 @@ export default function Chat() {
       isTypingRef.current = false
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, handleReactionDelete, handleReactionInsert, updateReactionInState, sortConversationsByPriority, getMessageType])
+  }, [activeConversationId])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -2253,18 +2326,25 @@ export default function Chat() {
           console.log("Message updated:", payload)
 
           if (payload.new?.is_read === true) {
-            updateMessageSeenStatus(payload.new.id)
+            updateMessageSeenStatusRef.current?.(payload.new.id)
           }
         }
       )
       .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[Chat][Realtime] SUBSCRIBED", { channel: "messages-update" })
+        }
+        if (status === "CLOSED") {
+          console.log("[Chat][Realtime] CHANNEL_CLOSED", { channel: "messages-update" })
+        }
         console.log("[Chat] Message update subscription status:", status)
       })
 
     return () => {
+      console.log("[Chat][Realtime] CHANNEL_CLOSED", { channel: "messages-update" })
       supabase.removeChannel(channel)
     }
-  }, [updateMessageSeenStatus])
+  }, [])
 
   useEffect(() => {
     if (conversationSearchOpen && debouncedConversationSearchQuery.trim()) {
@@ -2432,6 +2512,48 @@ export default function Chat() {
       console.error("[Chat] Exception marking messages as read:", err)
     }
   }, [clearUnreadForConversation])
+
+  useEffect(() => {
+    if (!navigator.serviceWorker) return
+
+    const handleServiceWorkerMessage = (event) => {
+      const payload = event.data
+
+      if (payload?.type !== "MESSAGE_MARKED_READ") return
+
+      const conversationId = payload.conversationId
+
+      if (!conversationId) return
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.conversation_id === conversationId &&
+          msg.receiver_id === contextUser.id
+            ? {
+                ...msg,
+                is_read: true,
+                delivery_status: "seen",
+                seen_at: new Date().toISOString(),
+              }
+            : msg
+        )
+      )
+
+      clearUnreadForConversation(conversationId)
+    }
+
+    navigator.serviceWorker.addEventListener(
+      "message",
+      handleServiceWorkerMessage
+    )
+
+    return () => {
+      navigator.serviceWorker.removeEventListener(
+        "message",
+        handleServiceWorkerMessage
+      )
+    }
+  }, [contextUser?.id])
 
   const markMessageAsDelivered = useCallback(async (messageId) => {
     if (!messageId) return
@@ -2606,7 +2728,13 @@ export default function Chat() {
     setError("")
     setSelectedImageFile(processedFile)
     setSelectedImageComposerUrl(URL.createObjectURL(processedFile))
-    setImageCaption("")
+    setImageCaption((prev) => {
+      if (prev?.trim()) return prev
+      return draft.trim()
+    })
+    if (draft.trim()) {
+      setDraft("")
+    }
 
     requestAnimationFrame(() => {
       imageCaptionInputRef.current?.focus()
@@ -2759,6 +2887,27 @@ export default function Chat() {
         setError("Failed to send image")
         return
       }
+
+      const resolvedConversationId = insertedData?.[0]?.conversation_id || activeConversation?.id || activeConversationId
+
+      await dispatchPushNotification({
+        recipientId: receiverId,
+        actorId: contextUser.id,
+        title: senderDisplayName,
+        body: imageCaption.trim() || "Sent you a photo",
+        route: `/chat/direct/${resolvedConversationId}`,
+        data: {
+          type: "message",
+          senderName: senderDisplayName,
+          messageText: imageCaption.trim() || "Sent you a photo",
+          conversation_id: resolvedConversationId,
+          notification_id: insertedData?.[0]?.id || null,
+          recipient_id: receiverId,
+          receiver_id: receiverId,
+          markReadEndpoint: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mark-chat-read`,
+          sender_id: contextUser.id,
+        },
+      })
 
       // Optimistically add the message to the state immediately
       if (insertedData && insertedData.length > 0) {
@@ -3092,13 +3241,39 @@ export default function Chat() {
         return
       }
 
-      const { error: insertError } = await supabase.from("messages").insert(validRows)
+      const { data: insertedForwardMessages, error: insertError } = await supabase
+        .from("messages")
+        .insert(validRows)
+        .select("id, conversation_id, receiver_id")
 
       if (insertError) {
         console.error("[Chat] Failed to forward message:", insertError)
         showToastError("Failed to forward message")
         return
       }
+
+      await Promise.all(
+        (insertedForwardMessages && insertedForwardMessages.length > 0 ? insertedForwardMessages : validRows).map((row) =>
+          dispatchPushNotification({
+            recipientId: row.receiver_id,
+            actorId: contextUser.id,
+            title: senderDisplayName,
+            body: contentToForward || "Forwarded a message",
+            route: `/chat/direct/${row.conversation_id}`,
+            data: {
+              type: "message",
+              senderName: senderDisplayName,
+              messageText: contentToForward || "Forwarded a message",
+              conversation_id: row.conversation_id,
+              notification_id: row.id || null,
+              recipient_id: row.receiver_id,
+              receiver_id: row.receiver_id,
+              markReadEndpoint: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mark-chat-read`,
+              sender_id: contextUser.id,
+            },
+          })
+        )
+      )
 
       closeForwardModal()
       showSuccess("Message forwarded")
@@ -3385,6 +3560,27 @@ export default function Chat() {
         setError("Failed to send message")
         return
       }
+
+      const resolvedConversationId = insertedData?.[0]?.conversation_id || activeConversation?.id || activeConversationId
+
+      await dispatchPushNotification({
+        recipientId: receiverId,
+        actorId: contextUser.id,
+        title: senderDisplayName,
+        body: content,
+        route: `/chat/direct/${resolvedConversationId}`,
+        data: {
+          type: "message",
+          senderName: senderDisplayName,
+          messageText: content,
+          conversation_id: resolvedConversationId,
+          notification_id: insertedData?.[0]?.id || null,
+          recipient_id: receiverId,
+          receiver_id: receiverId,
+          markReadEndpoint: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mark-chat-read`,
+          sender_id: contextUser.id,
+        },
+      })
 
       // Optimistically add the message to the state immediately
       if (insertedData && insertedData.length > 0) {
@@ -4632,7 +4828,14 @@ export default function Chat() {
     setGroupSelectedImage(processedFile)
     const url = URL.createObjectURL(processedFile)
     setGroupSelectedImageComposerUrl(url)
-  }, [groupSelectedImageComposerUrl, showToastError])
+    setGroupImageCaption((prev) => {
+      if (prev?.trim()) return prev
+      return groupDraft.trim()
+    })
+    if (groupDraft.trim()) {
+      setGroupDraft('')
+    }
+  }, [groupDraft, groupSelectedImageComposerUrl, showToastError])
 
   // Send group message with image
   const handleSendGroupMessageWithImage = useCallback(async () => {
@@ -5934,7 +6137,7 @@ export default function Chat() {
                               loading="lazy"
                             />
                             {message.content && (
-                              <p className={`border-t border-[var(--chat-border)] px-2.5 py-2 font-['DM_Sans'] text-[13px] ${mine ? "text-[var(--chat-surface)]" : "text-[var(--chat-text)]"}`}>
+                              <p className="border-t border-[var(--chat-border)] px-2.5 py-2 font-['DM_Sans'] text-[13px] text-[var(--chat-text)]">
                                 {renderHighlightedMessageText(message.content, message.id)}
                               </p>
                             )}
@@ -5979,7 +6182,9 @@ export default function Chat() {
                         </span>
                         {mine && !isDeletedMessage && messageTickState && (
                           <span
-                            className="inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] text-[var(--chat-on-accent)]"
+                            className={`inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] ${
+                              messageTickState === "read" ? "text-[var(--chat-tick-read)]" : "text-[var(--chat-tick)]"
+                            }`}
                             title={
                               messageTickState === "read"
                                 ? "Read"

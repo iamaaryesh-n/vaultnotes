@@ -9,24 +9,9 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
   const [markedIds, setMarkedIds] = useState([])
   const [actionLoadingById, setActionLoadingById] = useState({})
 
-  const autoMarkUnreadIds = notifications
-    .filter((n) => !n.is_read && n.type !== "workspace_invite")
-    .map((n) => n.id)
-
-  useEffect(() => {
-    const handleMarkAsRead = async () => {
-      if (!isOpen) return
-
-      if (autoMarkUnreadIds.length > 0 && markedIds.length === 0) {
-        const success = await onMarkAsRead(autoMarkUnreadIds)
-        if (success) {
-          setMarkedIds(autoMarkUnreadIds)
-        }
-      }
-    }
-
-    handleMarkAsRead()
-  }, [isOpen, autoMarkUnreadIds, onMarkAsRead, markedIds.length])
+  const unreadNotifications = (notifications || [])
+    .filter((notif) => !notif.is_read && !markedIds.includes(notif.id))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -318,9 +303,13 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
   }
 
   const handleMarkAllRead = async () => {
-    const unreadIds = notifications.filter((notif) => !notif.is_read).map((notif) => notif.id)
+    const unreadIds = unreadNotifications.map((notif) => notif.id)
     if (unreadIds.length === 0) return
-    await onMarkAsRead(unreadIds)
+    setMarkedIds((prev) => [...new Set([...prev, ...unreadIds])])
+    const success = await onMarkAsRead(unreadIds)
+    if (!success) {
+      setMarkedIds((prev) => prev.filter((id) => !unreadIds.includes(id)))
+    }
   }
 
   if (!isOpen) {
@@ -358,13 +347,13 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
               />
             </svg>
           </div>
-        ) : notifications.length === 0 ? (
+        ) : unreadNotifications.length === 0 ? (
           <div className="px-4 py-8 text-center text-[var(--overlay-text-subtle)]">
-            <p className="text-sm">No notifications yet</p>
+            <p className="text-sm">No new notifications</p>
           </div>
         ) : (
           <div>
-            {notifications.map((notif) => {
+            {unreadNotifications.map((notif) => {
               const isInvite = notif.type === "workspace_invite"
               const isRead = notif.is_read || markedIds.includes(notif.id)
               const actionLoading = actionLoadingById[notif.id]
@@ -432,19 +421,17 @@ export function NotificationDropdown({ notifications, loading, unreadCount, onMa
         )}
       </div>
 
-      {notifications.length > 0 && (
-        <div className="border-t border-[var(--overlay-border)] py-[10px] text-center">
-          <button
-            onClick={() => {
-              navigate("/notifications")
-              onClose()
-            }}
-            className="text-[12px] font-semibold text-[#F4B400]"
-          >
-            View all notifications
-          </button>
-        </div>
-      )}
+      <div className="border-t border-[var(--overlay-border)] py-[10px] text-center">
+        <button
+          onClick={() => {
+            navigate("/notifications")
+            onClose()
+          }}
+          className="text-[12px] font-semibold text-[#F4B400]"
+        >
+          View all notifications
+        </button>
+      </div>
     </motion.div>
   )
 }
