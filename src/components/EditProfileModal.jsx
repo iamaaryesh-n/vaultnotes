@@ -282,7 +282,7 @@ export function EditProfileModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleCancel}
-            className="fixed inset-0 z-40 bg-black/75 backdrop-blur-sm"
+            className="fixed inset-0 z-40 bg-[var(--overlay-backdrop)] backdrop-blur-sm"
           />
 
           {/* Modal */}
@@ -292,13 +292,13 @@ export function EditProfileModal({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none"
           >
-            <motion.div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[20px] border border-[#1F1F1F] bg-[#111111] shadow-2xl">
+            <motion.div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[20px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]">
             {/* Header */}
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#1F1F1F] bg-[#111111] px-6 py-4">
-              <h2 className="font-['Sora'] text-2xl font-bold text-[#F5F0E8]">Edit Profile</h2>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--overlay-border)] bg-[var(--overlay-surface)] px-6 py-4">
+              <h2 className="font-['Sora'] text-2xl font-bold text-[var(--overlay-text)]">Edit Profile</h2>
               <button
                 onClick={handleCancel}
-                className="text-[#A09080] transition-colors hover:text-[#F5F0E8]"
+                className="text-[var(--overlay-text-subtle)] transition-colors hover:text-[var(--overlay-text)]"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -311,9 +311,9 @@ export function EditProfileModal({
               {/* Left: Avatar + Preview */}
               <div className="flex flex-col items-center gap-6">
                 <div className="w-full">
-                  <p className="mb-2 text-[12px] font-semibold text-[#A09080]">Change Cover Photo</p>
+                  <p className="mb-2 text-[12px] font-semibold text-[var(--overlay-text-subtle)]">Change Cover Photo</p>
                   <div
-                    className={`h-28 overflow-hidden rounded-[10px] border border-[#2A2A2A] bg-[#141414] ${isDraggingCover ? "cursor-grabbing" : "cursor-grab"}`}
+                    className={`h-28 overflow-hidden rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] ${isDraggingCover ? "cursor-grabbing" : "cursor-grab"}`}
                     onMouseDown={(e) => startCoverDrag(e.clientX, e.clientY)}
                     onMouseMove={(e) => moveCoverDrag(e.clientX, e.clientY)}
                     onMouseUp={endCoverDrag}
@@ -344,9 +344,9 @@ export function EditProfileModal({
                       <div className="h-full w-full bg-gradient-to-br from-[#1A1200] via-[#2A2000] to-[#1A0A00]" style={{ backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 40px, rgba(244,180,0,0.03) 40px, rgba(244,180,0,0.03) 80px)" }} />
                     )}
                   </div>
-                  <p className="mt-2 text-xs text-[#5C5248]">Drag to reposition</p>
+                  <p className="mt-2 text-xs text-[var(--overlay-text-muted)]">Drag to reposition</p>
                   <div className="mt-2">
-                    <label className="text-xs font-medium text-[#A09080]">Zoom slider</label>
+                    <label className="text-xs font-medium text-[var(--overlay-text-subtle)]">Zoom slider</label>
                     <input
                       type="range"
                       min="1"
@@ -357,7 +357,7 @@ export function EditProfileModal({
                       className="mt-1 w-full"
                     />
                   </div>
-                  <label className="mt-2 inline-flex cursor-pointer items-center rounded-[10px] bg-[#F4B400] px-3 py-1.5 text-xs font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000]">
+                  <label className="mt-2 inline-flex cursor-pointer items-center rounded-[10px] bg-[#F4B400] px-3 py-1.5 text-xs font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[#C49000]">
                     Change Cover Photo
                     <input
                       type="file"
@@ -369,13 +369,13 @@ export function EditProfileModal({
                 </div>
 
                 <div className="text-center">
-                  <h3 className="mb-4 text-[12px] font-semibold text-[#A09080]">Profile Preview</h3>
+                  <h3 className="mb-4 text-[12px] font-semibold text-[var(--overlay-text-subtle)]">Profile Preview</h3>
 
                   {/* Avatar Preview */}
                   <div className="relative">
                     {avatarPreview ? (
                       <div
-                        className={`mx-auto h-32 w-32 overflow-hidden rounded-full border-[2px] border-dashed border-[#2A2A2A] bg-[#141414] ${isDraggingAvatar ? "cursor-grabbing" : "cursor-grab"}`}
+                        className={`mx-auto h-32 w-32 overflow-hidden rounded-full border-[2px] border-dashed border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] ${isDraggingAvatar ? "cursor-grabbing" : "cursor-grab"}`}
                         onMouseDown={(e) => startAvatarDrag(e.clientX, e.clientY)}
                         onMouseMove={(e) => moveAvatarDrag(e.clientX, e.clientY)}
                         onMouseUp={endAvatarDrag}
@@ -403,13 +403,13 @@ export function EditProfileModal({
                         />
                       </div>
                     ) : (
-                      <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full border-[2px] border-dashed border-[#2A2A2A] bg-[#141414] text-4xl font-bold text-[#F4B400]">
+                      <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full border-[2px] border-dashed border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] text-4xl font-bold text-[#F4B400]">
                         {nameInput?.charAt(0)?.toUpperCase() || "?"}
                       </div>
                     )}
 
                     {/* Upload Button */}
-                    <label className="absolute bottom-0 right-0 cursor-pointer rounded-full bg-[#F4B400] p-2 text-[#0D0D0D] shadow-lg transition-colors hover:bg-[#C49000]">
+                    <label className="absolute bottom-0 right-0 cursor-pointer rounded-full bg-[#F4B400] p-2 text-[var(--profile-on-accent)] shadow-lg transition-colors hover:bg-[#C49000]">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -423,10 +423,10 @@ export function EditProfileModal({
                     </label>
                   </div>
 
-                  <p className="mt-2 text-xs text-[#5C5248]">Change Avatar (circular crop preview)</p>
-                  <p className="mt-1 text-xs text-[#5C5248]">Drag to reposition</p>
+                  <p className="mt-2 text-xs text-[var(--overlay-text-muted)]">Change Avatar (circular crop preview)</p>
+                  <p className="mt-1 text-xs text-[var(--overlay-text-muted)]">Drag to reposition</p>
                   <div className="mt-2 w-full">
-                    <label className="text-xs font-medium text-[#A09080]">Zoom slider</label>
+                    <label className="text-xs font-medium text-[var(--overlay-text-subtle)]">Zoom slider</label>
                     <input
                       type="range"
                       min="1"
@@ -439,10 +439,10 @@ export function EditProfileModal({
                   </div>
 
                   {/* Preview Info */}
-                  <div className="mt-6 space-y-2 rounded-[10px] border border-[#2A2A2A] bg-[#141414] p-4 text-left">
-                    <p className="text-center font-medium text-[#F5F0E8]">{nameInput || "Your Name"}</p>
-                    <p className="text-center text-sm text-[#A09080]">@{usernameInput || "username"}</p>
-                    <p className="max-h-12 overflow-hidden text-center text-xs italic text-[#A09080]">
+                  <div className="mt-6 space-y-2 rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] p-4 text-left">
+                    <p className="text-center font-medium text-[var(--overlay-text)]">{nameInput || "Your Name"}</p>
+                    <p className="text-center text-sm text-[var(--overlay-text-subtle)]">@{usernameInput || "username"}</p>
+                    <p className="max-h-12 overflow-hidden text-center text-xs italic text-[var(--overlay-text-subtle)]">
                       {bioInput ? bioInput : "Your bio will appear here..."}
                     </p>
                   </div>
@@ -453,19 +453,19 @@ export function EditProfileModal({
               <div className="flex flex-col gap-4">
                 {/* Name */}
                 <div>
-                  <label className="mb-2 block text-[12px] font-semibold text-[#A09080]">Full Name</label>
+                  <label className="mb-2 block text-[12px] font-semibold text-[var(--overlay-text-subtle)]">Full Name</label>
                   <input
                     type="text"
                     value={nameInput}
                     onChange={(e) => setNameInput(e.target.value)}
                     placeholder="Enter your full name"
-                    className="h-[44px] w-full rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-3 text-[13px] text-[#F5F0E8] outline-none placeholder:text-[#5C5248] transition-all focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
+                    className="h-[44px] w-full rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] px-3 text-[13px] text-[var(--overlay-text)] outline-none placeholder:text-[var(--overlay-text-muted)] transition-all focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
                   />
                 </div>
 
                 {/* Username */}
                 <div>
-                  <label className="mb-2 block text-[12px] font-semibold text-[#A09080]">Username</label>
+                  <label className="mb-2 block text-[12px] font-semibold text-[var(--overlay-text-subtle)]">Username</label>
                   <input
                     type="text"
                     value={usernameInput}
@@ -476,16 +476,16 @@ export function EditProfileModal({
                       if (val) validateUsername(val)
                     }}
                     placeholder="lowercase_username"
-                    className={`h-[44px] w-full rounded-[10px] border bg-[#141414] px-3 text-[13px] text-[#F5F0E8] outline-none placeholder:text-[#5C5248] transition-all focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)] ${
+                    className={`h-[44px] w-full rounded-[10px] border bg-[var(--overlay-elev)] px-3 text-[13px] text-[var(--overlay-text)] outline-none placeholder:text-[var(--overlay-text-muted)] transition-all focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)] ${
                       usernameError && usernameStatus !== "available"
                         ? "border-[#EF4444] focus:border-[#EF4444]"
-                        : "border-[#2A2A2A] focus:border-[#F4B400]"
+                        : "border-[var(--overlay-border-strong)] focus:border-[#F4B400]"
                     }`}
                   />
                   {usernameError && (
-                    <p className={`mt-1 text-[11px] ${usernameStatus === "available" ? "text-[#A09080]" : "text-[#EF4444]"}`}>{usernameError}</p>
+                    <p className={`mt-1 text-[11px] ${usernameStatus === "available" ? "text-[var(--overlay-text-subtle)]" : "text-[#EF4444]"}`}>{usernameError}</p>
                   )}
-                  <p className="mt-1 text-xs text-[#5C5248]">3-20 characters, lowercase, numbers, underscore</p>
+                  <p className="mt-1 text-xs text-[var(--overlay-text-muted)]">3-20 characters, lowercase, numbers, underscore</p>
                 </div>
 
                 {saveError && (
@@ -494,16 +494,16 @@ export function EditProfileModal({
 
                 {/* Bio */}
                 <div>
-                  <label className="mb-2 block text-[12px] font-semibold text-[#A09080]">Bio</label>
+                  <label className="mb-2 block text-[12px] font-semibold text-[var(--overlay-text-subtle)]">Bio</label>
                   <textarea
                     value={bioInput}
                     onChange={(e) => setBioInput(e.target.value)}
                     placeholder="Tell us about yourself..."
                     rows={4}
                     maxLength={160}
-                    className="h-auto w-full resize-none rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-3 py-3 text-[13px] text-[#F5F0E8] outline-none placeholder:text-[#5C5248] transition-all focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
+                    className="h-auto w-full resize-none rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] px-3 py-3 text-[13px] text-[var(--overlay-text)] outline-none placeholder:text-[var(--overlay-text-muted)] transition-all focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
                   />
-                  <p className="mt-1 text-xs text-[#5C5248]">{bioInput.length}/160</p>
+                  <p className="mt-1 text-xs text-[var(--overlay-text-muted)]">{bioInput.length}/160</p>
                 </div>
 
                 {/* Buttons */}
@@ -512,7 +512,7 @@ export function EditProfileModal({
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleCancel}
-                    className="flex-1 rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-4 py-2 text-[13px] text-[#F5F0E8] transition-colors hover:bg-[#1C1C1C]"
+                    className="flex-1 rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] px-4 py-2 text-[13px] text-[var(--overlay-text)] transition-colors hover:bg-[var(--overlay-hover)]"
                   >
                     Cancel
                   </motion.button>
@@ -528,7 +528,7 @@ export function EditProfileModal({
                       usernameStatus === "invalid" ||
                       usernameStatus === "checking"
                     }
-                    className="flex-1 rounded-[10px] bg-[#F4B400] px-5 py-2 text-[13px] font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex-1 rounded-[10px] bg-[#F4B400] px-5 py-2 text-[13px] font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {saving ? "Saving..." : "Save Changes"}
                   </motion.button>

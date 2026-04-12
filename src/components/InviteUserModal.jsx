@@ -399,19 +399,19 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.72)] p-4 backdrop-blur-[6px]">
-      <div className="flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_24px_80px_rgba(0,0,0,0.7)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 backdrop-blur-[6px]">
+      <div className="flex max-h-[90vh] w-full max-w-md flex-col rounded-xl border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]">
         
         {/* Header - Fixed */}
-        <div className="flex-shrink-0 border-b border-[#1F1F1F] bg-[#141414] px-6 py-4">
-          <h2 className="text-lg font-bold text-[#F5F0E8]">Invite User</h2>
-          <p className="mt-1 text-xs text-[#5C5248]">Search and invite users by username</p>
+        <div className="flex-shrink-0 border-b border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-6 py-4">
+          <h2 className="text-lg font-bold text-[var(--overlay-text)]">Invite User</h2>
+          <p className="mt-1 text-xs text-[var(--overlay-text-muted)]">Search and invite users by username</p>
         </div>
 
         {/* Search Box & Suggestions Container - Wraps both */}
         <div ref={dropdownRef} className="flex flex-col flex-1 min-h-0">
           {/* Search Box - Sticky at top of content area */}
-          <div className="flex-shrink-0 space-y-2 border-b border-[#1F1F1F] bg-[#0D0D0D] px-6 py-3">
+          <div className="flex-shrink-0 space-y-2 border-b border-[var(--overlay-border)] bg-[var(--overlay-surface)] px-6 py-3">
             <div className="relative">
               <input
                 type="text"
@@ -421,11 +421,11 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
                 onFocus={() => suggestions.length > 0 && setShowDropdown(true)}
                 disabled={loading}
                 autoFocus
-                className="w-full rounded-lg border border-[#1F1F1F] bg-[#141414] p-3 text-[#F5F0E8] placeholder:text-[#5C5248] transition-all duration-200 focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)] disabled:opacity-60"
+                className="w-full rounded-lg border border-[var(--overlay-border)] bg-[var(--overlay-elev)] p-3 text-[var(--overlay-text)] placeholder:text-[var(--overlay-text-muted)] transition-all duration-200 focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)] disabled:opacity-60"
               />
               
               {searching && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[#5C5248]">
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--overlay-text-muted)]">
                   <div className="animate-spin">⏳</div>
                 </div>
               )}
@@ -435,7 +435,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
           {/* Suggestions List - Scrollable only this section */}
           <div className="flex-1 overflow-y-auto min-h-0">
           {showDropdown && suggestions.length > 0 ? (
-            <ul className="divide-y divide-[#1F1F1F]">
+            <ul className="divide-y divide-[var(--overlay-border)]">
               {suggestions.map((user) => {
                 // Check if user is already a member
                 const isAlreadyMember = workspaceMembers.some(m => m.user_id === user.id)
@@ -450,10 +450,10 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
                       disabled={isAlreadyMember}
                       className={`w-full px-6 py-3 flex items-center gap-3 text-left transition-all ${
                         isAlreadyMember
-                          ? "bg-slate-50 cursor-not-allowed opacity-60 dark:bg-slate-800"
+                          ? "cursor-not-allowed bg-[var(--overlay-elev)] opacity-60"
                           : isSelected
-                          ? "bg-[#1C1C1C] hover:bg-[#222222]"
-                          : "hover:bg-[#141414] active:bg-[#1C1C1C]"
+                          ? "bg-[var(--overlay-hover)] hover:bg-[var(--overlay-hover)]"
+                          : "hover:bg-[var(--overlay-elev)] active:bg-[var(--overlay-hover)]"
                       }`}
                     >
                       {/* Avatar */}
@@ -472,14 +472,14 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
 
                       {/* User Info */}
                       <div className="flex-1 text-left min-w-0">
-                        <p className="truncate text-sm font-semibold text-[#F5F0E8]">
+                        <p className="truncate text-sm font-semibold text-[var(--overlay-text)]">
                           {user.name || user.username}
                         </p>
-                        <p className="text-xs text-[#5C5248]">
+                        <p className="text-xs text-[var(--overlay-text-muted)]">
                           @{user.username}
                         </p>
                         {user.email && (
-                          <p className="truncate text-xs text-[#5C5248]">
+                          <p className="truncate text-xs text-[var(--overlay-text-muted)]">
                             {user.email}
                           </p>
                         )}
@@ -488,7 +488,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
                       {/* Status Indicator */}
                       {isAlreadyMember ? (
                         <div className="flex items-center gap-1 flex-shrink-0">
-                          <span className="rounded border border-[#1F1F1F] bg-[#141414] px-2 py-1 text-xs font-medium text-[#A09080]">
+                          <span className="rounded border border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-2 py-1 text-xs font-medium text-[var(--overlay-text-subtle)]">
                             Already a member
                           </span>
                         </div>
@@ -497,7 +497,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
                           <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143Z" clipRule="evenodd" />
                         </svg>
                       ) : (
-                        <svg className="w-5 h-5 text-[#A09080] flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <svg className="w-5 h-5 text-[var(--overlay-text-subtle)] flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                           <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143Z" clipRule="evenodd" />
                         </svg>
                       )}
@@ -507,17 +507,17 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
               })}
             </ul>
           ) : showDropdown && searching ? (
-            <div className="flex flex-col items-center gap-3 px-6 py-12 text-center text-sm text-[#5C5248]">
+            <div className="flex flex-col items-center gap-3 px-6 py-12 text-center text-sm text-[var(--overlay-text-muted)]">
               <div className="animate-spin text-lg">⏳</div>
               <span>Searching users...</span>
             </div>
           ) : showDropdown ? (
-            <div className="px-6 py-12 text-center text-sm text-[#5C5248]">
+            <div className="px-6 py-12 text-center text-sm text-[var(--overlay-text-muted)]">
               <p>No users found</p>
               <p className="text-xs mt-1">Try searching with a different username</p>
             </div>
           ) : (
-            <div className="px-6 py-12 text-center text-sm text-[#5C5248]">
+            <div className="px-6 py-12 text-center text-sm text-[var(--overlay-text-muted)]">
               <p>Start typing to search users</p>
             </div>
           )}
@@ -525,7 +525,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
         </div>
 
         {/* Selected User Info & Message - Fixed scroll section above footer */}
-        <div className="flex-shrink-0 space-y-2 border-t border-[#1F1F1F] bg-[#141414] px-6 py-3">
+        <div className="flex-shrink-0 space-y-2 border-t border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-6 py-3">
           {selectedUser && (
             <div className="flex items-center gap-2 rounded-lg border border-[rgba(244,180,0,0.25)] bg-[#2A2000] p-3">
               <svg className="w-4 h-4 text-yellow-600 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -556,12 +556,12 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
         </div>
 
         {/* Footer - Buttons Fixed */}
-        <div className="flex-shrink-0 flex justify-between gap-3 border-t border-[#1F1F1F] bg-[#141414] px-6 py-4">
+        <div className="flex-shrink-0 flex justify-between gap-3 border-t border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-6 py-4">
           <button
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] px-4 py-2 font-medium text-[#A09080] transition-all duration-200 hover:border-[#2A2A2A] hover:text-[#F5F0E8] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-[var(--overlay-border)] bg-[var(--overlay-surface)] px-4 py-2 font-medium text-[var(--overlay-text-subtle)] transition-all duration-200 hover:border-[var(--overlay-border-strong)] hover:text-[var(--overlay-text)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             Cancel
           </button>
@@ -570,7 +570,7 @@ export default function InviteUserModal({ onClose, workspaceId, onSuccess }) {
             type="submit"
             onClick={handleSubmit}
             disabled={loading || !selectedUser}
-            className="flex items-center gap-2 rounded-lg bg-[#F4B400] px-4 py-2 font-bold text-[#0D0D0D] transition-all duration-200 hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-[#F4B400] px-4 py-2 font-bold text-[var(--profile-on-accent)] transition-all duration-200 hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? (
               <>

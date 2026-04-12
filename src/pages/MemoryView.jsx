@@ -258,12 +258,12 @@ export default function MemoryView() {
     : "Unknown date"
 
   return (
-    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
-      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-3 pt-5">
+    <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-3 pt-5">
         <div style={{ maxWidth: "760px" }} className="mx-auto">
           <button
             onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}`))}
-            className="inline-flex items-center gap-2 text-sm font-medium text-[#A09080] transition-colors hover:text-[#F4B400]"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[var(--profile-text-subtle)] transition-colors hover:text-[#F4B400]"
           >
             Back to Workspace
           </button>
@@ -278,18 +278,21 @@ export default function MemoryView() {
           Back to Workspace
         </button>
 
-        <div className="rounded-[20px] border border-[#1F1F1F] bg-[#0D0D0D] px-6 py-6 shadow-[0_16px_50px_rgba(0,0,0,0.55)]">
-          <div className="mb-6 flex flex-col gap-5 border-b border-[#1F1F1F] pb-6 md:flex-row md:items-start md:justify-between">
+        <div
+          className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-surface)] px-6 py-6 transition-shadow duration-200 hover:shadow-[0_20px_52px_rgba(15,23,42,0.24)] dark:hover:shadow-[0_24px_58px_rgba(0,0,0,0.52)]"
+          style={{ boxShadow: "var(--memory-open-shadow)" }}
+        >
+          <div className="mb-6 flex flex-col gap-5 border-b border-[var(--profile-border)] pb-6 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
-              <h1 className="mb-2 font-['Sora'] text-[28px] font-[800] tracking-tight text-[#F5F0E8] md:text-[34px]">{memory?.title || "Untitled"}</h1>
-              <p className="text-sm font-medium text-[#5C5248]">{formattedDate}</p>
+              <h1 className="mb-2 font-['Sora'] text-[28px] font-[800] tracking-tight text-[var(--profile-text)] md:text-[34px]">{memory?.title || "Untitled"}</h1>
+              <p className="text-sm font-medium text-[var(--profile-text-muted)]">{formattedDate}</p>
             </div>
 
             <div className="flex shrink-0 items-center gap-3">
               {canEdit(userRole) && (
                 <button
                   onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/memory/${memoryId}/edit`))}
-                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-sm font-medium text-[#A09080] transition-all duration-200 hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-2 text-sm font-medium text-[var(--profile-text-subtle)] transition-all duration-200 hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
                 >
                   Edit
                 </button>
@@ -322,7 +325,7 @@ export default function MemoryView() {
               margin: 0 auto;
               line-height: 1.6;
               word-break: break-word;
-              color: #A09080;
+              color: var(--profile-text-subtle);
             }
             .prose-memory * {
               max-width: 100%;
@@ -344,13 +347,13 @@ export default function MemoryView() {
             .prose-memory ul { list-style-type: disc; margin-left: 1.5rem; }
             .prose-memory ol { list-style-type: decimal; margin-left: 1.5rem; }
             .prose-memory pre {
-              background: #141414;
-              border: 1px solid #1F1F1F;
+              background: var(--profile-elev);
+              border: 1px solid var(--profile-border);
               padding: 1rem;
               border-radius: 0.75rem;
               font-family: monospace;
               overflow-x: auto;
-              color: #F5F0E8;
+              color: var(--profile-text);
             }
             .prose-memory code {
               background: #1C1C1C;
@@ -362,7 +365,7 @@ export default function MemoryView() {
             .prose-memory pre code {
               background: transparent;
               padding: 0;
-              color: #F5F0E8;
+              color: var(--profile-text);
             }
             .prose-memory img {
               max-width: 100%;
@@ -392,11 +395,11 @@ export default function MemoryView() {
             }
           `}</style>
 
-          <div className="whitespace-pre-wrap text-[#A09080]">
+          <div className="whitespace-pre-wrap text-[var(--profile-text-subtle)]">
             {!isTiptapContentEmpty(content) ? (
               <div className="prose-memory" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }} />
             ) : (
-              <div className="mx-auto max-w-[700px] rounded-2xl border border-dashed border-[#1F1F1F] bg-[#141414] px-5 py-8 text-center italic text-[#5C5248]">
+              <div className="mx-auto max-w-[700px] rounded-2xl border border-dashed border-[var(--profile-border)] bg-[var(--profile-elev)] px-5 py-8 text-center italic text-[var(--profile-text-muted)]">
                 No content
               </div>
             )}

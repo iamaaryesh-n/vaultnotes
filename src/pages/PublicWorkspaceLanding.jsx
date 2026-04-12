@@ -201,7 +201,7 @@ export default function PublicWorkspaceLanding() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-[#0D0D0D] dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 mb-6"
+          className="bg-[var(--profile-surface)] dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 p-8 mb-6"
         >
           <div className="flex items-start gap-6 mb-6">
             <div className="flex-1">

@@ -392,7 +392,7 @@ export default function Login({ initialMode = "login" }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#000000] flex items-center justify-center relative overflow-hidden px-5 py-6">
+    <div className="min-h-screen bg-[var(--profile-bg)] flex items-center justify-center relative overflow-hidden px-5 py-6">
       <div
         className="pointer-events-none absolute inset-0 opacity-100"
         style={{ backgroundImage: "radial-gradient(circle, rgba(244,180,0,0.06) 1px, transparent 1px)", backgroundSize: "32px 32px" }}
@@ -406,32 +406,32 @@ export default function Login({ initialMode = "login" }) {
         style={{ background: "radial-gradient(circle, rgba(244,180,0,0.05) 0%, transparent 70%)" }}
       />
 
-      <div className="relative z-10 w-full max-w-[420px] overflow-hidden rounded-[24px] border border-[#1F1F1F] bg-[#0D0D0D]">
+      <div className="relative z-10 w-full max-w-[420px] overflow-hidden rounded-[24px] border border-[var(--profile-border)] bg-[var(--profile-surface)]">
         <div className="h-[3px] bg-gradient-to-r from-[#F4B400] via-[rgba(244,180,0,0.2)] to-transparent" />
 
         <div className="px-8 pt-8 pb-6">
           <div className="mb-7 flex items-center gap-[10px]">
             <div className="flex h-[40px] w-[40px] items-center justify-center rounded-[12px] border border-[rgba(244,180,0,0.2)] bg-[#2A2000] font-['Sora'] text-[18px] font-[800] text-[#F4B400]">V</div>
-            <div className="font-['Sora'] text-[18px] font-[700] text-[#F5F0E8]">Vault<span className="text-[#F4B400]">.</span>Notes</div>
+            <div className="font-['Sora'] text-[18px] font-[700] text-[var(--profile-text)]">Vault<span className="text-[#F4B400]">.</span>Notes</div>
           </div>
 
           <div>
-            <h1 className="font-['Sora'] text-[24px] font-[800] leading-[1.2] text-[#F5F0E8]">{isSignup ? "Create your account" : "Welcome back"}</h1>
-            <p className="mt-[6px] text-[14px] text-[#A09080]">{isSignup ? "Join VaultNotes — free, encrypted, yours" : "Sign in to your encrypted workspace"}</p>
+            <h1 className="font-['Sora'] text-[24px] font-[800] leading-[1.2] text-[var(--profile-text)]">{isSignup ? "Create your account" : "Welcome back"}</h1>
+            <p className="mt-[6px] text-[14px] text-[var(--profile-text-subtle)]">{isSignup ? "Join VaultNotes — free, encrypted, yours" : "Sign in to your encrypted workspace"}</p>
           </div>
 
           {isSignup && (
             <div className="mt-5">
-              <div className="h-[3px] overflow-hidden rounded-full bg-[#141414]">
+              <div className="h-[3px] overflow-hidden rounded-full bg-[var(--profile-elev)]">
                 <div className="h-full rounded-full bg-[#F4B400] transition-all duration-[400ms]" style={{ width: `${stepProgress}%` }} />
               </div>
               <div className="mt-2 flex justify-between">
-                <div className={`flex items-center gap-[5px] text-[11px] font-[600] ${signupStep === 1 ? "text-[#F4B400]" : signupStep >= 2 ? "text-[#F4B400]" : "text-[#5C5248]"}`}>
-                  <div className={`flex h-[16px] w-[16px] items-center justify-center rounded-full border text-[9px] font-[700] ${signupStep >= 2 ? "border-[#F4B400] bg-[#F4B400] text-[#000]" : signupStep === 1 ? "border-[#F4B400] text-[#F4B400]" : "border-[#2A2A2A] text-[#5C5248]"}`}>1</div>
+                <div className={`flex items-center gap-[5px] text-[11px] font-[600] ${signupStep === 1 ? "text-[#F4B400]" : signupStep >= 2 ? "text-[#F4B400]" : "text-[var(--profile-text-muted)]"}`}>
+                  <div className={`flex h-[16px] w-[16px] items-center justify-center rounded-full border text-[9px] font-[700] ${signupStep >= 2 ? "border-[#F4B400] bg-[#F4B400] text-[#000]" : signupStep === 1 ? "border-[#F4B400] text-[#F4B400]" : "border-[var(--profile-border-strong)] text-[var(--profile-text-muted)]"}`}>1</div>
                   Credentials
                 </div>
-                <div className={`flex items-center gap-[5px] text-[11px] font-[600] ${signupStep === 2 ? "text-[#F4B400]" : "text-[#5C5248]"}`}>
-                  <div className={`flex h-[16px] w-[16px] items-center justify-center rounded-full border text-[9px] font-[700] ${signupStep === 2 ? "border-[#F4B400] bg-[#F4B400] text-[#000]" : "border-[#2A2A2A] text-[#5C5248]"}`}>2</div>
+                <div className={`flex items-center gap-[5px] text-[11px] font-[600] ${signupStep === 2 ? "text-[#F4B400]" : "text-[var(--profile-text-muted)]"}`}>
+                  <div className={`flex h-[16px] w-[16px] items-center justify-center rounded-full border text-[9px] font-[700] ${signupStep === 2 ? "border-[#F4B400] bg-[#F4B400] text-[#000]" : "border-[var(--profile-border-strong)] text-[var(--profile-text-muted)]"}`}>2</div>
                   Your Profile
                 </div>
               </div>
@@ -442,11 +442,11 @@ export default function Login({ initialMode = "login" }) {
           {!isSignup ? (
             <div className="space-y-4 onboard-step">
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Email *</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Email *</label>
                 <input
                   type="email"
                   placeholder="you@example.com"
-                  className="h-[48px] w-full rounded-[12px] border border-[#1F1F1F] bg-[#141414] px-4 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C]"
+                  className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -454,30 +454,30 @@ export default function Login({ initialMode = "login" }) {
               </div>
 
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Password *</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Password *</label>
                 <div className="relative">
                   <input
                     type="password"
                     placeholder="Minimum 6 characters"
-                    className="h-[48px] w-full rounded-[12px] border border-[#1F1F1F] bg-[#141414] px-4 pr-12 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C]"
+                    className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 pr-12 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
-                  <button type="button" className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[16px] text-[#5C5248] transition-colors hover:text-[#A09080]">👁</button>
+                  <button type="button" className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[16px] text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text-subtle)]">👁</button>
                 </div>
               </div>
 
               <div className="flex items-center gap-3 py-1">
-                <div className="h-[1px] flex-1 bg-[#1F1F1F]" />
-                <div className="text-[12px] font-[500] text-[#5C5248]">or continue with</div>
-                <div className="h-[1px] flex-1 bg-[#1F1F1F]" />
+                <div className="h-[1px] flex-1 bg-[var(--profile-border)]" />
+                <div className="text-[12px] font-[500] text-[var(--profile-text-muted)]">or continue with</div>
+                <div className="h-[1px] flex-1 bg-[var(--profile-border)]" />
               </div>
 
               <button
                 type="button"
                 onClick={handleGoogleAuth}
-                className="flex h-[48px] w-full items-center justify-center gap-[10px] rounded-[12px] border border-[#2A2A2A] bg-[#141414] font-['DM_Sans'] text-[14px] font-[600] text-[#F5F0E8] transition-all hover:border-[#A09080] hover:bg-[#1C1C1C]"
+                className="flex h-[48px] w-full items-center justify-center gap-[10px] rounded-[12px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] font-['DM_Sans'] text-[14px] font-[600] text-[var(--profile-text)] transition-all hover:border-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)]"
               >
                 <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -491,11 +491,11 @@ export default function Login({ initialMode = "login" }) {
           ) : signupStep === 1 ? (
             <div className="space-y-4 onboard-step">
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Email *</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Email *</label>
                 <input
                   type="email"
                   placeholder="you@example.com"
-                  className="h-[48px] w-full rounded-[12px] border border-[#1F1F1F] bg-[#141414] px-4 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C]"
+                  className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -503,30 +503,30 @@ export default function Login({ initialMode = "login" }) {
               </div>
 
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Password *</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Password *</label>
                 <div className="relative">
                   <input
                     type="password"
                     placeholder="Minimum 6 characters"
-                    className="h-[48px] w-full rounded-[12px] border border-[#1F1F1F] bg-[#141414] px-4 pr-12 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C]"
+                    className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 pr-12 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
-                  <button type="button" className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[16px] text-[#5C5248] transition-colors hover:text-[#A09080]">👁</button>
+                  <button type="button" className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[16px] text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text-subtle)]">👁</button>
                 </div>
               </div>
 
               <div className="flex items-center gap-3 py-1">
-                <div className="h-[1px] flex-1 bg-[#1F1F1F]" />
-                <div className="text-[12px] font-[500] text-[#5C5248]">or</div>
-                <div className="h-[1px] flex-1 bg-[#1F1F1F]" />
+                <div className="h-[1px] flex-1 bg-[var(--profile-border)]" />
+                <div className="text-[12px] font-[500] text-[var(--profile-text-muted)]">or</div>
+                <div className="h-[1px] flex-1 bg-[var(--profile-border)]" />
               </div>
 
               <button
                 type="button"
                 onClick={handleGoogleAuth}
-                className="flex h-[48px] w-full items-center justify-center gap-[10px] rounded-[12px] border border-[#2A2A2A] bg-[#141414] font-['DM_Sans'] text-[14px] font-[600] text-[#F5F0E8] transition-all hover:border-[#A09080] hover:bg-[#1C1C1C]"
+                className="flex h-[48px] w-full items-center justify-center gap-[10px] rounded-[12px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] font-['DM_Sans'] text-[14px] font-[600] text-[var(--profile-text)] transition-all hover:border-[var(--profile-text-subtle)] hover:bg-[var(--profile-hover)]"
               >
                 <svg className="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -540,16 +540,16 @@ export default function Login({ initialMode = "login" }) {
           ) : (
             <div className="space-y-4 onboard-step">
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Username *</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Username *</label>
                 <input
                   type="text"
                   placeholder="username"
-                  className={`h-[48px] w-full rounded-[12px] border bg-[#141414] px-4 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C] ${
+                  className={`h-[48px] w-full rounded-[12px] border bg-[var(--profile-elev)] px-4 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)] ${
                     usernameStatus === "taken" || usernameStatus === "invalid"
                       ? "border-[#EF4444]"
                       : usernameStatus === "available"
                         ? "border-[#22C55E]"
-                        : "border-[#1F1F1F]"
+                        : "border-[var(--profile-border)]"
                   }`}
                   value={username}
                   onChange={(e) => {
@@ -565,7 +565,7 @@ export default function Login({ initialMode = "login" }) {
                         ? "text-[#EF4444]"
                         : usernameStatus === "available"
                           ? "text-[#22C55E]"
-                          : "text-[#5C5248]"
+                          : "text-[var(--profile-text-muted)]"
                     }`}
                   >
                     {usernameMessage}
@@ -574,11 +574,11 @@ export default function Login({ initialMode = "login" }) {
               </div>
 
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Full Name *</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Full Name *</label>
                 <input
                   type="text"
                   placeholder="Your full name"
-                  className="h-[48px] w-full rounded-[12px] border border-[#1F1F1F] bg-[#141414] px-4 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none transition-all duration-200 placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C]"
+                  className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   required
@@ -586,19 +586,19 @@ export default function Login({ initialMode = "login" }) {
               </div>
 
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Bio</label>
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Bio</label>
                 <textarea
                   rows={3}
                   placeholder="Tell people a little about you"
-                  className="w-full resize-none rounded-[12px] border border-[#1F1F1F] bg-[#141414] px-4 py-3 font-['DM_Sans'] text-[14px] text-[#F5F0E8] outline-none placeholder:text-[#5C5248] focus:border-[#F4B400] focus:bg-[#1C1C1C]"
+                  className="w-full resize-none rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-3 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                 />
               </div>
 
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Avatar</label>
-                <div className="flex items-center gap-[14px] rounded-[12px] border border-[#1F1F1F] bg-[#141414] p-[12px_14px]">
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Avatar</label>
+                <div className="flex items-center gap-[14px] rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-[12px_14px]">
                   <div className="h-[48px] w-[48px] overflow-hidden rounded-full border border-[rgba(244,180,0,0.2)] bg-[#2A2000]">
                     {avatarPreview ? (
                       <img src={avatarPreview} alt="Avatar preview" className="h-full w-full object-cover" />
@@ -607,28 +607,28 @@ export default function Login({ initialMode = "login" }) {
                     )}
                   </div>
                   <div>
-                    <label className="cursor-pointer rounded-[8px] border border-[#2A2A2A] bg-[#1C1C1C] px-[14px] py-[6px] text-[12px] font-[600] text-[#A09080] transition-all hover:border-[#F4B400] hover:text-[#F4B400]">
+                    <label className="cursor-pointer rounded-[8px] border border-[var(--profile-border-strong)] bg-[#1C1C1C] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-subtle)] transition-all hover:border-[#F4B400] hover:text-[#F4B400]">
                       Upload photo
                       <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
                     </label>
-                    <div className="mt-[3px] text-[11px] text-[#5C5248]">JPG, PNG up to 5MB</div>
+                    <div className="mt-[3px] text-[11px] text-[var(--profile-text-muted)]">JPG, PNG up to 5MB</div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[#A09080]">Cover Photo</label>
-                <div className="overflow-hidden rounded-[12px] border border-[#1F1F1F] bg-[#141414]">
+                <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Cover Photo</label>
+                <div className="overflow-hidden rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)]">
                   <div className="h-[80px] w-full overflow-hidden">
                     {coverPhotoPreview ? (
                       <img src={coverPhotoPreview} alt="Cover photo preview" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-r from-[#1A1200] to-[#2A2000] text-[11px] text-[#5C5248]">No cover selected</div>
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-r from-[#1A1200] to-[#2A2000] text-[11px] text-[var(--profile-text-muted)]">No cover selected</div>
                     )}
                   </div>
                   <div className="flex items-center justify-between px-[14px] py-[10px]">
-                    <span className="text-[11px] text-[#5C5248]">Recommended: 1200x300px</span>
-                    <label className="cursor-pointer rounded-[8px] border border-[#2A2A2A] bg-[#1C1C1C] px-[14px] py-[6px] text-[12px] font-[600] text-[#A09080] transition-all hover:border-[#F4B400] hover:text-[#F4B400]">
+                    <span className="text-[11px] text-[var(--profile-text-muted)]">Recommended: 1200x300px</span>
+                    <label className="cursor-pointer rounded-[8px] border border-[var(--profile-border-strong)] bg-[#1C1C1C] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-subtle)] transition-all hover:border-[#F4B400] hover:text-[#F4B400]">
                       Upload
                       <input type="file" accept="image/*" onChange={handleCoverPhotoChange} className="hidden" />
                     </label>
@@ -650,7 +650,7 @@ export default function Login({ initialMode = "login" }) {
                   setSignupStep(1)
                   setFormError("")
                 }}
-                className="min-w-[90px] h-[50px] rounded-[12px] border border-[#2A2A2A] bg-[#141414] px-4 text-[14px] font-[600] text-[#A09080] transition-all hover:border-[#A09080] hover:text-[#F5F0E8]"
+                className="min-w-[90px] h-[50px] rounded-[12px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] px-4 text-[14px] font-[600] text-[var(--profile-text-subtle)] transition-all hover:border-[var(--profile-text-subtle)] hover:text-[var(--profile-text)]"
                 disabled={loading}
               >
                 ← Back
@@ -680,16 +680,16 @@ export default function Login({ initialMode = "login" }) {
 
             <div className="mt-4 flex items-center justify-center gap-[6px]">
               <svg className="h-[13px] w-[13px]" viewBox="0 0 16 16" fill="none">
-                <path d="M8 1L2 3.5V8c0 3.1 2.4 5.9 6 6.9 3.6-1 6-3.8 6-6.9V3.5L8 1z" stroke="#5C5248" strokeWidth="1.2" fill="none"/>
-                <path d="M5.5 8l2 2 3-3" stroke="#5C5248" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M8 1L2 3.5V8c0 3.1 2.4 5.9 6 6.9 3.6-1 6-3.8 6-6.9V3.5L8 1z" stroke="var(--profile-text-muted)" strokeWidth="1.2" fill="none"/>
+                <path d="M5.5 8l2 2 3-3" stroke="var(--profile-text-muted)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
-              <span className="text-[11px] text-[#5C5248]">End-to-end encrypted · Your data stays yours</span>
+              <span className="text-[11px] text-[var(--profile-text-muted)]">End-to-end encrypted · Your data stays yours</span>
             </div>
           </form>
         </div>
 
-        <div className="border-t border-[#1F1F1F] px-8 py-[18px] text-center">
-          <p className="text-[13px] text-[#5C5248]">
+        <div className="border-t border-[var(--profile-border)] px-8 py-[18px] text-center">
+          <p className="text-[13px] text-[var(--profile-text-muted)]">
             {isSignup ? "Already have an account?" : "Don't have an account?"}
             <button
               type="button"

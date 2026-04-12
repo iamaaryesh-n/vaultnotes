@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react"
+﻿import { useState, useEffect, useRef, lazy, Suspense } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { useAuth } from "../hooks/useAuth"
@@ -6,6 +6,7 @@ import { useNotifications } from "../hooks/useNotifications"
 import { SearchDropdown } from "./SearchDropdown"
 import { EditProfileModal } from "./EditProfileModal"
 import Modal from "./Modal"
+import { applyTheme, getStoredTheme, setStoredTheme } from "../utils/theme"
 
 const NotificationDropdown = lazy(() =>
   import("./NotificationDropdown").then((module) => ({ default: module.NotificationDropdown }))
@@ -57,18 +58,9 @@ export default function Navbar() {
   }, [location.pathname])
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") || "system"
+    const savedTheme = getStoredTheme()
     setSelectedTheme(savedTheme)
-
-    const root = document.documentElement
-    if (savedTheme === "dark") {
-      root.classList.add("dark")
-    } else if (savedTheme === "light") {
-      root.classList.remove("dark")
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-      root.classList.toggle("dark", prefersDark)
-    }
+    applyTheme(savedTheme)
   }, [])
 
   // Listen for profile updates from other components
@@ -239,27 +231,13 @@ export default function Navbar() {
   }
 
   const handleAccountMenuToggle = () => {
-    setSelectedTheme(localStorage.getItem("theme") || "system")
+    setSelectedTheme(getStoredTheme())
     setAccountMenuOpen((prev) => !prev)
   }
 
   const handleThemeChange = (theme) => {
-    const root = document.documentElement
-
-    if (theme === "dark") {
-      root.classList.add("dark")
-      localStorage.setItem("theme", "dark")
-    } else if (theme === "light") {
-      root.classList.remove("dark")
-      localStorage.setItem("theme", "light")
-    } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-      root.classList.toggle("dark", prefersDark)
-      localStorage.setItem("theme", "system")
-    }
-
-    // Clean up old key format if it still exists.
-    localStorage.removeItem("vaultnotes-theme")
+    setStoredTheme(theme)
+    applyTheme(theme)
     setSelectedTheme(theme)
     setAccountMenuOpen(false)
   }
@@ -427,7 +405,7 @@ export default function Navbar() {
   return (
     <>
       {/* Navbar */}
-      <nav className="fixed top-0 left-0 right-0 z-[100] h-[56px] border-b border-[#1F1F1F] bg-black/85 backdrop-blur-[16px]">
+      <nav className="fixed top-0 left-0 right-0 z-[100] h-[56px] border-b border-[var(--chat-border)] bg-[var(--chat-bg)] backdrop-blur-[16px]">
         <div className="px-4 md:px-6 h-full flex justify-between items-center gap-4">
           {/* Left: Logo */}
           <div className="flex-shrink-0">
@@ -436,10 +414,10 @@ export default function Navbar() {
               onClick={() => navigate("/")}
               className="flex items-center gap-2 transition-opacity hover:opacity-90"
             >
-              <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[#F4B400] font-['Sora'] text-[13px] font-bold text-[#0D0D0D] shadow-[0_2px_12px_rgba(244,180,0,0.35)]">
+              <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[var(--chat-accent)] font-['Sora'] text-[13px] font-bold text-[var(--chat-on-accent)] shadow-[0_2px_12px_rgba(244,180,0,0.35)]">
                 VN
               </div>
-              <h1 className="hidden font-['Sora'] text-[16px] font-bold text-[#F5F0E8] sm:inline">VaultNotes</h1>
+              <h1 className="hidden font-['Sora'] text-[16px] font-bold text-[var(--chat-text)] sm:inline">VaultNotes</h1>
             </button>
           </div>
 
@@ -448,7 +426,7 @@ export default function Navbar() {
             <div className="relative">
               {/* Search Icon */}
               <svg
-                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-[#5C5248]"
+                className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transform text-[var(--chat-text-muted)]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -468,7 +446,7 @@ export default function Navbar() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={() => searchQuery.trim() && setSearchOpen(true)}
-                className="h-[36px] w-full rounded-[18px] border border-[#1F1F1F] bg-[#141414] pl-[36px] pr-[14px] text-[13px] text-[#F5F0E8] placeholder:text-[#5C5248] outline-none transition-all duration-150 focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
+                className="h-[36px] w-full rounded-[18px] border border-[var(--chat-border)] bg-[var(--chat-elev)] pl-[36px] pr-[14px] text-[13px] text-[var(--chat-text)] placeholder:text-[var(--chat-text-muted)] outline-none transition-all duration-150 focus:border-[var(--chat-accent)] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)]"
               />
             </div>
 
@@ -502,7 +480,7 @@ export default function Navbar() {
                   setNotificationDropdownOpen(newState)
                 }}
                 title="Notifications"
-                className="relative flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-[#A09080] transition-colors duration-200 hover:bg-[#141414] hover:text-[#F5F0E8]"
+                className="relative flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-[var(--chat-text-subtle)] transition-colors duration-200 hover:bg-[var(--chat-elev)] hover:text-[var(--chat-text)]"
               >
                 <svg
                   className="w-6 h-6"
@@ -519,7 +497,7 @@ export default function Navbar() {
                 </svg>
 
                 {/* Unread Badge */}
-                {unreadCount > 0 && <span className="absolute right-[6px] top-[6px] h-[8px] w-[8px] rounded-full border-[2px] border-[#000] bg-[#F4B400]" />}
+                {unreadCount > 0 && <span className="absolute right-[6px] top-[6px] h-[8px] w-[8px] rounded-full border-[2px] border-[var(--chat-bg)] bg-[var(--chat-accent)]" />}
               </button>
 
               {/* Notification Dropdown */}
@@ -542,29 +520,29 @@ export default function Navbar() {
               <button
                 onClick={handleAccountMenuToggle}
                 title="Account actions"
-                className="flex items-center gap-2 rounded-[10px] px-2 py-1.5 transition-colors duration-200 hover:bg-[#141414]"
+                className="flex items-center gap-2 rounded-[10px] px-2 py-1.5 transition-colors duration-200 hover:bg-[var(--chat-elev)]"
               >
                 {/* Avatar or Initials */}
                 {loading ? (
-                  <div className="h-[32px] w-[32px] animate-pulse rounded-full bg-[#141414]" />
+                  <div className="h-[32px] w-[32px] animate-pulse rounded-full bg-[var(--chat-elev)]" />
                 ) : profile?.avatar_url ? (
                   <img
                     src={profile.avatar_url}
                     alt="Avatar"
-                    className="h-[32px] w-[32px] rounded-full border-[2px] border-[#2A2A2A] object-cover transition-colors hover:border-[#F4B400]"
+                    className="h-[32px] w-[32px] rounded-full border-[2px] border-[var(--chat-border-strong)] object-cover transition-colors hover:border-[var(--chat-accent)]"
                   />
                 ) : (
-                  <div className="flex h-[32px] w-[32px] items-center justify-center rounded-full border-[2px] border-[#2A2A2A] bg-[#2A2000] font-['Sora'] text-[13px] font-bold text-[#F4B400] transition-colors hover:border-[#F4B400]">
+                  <div className="flex h-[32px] w-[32px] items-center justify-center rounded-full border-[2px] border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)] font-['Sora'] text-[13px] font-bold text-[var(--chat-accent)] transition-colors hover:border-[var(--chat-accent)]">
                     {getInitials(profile?.name || authUser?.email || "?")}
                   </div>
                 )}
 
-                <span className="hidden text-sm font-medium text-[#F5F0E8] sm:inline">
+                <span className="hidden text-sm font-medium text-[var(--chat-text)] sm:inline">
                   {profile?.name || authUser?.email?.split("@")[0] || "User"}
                 </span>
 
                 <svg
-                  className={`h-4 w-4 text-[#5C5248] transition-transform ${accountMenuOpen ? "rotate-180" : ""}`}
+                  className={`h-4 w-4 text-[var(--chat-text-muted)] transition-transform ${accountMenuOpen ? "rotate-180" : ""}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -574,46 +552,46 @@ export default function Navbar() {
               </button>
 
               {accountMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-56 animate-fadeIn rounded-2xl border border-[#1F1F1F] bg-[#0D0D0D] py-2 shadow-[0_16px_40px_-20px_rgba(0,0,0,0.75)]">
+                <div className="absolute right-0 top-full z-50 mt-2 w-56 animate-fadeIn rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] py-2 shadow-[0_16px_40px_-20px_rgba(0,0,0,0.75)]">
                   <button
                     onClick={handleViewProfile}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#F5F0E8] transition-colors hover:bg-[#141414]"
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
                     View Profile
                   </button>
                   <button
                     onClick={handleOpenEditProfile}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#F5F0E8] transition-colors hover:bg-[#141414]"
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
                     Edit Profile
                   </button>
-                  <div className="my-1 border-t border-[#1F1F1F]" />
+                  <div className="my-1 border-t border-[var(--chat-border)]" />
                   <button
                     onClick={() => handleThemeChange("light")}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#A09080] transition-colors hover:bg-[#141414]"
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
-                    {selectedTheme === "light" ? "✓ " : ""}Light Mode
+                    {selectedTheme === "light" ? "âœ“ " : ""}Light Mode
                   </button>
                   <button
                     onClick={() => handleThemeChange("dark")}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#A09080] transition-colors hover:bg-[#141414]"
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
-                    {selectedTheme === "dark" ? "✓ " : ""}Dark Mode
+                    {selectedTheme === "dark" ? "âœ“ " : ""}Dark Mode
                   </button>
                   <button
                     onClick={() => handleThemeChange("system")}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#A09080] transition-colors hover:bg-[#141414]"
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
                   >
-                    {selectedTheme === "system" ? "✓ " : ""}System Default
+                    {selectedTheme === "system" ? "âœ“ " : ""}System Default
                   </button>
                   <button
                     onClick={handleSwitchAccount}
                     disabled={loggingOut}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#A09080] transition-colors hover:bg-[#141414] disabled:opacity-60"
+                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)] disabled:opacity-60"
                   >
                     {loggingOut ? "Switching..." : "Switch Account"}
                   </button>
-                  <div className="my-1 border-t border-[#1F1F1F]" />
+                  <div className="my-1 border-t border-[var(--chat-border)]" />
                   <button
                     onClick={handleLogout}
                     disabled={loggingOut}
@@ -651,7 +629,7 @@ export default function Navbar() {
 
       {/* Notification Toast */}
       {notification && (
-        <div className="fixed right-6 top-20 z-40 animate-slideDown rounded-lg bg-[#141414] px-4 py-3 text-[#F5F0E8] shadow-lg border border-[#1F1F1F]">
+        <div className="fixed right-6 top-20 z-40 animate-slideDown rounded-lg bg-[var(--chat-elev)] px-4 py-3 text-[var(--chat-text)] shadow-lg border border-[var(--chat-border)]">
           <div className="flex items-center gap-2">
             <svg
               className="w-5 h-5"
@@ -703,3 +681,4 @@ export default function Navbar() {
     </>
   )
 }
+

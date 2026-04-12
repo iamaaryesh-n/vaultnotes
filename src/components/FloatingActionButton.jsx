@@ -56,22 +56,22 @@ export default function FloatingActionButton() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
             transition={{ duration: 0.2 }}
-            className="absolute bottom-20 right-0 rounded-2xl border border-slate-200/80 bg-[#0D0D0D]/95 shadow-[0_20px_60px_rgba(0,0,0,0.15)] overflow-hidden mb-2 w-56 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-900/95"
+            className="absolute bottom-20 right-0 mb-2 w-56 overflow-hidden rounded-2xl border border-[var(--overlay-border)] bg-[color:var(--overlay-surface)]/95 shadow-[var(--overlay-shadow)] backdrop-blur-xl"
           >
             <motion.button
               whileHover={{ backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
               onClick={handleCreatePost}
-              className="w-full px-5 py-4 text-left transition-colors text-sm font-semibold text-slate-900 dark:text-[#F5F0E8] flex items-center gap-3 border-b border-slate-100 dark:border-slate-700 hover:text-blue-600 dark:hover:text-blue-400"
+              className="flex w-full items-center gap-3 border-b border-[var(--overlay-border)] px-5 py-4 text-left text-sm font-semibold text-[var(--overlay-text)] transition-colors hover:text-blue-600"
             >
               <span className="text-xl">✨</span>
               <span>Create Post</span>
-              <span className="text-xs text-[#5C5248] dark:text-slate-500 ml-auto">Ctrl+P</span>
+              <span className="ml-auto text-xs text-[var(--overlay-text-muted)]">Ctrl+P</span>
             </motion.button>
             {!isDashboard && (
               <motion.button
                 whileHover={{ backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
                 onClick={handleNewMemory}
-                className="w-full px-5 py-4 text-left transition-colors text-sm font-semibold text-slate-900 dark:text-[#F5F0E8] flex items-center gap-3 border-b border-slate-100 dark:border-slate-700 hover:text-blue-600 dark:hover:text-blue-400"
+                className="flex w-full items-center gap-3 border-b border-[var(--overlay-border)] px-5 py-4 text-left text-sm font-semibold text-[var(--overlay-text)] transition-colors hover:text-blue-600"
               >
                 <span className="text-xl">📝</span>
                 <span>New Memory</span>
@@ -80,7 +80,7 @@ export default function FloatingActionButton() {
             <motion.button
               whileHover={{ backgroundColor: 'rgba(59, 130, 246, 0.05)' }}
               onClick={handleNewWorkspace}
-              className="w-full px-5 py-4 text-left transition-colors text-sm font-semibold text-slate-900 dark:text-[#F5F0E8] flex items-center gap-3 hover:text-blue-600 dark:hover:text-blue-400"
+              className="flex w-full items-center gap-3 px-5 py-4 text-left text-sm font-semibold text-[var(--overlay-text)] transition-colors hover:text-blue-600"
             >
               <span className="text-xl">🧠</span>
               <span>New Vault</span>

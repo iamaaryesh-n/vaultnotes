@@ -728,29 +728,29 @@ export default function Dashboard({ session }) {
 
   if (shouldShowLoadingSkeleton) {
     return (
-      <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
-        <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-0 pt-5">
+      <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
+        <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h1 className="font-['Sora'] text-[24px] font-[800] text-[#F5F0E8]">My Vaults</h1>
-              <p className="mt-1 text-[12px] text-[#5C5248]">Manage your encrypted knowledge spaces</p>
+              <h1 className="font-['Sora'] text-[24px] font-[800] text-[var(--profile-text)]">My Vaults</h1>
+              <p className="mt-1 text-[12px] text-[var(--profile-text-muted)]">Manage your encrypted knowledge spaces</p>
             </div>
-            <div className="rounded-[12px] bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)]">+ Create Vault</div>
+            <div className="rounded-[12px] bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[var(--profile-on-accent)] shadow-[0_3px_18px_rgba(244,180,0,0.4)]">+ Create Vault</div>
           </div>
           <div className="scrollbar-hide flex gap-[6px] overflow-x-auto pb-3">
-            <div className="rounded-[20px] bg-[#F4B400] px-[14px] py-[6px] text-[12px] font-[600] text-[#0D0D0D]">All</div>
-            <div className="rounded-[20px] border border-[#1F1F1F] bg-[#141414] px-[14px] py-[6px] text-[12px] font-[600] text-[#5C5248]">Owned</div>
-            <div className="rounded-[20px] border border-[#1F1F1F] bg-[#141414] px-[14px] py-[6px] text-[12px] font-[600] text-[#5C5248]">Shared with me</div>
-            <div className="rounded-[20px] border border-[#1F1F1F] bg-[#141414] px-[14px] py-[6px] text-[12px] font-[600] text-[#5C5248]">Public</div>
+            <div className="rounded-[20px] bg-[#F4B400] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-on-accent)]">All</div>
+            <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Owned</div>
+            <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Shared with me</div>
+            <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Public</div>
           </div>
         </div>
         <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="mb-[10px] rounded-[18px] border border-[#1F1F1F] bg-[#0D0D0D] p-4">
-              <div className="mb-3 h-2 w-1/2 animate-pulse rounded-[8px] bg-[#141414]" />
-              <div className="mb-2 h-4 w-full animate-pulse rounded-[8px] bg-[#141414]" />
-              <div className="mb-2 h-4 w-4/5 animate-pulse rounded-[8px] bg-[#141414]" />
-              <div className="h-4 w-2/3 animate-pulse rounded-[8px] bg-[#141414]" />
+            <div key={i} className="mb-[10px] rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 shadow-none">
+              <div className="mb-3 h-2 w-1/2 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+              <div className="mb-2 h-4 w-full animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+              <div className="mb-2 h-4 w-4/5 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+              <div className="h-4 w-2/3 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
             </div>
           ))}
         </div>
@@ -759,18 +759,18 @@ export default function Dashboard({ session }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
-      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-0 pt-5">
+    <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h1 className="font-['Sora'] text-[24px] font-[800] text-[#F5F0E8]">My Vaults</h1>
-            <p className="mt-1 text-[12px] text-[#5C5248]">Manage your encrypted knowledge spaces</p>
+            <h1 className="font-['Sora'] text-[24px] font-[800] text-[var(--profile-text)]">My Vaults</h1>
+            <p className="mt-1 text-[12px] text-[var(--profile-text-muted)]">Manage your encrypted knowledge spaces</p>
           </div>
 
           <button
             onClick={createWorkspace}
             disabled={creating || !authReadyForWorkspaceCreate}
-            className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all duration-150 hover:translate-y-[-1px] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[var(--profile-on-accent)] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all duration-150 hover:translate-y-[-1px] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {creating ? "Creating..." : "+ Create Vault"}
           </button>
@@ -779,25 +779,25 @@ export default function Dashboard({ session }) {
         <div className="scrollbar-hide flex gap-[6px] overflow-x-auto pb-3">
           <button
             onClick={() => setActiveFilter("all")}
-            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "all" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "all" ? "border-none bg-[#F4B400] text-[var(--profile-on-accent)]" : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-muted)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text-subtle)]"}`}
           >
             All
           </button>
           <button
             onClick={() => setActiveFilter("owned")}
-            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "owned" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "owned" ? "border-none bg-[#F4B400] text-[var(--profile-on-accent)]" : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-muted)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text-subtle)]"}`}
           >
             Owned
           </button>
           <button
             onClick={() => setActiveFilter("shared")}
-            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "shared" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "shared" ? "border-none bg-[#F4B400] text-[var(--profile-on-accent)]" : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-muted)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text-subtle)]"}`}
           >
             Shared with me
           </button>
           <button
             onClick={() => setActiveFilter("public")}
-            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "public" ? "border-none bg-[#F4B400] text-[#0D0D0D]" : "border border-[#1F1F1F] bg-[#141414] text-[#5C5248] hover:border-[#2A2A2A] hover:text-[#A09080]"}`}
+            className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${activeFilter === "public" ? "border-none bg-[#F4B400] text-[var(--profile-on-accent)]" : "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-muted)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text-subtle)]"}`}
           >
             Public
           </button>
@@ -809,7 +809,7 @@ export default function Dashboard({ session }) {
             placeholder="Search vaults..."
             value={vaultSearchTerm}
             onChange={(e) => setVaultSearchTerm(e.target.value)}
-            className="w-full rounded-[12px] border border-transparent bg-[#0D0D0D] p-3 text-[#F5F0E8] placeholder:text-[#5C5248] transition-all duration-200 focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
+            className="w-full rounded-[12px] border border-transparent bg-[var(--profile-surface)] p-3 text-[var(--profile-text)] placeholder:text-[var(--profile-text-muted)] transition-all duration-200 focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
           />
         </div>
       </div>
@@ -817,17 +817,17 @@ export default function Dashboard({ session }) {
       <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
 
         {hasResolvedInitialFetch && filteredWorkspaces.length === 0 ? (
-          <div className="rounded-[18px] border border-[#1F1F1F] bg-[#0D0D0D] p-12 text-center">
-            <p className="mb-6 text-lg text-[#A09080]">No vaults found</p>
-            <p className="mb-6 text-sm text-[#5C5248]">Try another filter or create a new vault</p>
+          <div className="rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-12 text-center">
+            <p className="mb-6 text-lg text-[var(--profile-text-subtle)]">No vaults found</p>
+            <p className="mb-6 text-sm text-[var(--profile-text-muted)]">Try another filter or create a new vault</p>
             <button
               onClick={createWorkspace}
               disabled={creating || !authReadyForWorkspaceCreate}
-              className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all duration-150 hover:translate-y-[-1px] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[var(--profile-on-accent)] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all duration-150 hover:translate-y-[-1px] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {creating ? "Creating..." : "Create Your First Vault"}
             </button>
-            <p className="mt-4 text-xs text-[#5C5248]">Tip: Press "W" to create a new vault</p>
+            <p className="mt-4 text-xs text-[var(--profile-text-muted)]">Tip: Press "W" to create a new vault</p>
           </div>
         ) : (
           filteredWorkspaces.map((workspace) => (
@@ -842,7 +842,7 @@ export default function Dashboard({ session }) {
               }}
               role="button"
               tabIndex={0}
-              className="group mb-[16px] cursor-pointer overflow-visible rounded-[18px] border border-[#1F1F1F] bg-[#0D0D0D] transition-all duration-200 hover:border-[#2A2A2A] hover:bg-[#141414]"
+              className="group mb-[16px] cursor-pointer overflow-visible rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] transition-all duration-200 hover:border-[var(--profile-border-strong)] hover:bg-[var(--profile-elev)] hover:shadow-[0_10px_26px_rgba(15,23,42,0.16)] dark:hover:shadow-[0_12px_30px_rgba(0,0,0,0.38)]"
             >
               {(() => {
                 const role = userRoles[workspace.id]
@@ -854,10 +854,10 @@ export default function Dashboard({ session }) {
                     ? "bg-gradient-to-r from-[#22C55E] via-[rgba(34,197,94,0.3)] to-transparent"
                     : "bg-gradient-to-r from-[#F4B400] via-[rgba(244,180,0,0.3)] to-transparent"
                 const badgeClass = visType === "private"
-                  ? "border border-[rgba(139,92,246,0.2)] bg-[#1E1528] text-[#8B5CF6]"
+                  ? "border border-[var(--visibility-private-border)] bg-[var(--visibility-private-bg)] text-[var(--visibility-private-text)]"
                   : visType === "shared"
-                    ? "border border-[rgba(34,197,94,0.2)] bg-[#162116] text-[#22C55E]"
-                    : "border border-[rgba(244,180,0,0.2)] bg-[#2A2000] text-[#F4B400]"
+                    ? "border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)]"
+                    : "border border-[var(--visibility-public-border)] bg-[var(--visibility-public-bg)] text-[var(--visibility-public-text)]"
                 const badgeLabel = visType === "private" ? "Private" : visType === "shared" ? "Shared" : "Public"
                 const isOwner = role === "owner"
 
@@ -868,47 +868,47 @@ export default function Dashboard({ session }) {
                       <div className="flex items-start justify-between gap-[10px]">
                         <div className="min-w-0 flex-1">
                           <div className="mb-[6px] flex items-center gap-2">
-                            <span className="overflow-hidden text-ellipsis whitespace-nowrap font-['Sora'] text-[18px] font-[700] text-[#F5F0E8]">{workspace.name}</span>
+                            <span className="overflow-hidden text-ellipsis whitespace-nowrap font-['Sora'] text-[18px] font-[700] text-[var(--profile-text)]">{workspace.name}</span>
                             <span className={`rounded-[8px] px-[7px] py-[2px] text-[10px] font-[700] ${badgeClass}`}>{badgeLabel}</span>
                           </div>
                           <div className="flex flex-wrap items-center gap-[12px] pb-1">
-                            <span className="flex items-center gap-1 text-[12px] text-[#5C5248]">
+                            <span className="flex items-center gap-1 text-[12px] text-[var(--profile-text-muted)]">
                               <svg className="h-[11px] w-[11px] opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
                               {(workspaceAttributionById[workspace.id]?.invitedByUsername && "Invited") || "Notes"}
                             </span>
-                            <span className="flex items-center gap-1 text-[12px] text-[#5C5248]">
+                            <span className="flex items-center gap-1 text-[12px] text-[var(--profile-text-muted)]">
                               <svg className="h-[11px] w-[11px] opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg>
                               {userRoles[workspace.id] || "viewer"}
                             </span>
-                            <span className="text-[12px] text-[#5C5248]">Updated {new Date(workspace.created_at).toLocaleDateString()}</span>
+                            <span className="text-[12px] text-[var(--profile-text-muted)]">Updated {new Date(workspace.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-[6px]">
                           <details className="relative" onClick={(e) => e.stopPropagation()}>
-                            <summary className="flex h-[30px] w-[30px] cursor-pointer list-none items-center justify-center rounded-[8px] border border-transparent bg-transparent text-[#5C5248] transition-all hover:border-[#1F1F1F] hover:bg-[#1C1C1C]">
+                            <summary className="flex h-[30px] w-[30px] cursor-pointer list-none items-center justify-center rounded-[8px] border border-transparent bg-transparent text-[var(--profile-text-muted)] transition-all hover:border-[var(--profile-border)] hover:bg-[var(--profile-hover)]">
                               <svg className="h-[14px] w-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>
                             </summary>
-                            <div className="absolute right-0 top-full z-[320] mt-2 w-[185px] overflow-hidden rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] shadow-[0_12px_40px_rgba(0,0,0,0.85)]">
-                              <button className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#F5F0E8] hover:bg-[#141414]">Rename</button>
+                            <div className="absolute right-0 top-full z-[320] mt-2 w-[185px] overflow-hidden rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] shadow-[0_12px_40px_rgba(0,0,0,0.85)]">
+                              <button className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]">Rename</button>
                               {isOwner && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     openEditVisibility(workspace.id, workspace.is_public)
                                   }}
-                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#F5F0E8] hover:bg-[#141414]"
+                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]"
                                 >
                                   Settings
                                 </button>
                               )}
-                              <div className="my-[3px] h-[1px] bg-[#1F1F1F]" />
+                              <div className="my-[3px] h-[1px] bg-[var(--profile-border)]" />
                               {isOwner ? (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation()
                                     deleteWorkspace(workspace.id)
                                   }}
-                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#EF4444] hover:bg-[#141414]"
+                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#EF4444] hover:bg-[var(--profile-elev)]"
                                 >
                                   Delete Vault
                                 </button>
@@ -918,7 +918,7 @@ export default function Dashboard({ session }) {
                                     e.stopPropagation()
                                     leaveWorkspaceAction(workspace.id)
                                   }}
-                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#F5F0E8] hover:bg-[#141414]"
+                                  className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]"
                                 >
                                   Leave Vault
                                 </button>
@@ -954,24 +954,24 @@ export default function Dashboard({ session }) {
           setWorkspaceIsPublic(false)
         }}
       >
-        <div className="mt-5 space-y-3 border-t border-[#1F1F1F] pt-5">
+        <div className="mt-5 space-y-3 border-t border-[var(--profile-border)] pt-5">
           <label className="flex items-center gap-3 cursor-pointer group">
             <button
               type="button"
               onClick={() => setWorkspaceIsPublic((prev) => !prev)}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${workspaceIsPublic ? "border-[#F4B400] bg-[#F4B400]" : "border-[#2A2A2A] bg-[#141414]"}`}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${workspaceIsPublic ? "border-[#F4B400] bg-[#F4B400]" : "border-[var(--profile-border-strong)] bg-[var(--profile-elev)]"}`}
               aria-label="Toggle public vault"
               aria-pressed={workspaceIsPublic}
             >
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-[#0D0D0D] transition-transform ${workspaceIsPublic ? "translate-x-6" : "translate-x-1"}`}
+                className={`inline-block h-4 w-4 transform rounded-full bg-[var(--profile-surface)] transition-transform ${workspaceIsPublic ? "translate-x-6" : "translate-x-1"}`}
               />
             </button>
-            <span className="text-sm font-medium text-[#F5F0E8] group-hover:text-[#A09080]">
+            <span className="text-sm font-medium text-[var(--profile-text)] group-hover:text-[var(--profile-text-subtle)]">
               Public vault
             </span>
           </label>
-          <p className="pl-8 text-xs text-[#5C5248]">
+          <p className="pl-8 text-xs text-[var(--profile-text-muted)]">
             Visible to everyone, editable only by owner and members
           </p>
         </div>
@@ -1008,7 +1008,7 @@ export default function Dashboard({ session }) {
           setEditVisibilityValue(false)
         }}
       >
-        <div className="mt-5 space-y-3 border-t border-[#1F1F1F] pt-5">
+        <div className="mt-5 space-y-3 border-t border-[var(--profile-border)] pt-5">
           <label className="flex items-center gap-3 cursor-pointer group">
             <button
               type="button"
@@ -1016,19 +1016,19 @@ export default function Dashboard({ session }) {
                 setEditVisibilityValue((prev) => !prev)
                 console.log("[Dashboard] Visibility toggle changed to:", !editVisibilityValue)
               }}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${editVisibilityValue ? "border-[#F4B400] bg-[#F4B400]" : "border-[#2A2A2A] bg-[#141414]"}`}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${editVisibilityValue ? "border-[#F4B400] bg-[#F4B400]" : "border-[var(--profile-border-strong)] bg-[var(--profile-elev)]"}`}
               aria-label="Toggle vault visibility"
               aria-pressed={editVisibilityValue}
             >
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-[#0D0D0D] transition-transform ${editVisibilityValue ? "translate-x-6" : "translate-x-1"}`}
+                className={`inline-block h-4 w-4 transform rounded-full bg-[var(--profile-surface)] transition-transform ${editVisibilityValue ? "translate-x-6" : "translate-x-1"}`}
               />
             </button>
-            <span className="text-sm font-medium text-[#F5F0E8] group-hover:text-[#A09080]">
+            <span className="text-sm font-medium text-[var(--profile-text)] group-hover:text-[var(--profile-text-subtle)]">
               Make public
             </span>
           </label>
-          <p className="pl-8 text-xs text-[#5C5248]">
+          <p className="pl-8 text-xs text-[var(--profile-text-muted)]">
             {editVisibilityValue 
               ? "✓ Will be visible to everyone, editable only by owner and members"
               : "✓ Only visible to members, editable only by owner and members"

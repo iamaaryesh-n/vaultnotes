@@ -196,13 +196,13 @@ export default function BottomNavigation() {
   return (
     <>
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[#1F1F1F] bg-[rgba(0,0,0,0.92)] shadow-[0_-6px_22px_rgba(0,0,0,0.45)] backdrop-blur-[20px]">
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_-6px_22px_rgba(0,0,0,0.45)] backdrop-blur-[20px]">
         <div className="flex h-[62px] items-center justify-around px-2">
           {/* Explore */}
           <button
             onClick={() => handleNavigation("/explore")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/explore") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
+              isActive("/explore") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
             }`}
           >
             <svg
@@ -225,7 +225,7 @@ export default function BottomNavigation() {
           <button
             onClick={() => handleNavigation("/workspaces")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/workspaces") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
+              isActive("/workspaces") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
             }`}
           >
             <svg
@@ -251,7 +251,7 @@ export default function BottomNavigation() {
           <button
             onClick={() => handleNavigation("/chat")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/chat") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
+              isActive("/chat") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
             }`}
           >
             <div className="relative">
@@ -281,7 +281,7 @@ export default function BottomNavigation() {
           <button
             onClick={handleProfileNavigation}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              isActive("/profile") ? "text-[#F4B400]" : "text-[#5C5248] hover:text-[#A09080]"
+              isActive("/profile") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
             }`}
           >
             <svg
@@ -305,7 +305,7 @@ export default function BottomNavigation() {
       {/* Floating Create Button */}
       <button
         onClick={handleCreateClick}
-        className="fixed bottom-[8px] left-1/2 z-[60] flex h-[46px] w-[46px] -translate-x-1/2 items-center justify-center rounded-[14px] bg-[#F4B400] text-[#0D0D0D] shadow-[0_4px_18px_rgba(244,180,0,0.4)] transition-all duration-200 hover:bg-[#C49000] hover:scale-[1.06] active:scale-95"
+        className="fixed bottom-[8px] left-1/2 z-[60] flex h-[46px] w-[46px] -translate-x-1/2 items-center justify-center rounded-[14px] bg-[var(--chat-accent)] text-[var(--chat-on-accent)] shadow-[0_4px_18px_rgba(244,180,0,0.4)] transition-all duration-200 hover:bg-[var(--chat-accent-hover)] hover:scale-[1.06] active:scale-95"
       >
         {menuOpen ? (
           <svg
@@ -349,7 +349,7 @@ export default function BottomNavigation() {
 
             {/* Create Menu */}
             <motion.div
-              className="fixed bottom-[66px] left-1/2 z-[60] w-[244px] overflow-hidden rounded-[16px] border border-[#2A2A2A] bg-[linear-gradient(180deg,#111111_0%,#0B0B0B_100%)] shadow-[0_22px_44px_rgba(0,0,0,0.62),0_0_0_1px_rgba(244,180,0,0.08)]"
+              className="fixed bottom-[66px] left-1/2 z-[60] w-[244px] overflow-hidden rounded-[16px] border border-[var(--profile-border-strong)] bg-[linear-gradient(180deg,var(--profile-elev)_0%,#0B0B0B_100%)] shadow-[0_22px_44px_rgba(0,0,0,0.62),0_0_0_1px_rgba(244,180,0,0.08)]"
               style={{ x: "-50%", transformOrigin: "center bottom" }}
               initial={{ opacity: 0, y: 10, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -357,7 +357,7 @@ export default function BottomNavigation() {
               transition={{ duration: 0.18, ease: "easeOut" }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="h-[2px] bg-gradient-to-r from-transparent via-[#F4B400] to-transparent opacity-70" />
+              <div className="h-[2px] bg-gradient-to-r from-transparent via-[var(--chat-accent)] to-transparent opacity-70" />
 
               <button
                 onClick={(e) => {
@@ -365,9 +365,9 @@ export default function BottomNavigation() {
                   window.dispatchEvent(new CustomEvent("openCreatePostModal"))
                   setMenuOpen(false)
                 }}
-                className="flex w-full items-center gap-3 whitespace-nowrap px-5 py-3.5 text-left text-[14px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#171717]"
+                className="flex w-full items-center gap-3 whitespace-nowrap px-5 py-3.5 text-left text-[14px] font-semibold text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[rgba(244,180,0,0.25)] bg-[rgba(244,180,0,0.08)] text-[#F4B400]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[rgba(244,180,0,0.25)] bg-[rgba(244,180,0,0.08)] text-[var(--chat-accent)]">
                   <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M11 5H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-6m-7-10l6-6v11H5z" />
                   </svg>
@@ -381,9 +381,9 @@ export default function BottomNavigation() {
                   navigate("/workspaces")
                   setMenuOpen(false)
                 }}
-                className="flex w-full items-center gap-3 whitespace-nowrap border-t border-[#1F1F1F] px-5 py-3.5 text-left text-[14px] font-semibold text-[#F5F0E8] transition-colors hover:bg-[#171717]"
+                className="flex w-full items-center gap-3 whitespace-nowrap border-t border-[var(--chat-border)] px-5 py-3.5 text-left text-[14px] font-semibold text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
               >
-                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[rgba(244,180,0,0.25)] bg-[rgba(244,180,0,0.08)] text-[#F4B400]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[rgba(244,180,0,0.25)] bg-[rgba(244,180,0,0.08)] text-[var(--chat-accent)]">
                   <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
                   </svg>
@@ -397,3 +397,4 @@ export default function BottomNavigation() {
     </>
   )
 }
+

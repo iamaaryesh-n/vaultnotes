@@ -196,3 +196,113 @@ button, a, input {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+:root {
+  --chat-bg: #f8f7f4;
+  --chat-surface: #ffffff;
+  --chat-elev: #f0ede8;
+  --chat-hover: #e8e4de;
+  --chat-border: #e2ddd7;
+  --chat-border-strong: #d4cfc8;
+  --chat-text: #1a1612;
+  --chat-text-subtle: #6b6258;
+  --chat-text-muted: #9b9289;
+  --chat-accent: #f4b400;
+  --chat-accent-hover: #c49000;
+  --chat-accent-soft: #fff8dc;
+  --chat-on-accent: #1a1612;
+}
+
+html.dark {
+  --chat-bg: #000000;
+  --chat-surface: #0d0d0d;
+  --chat-elev: #141414;
+  --chat-hover: #1c1c1c;
+  --chat-border: #1f1f1f;
+  --chat-border-strong: #2a2a2a;
+  --chat-text: #f5f0e8;
+  --chat-text-subtle: #a09080;
+  --chat-text-muted: #5c5248;
+  --chat-accent: #f4b400;
+  --chat-accent-hover: #c49000;
+  --chat-accent-soft: #2a2000;
+  --chat-on-accent: #1a1612;
+}
+
+.chat-theme {
+  color: var(--chat-text);
+}
+
+:root {
+  --profile-bg: #f8f7f4;
+  --profile-surface: #ffffff;
+  --profile-elev: #f0ede8;
+  --profile-hover: #e8e4de;
+  --profile-border: #e2ddd7;
+  --profile-border-strong: #d4cfc8;
+  --profile-text: #1a1612;
+  --profile-text-subtle: #6b6258;
+  --profile-text-muted: #9b9289;
+  --profile-accent: #f4b400;
+  --profile-accent-hover: #c49000;
+  --profile-accent-soft: #fff8dc;
+  --profile-on-accent: #1a1612;
+
+  --visibility-public-bg: #fff8dc;
+  --visibility-public-text: #c49000;
+  --visibility-public-border: rgba(244, 180, 0, 0.28);
+  --visibility-private-bg: #f0ede8;
+  --visibility-private-text: #6b6258;
+  --visibility-private-border: #d4cfc8;
+
+  --overlay-backdrop: rgba(15, 23, 42, 0.45);
+  --overlay-surface: #ffffff;
+  --overlay-elev: #f8f7f4;
+  --overlay-border: #e2ddd7;
+  --overlay-border-strong: #d4cfc8;
+  --overlay-text: #1a1612;
+  --overlay-text-subtle: #6b6258;
+  --overlay-text-muted: #9b9289;
+  --overlay-hover: #f0ede8;
+  --overlay-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
+  --memory-open-shadow: 0 14px 38px rgba(15, 23, 42, 0.24);
+}
+
+html.dark {
+  --profile-bg: #000000;
+  --profile-surface: #0d0d0d;
+  --profile-elev: #141414;
+  --profile-hover: #1c1c1c;
+  --profile-border: #1f1f1f;
+  --profile-border-strong: #2a2a2a;
+  --profile-text: #f5f0e8;
+  --profile-text-subtle: #a09080;
+  --profile-text-muted: #5c5248;
+  --profile-accent: #f4b400;
+  --profile-accent-hover: #c49000;
+  --profile-accent-soft: #2a2000;
+  --profile-on-accent: #1a1612;
+
+  --visibility-public-bg: #2a2000;
+  --visibility-public-text: #f4b400;
+  --visibility-public-border: rgba(244, 180, 0, 0.2);
+  --visibility-private-bg: #1a1a1a;
+  --visibility-private-text: #a09080;
+  --visibility-private-border: #2a2a2a;
+
+  --overlay-backdrop: rgba(0, 0, 0, 0.72);
+  --overlay-surface: #0d0d0d;
+  --overlay-elev: #141414;
+  --overlay-border: #1f1f1f;
+  --overlay-border-strong: #2a2a2a;
+  --overlay-text: #f5f0e8;
+  --overlay-text-subtle: #a09080;
+  --overlay-text-muted: #5c5248;
+  --overlay-hover: #1c1c1c;
+  --overlay-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  --memory-open-shadow: 0 16px 40px rgba(0, 0, 0, 0.48);
+}
+
+.profile-theme {
+  color: var(--profile-text);
+}

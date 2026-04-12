@@ -172,7 +172,7 @@ export default function PostInteractions({
           className={`flex items-center gap-[5px] rounded-[8px] border-none bg-transparent px-[10px] py-[5px] text-[12px] transition-all duration-200 ${
             userLiked
               ? "text-[#EF4444] hover:bg-[rgba(239,68,68,0.08)] hover:text-[#EF4444]"
-              : "text-[#5C5248] hover:bg-[rgba(244,180,0,0.06)] hover:text-[#F4B400]"
+              : "text-[var(--profile-text-muted)] hover:bg-[rgba(244,180,0,0.06)] hover:text-[#F4B400]"
           } disabled:opacity-60 disabled:cursor-not-allowed group`}
           title={userLiked ? "Unlike" : "Like"}
         >
@@ -182,7 +182,7 @@ export default function PostInteractions({
             {userLiked ? "❤️" : "🤍"}
           </span>
           <span className={`text-xs font-semibold transition-colors ${
-            userLiked ? "text-[#EF4444]" : "text-[#5C5248]"
+            userLiked ? "text-[#EF4444]" : "text-[var(--profile-text-muted)]"
           }`}>
             {likesCount > 0 && likesCount}
           </span>
@@ -198,10 +198,10 @@ export default function PostInteractions({
               setShowComments(!showComments)
             }
           }}
-          className="group flex items-center gap-[5px] rounded-[8px] border-none bg-transparent px-[10px] py-[5px] text-[12px] text-[#5C5248] transition-all duration-200 hover:bg-[rgba(244,180,0,0.06)] hover:text-[#F4B400]"
+          className="group flex items-center gap-[5px] rounded-[8px] border-none bg-transparent px-[10px] py-[5px] text-[12px] text-[var(--profile-text-muted)] transition-all duration-200 hover:bg-[rgba(244,180,0,0.06)] hover:text-[#F4B400]"
         >
           <span className="text-[16px] transition-transform duration-200 group-hover:scale-110">💬</span>
-          <span className="text-xs font-semibold text-[#5C5248]">
+          <span className="text-xs font-semibold text-[var(--profile-text-muted)]">
             {comments.length > 0 && comments.length}
           </span>
         </button>
@@ -212,16 +212,16 @@ export default function PostInteractions({
             e.stopPropagation()
             handleShare()
           }}
-          className="group flex items-center gap-[5px] rounded-[8px] border-none bg-transparent px-[10px] py-[5px] text-[12px] text-[#5C5248] transition-all duration-200 hover:bg-[rgba(244,180,0,0.06)] hover:text-[#F4B400]"
+          className="group flex items-center gap-[5px] rounded-[8px] border-none bg-transparent px-[10px] py-[5px] text-[12px] text-[var(--profile-text-muted)] transition-all duration-200 hover:bg-[rgba(244,180,0,0.06)] hover:text-[#F4B400]"
         >
           <span className="text-[16px] transition-transform duration-200 group-hover:scale-110">🔗</span>
-          <span className="text-xs font-semibold text-[#5C5248]">Share</span>
+          <span className="text-xs font-semibold text-[var(--profile-text-muted)]">Share</span>
         </button>
       </div>
 
       {/* Comments Section */}
       {showInlineComments && showComments && (
-        <div className="mt-5 animate-in border-t border-[#1F1F1F] pt-5 fade-in duration-200">
+        <div className="mt-5 animate-in border-t border-[var(--profile-border)] pt-5 fade-in duration-200">
           {/* Comment Input */}
           <div className="mb-4 flex gap-2">
             <input
@@ -235,12 +235,12 @@ export default function PostInteractions({
               }}
               placeholder="Add a comment..."
               disabled={addingComment}
-              className="h-[40px] flex-1 rounded-[10px] border border-[#2A2A2A] bg-[#141414] px-3 text-sm text-[#F5F0E8] outline-none placeholder:text-[#5C5248] transition-all focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)] disabled:opacity-50"
+              className="h-[40px] flex-1 rounded-[10px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] px-3 text-sm text-[var(--profile-text)] outline-none placeholder:text-[var(--profile-text-muted)] transition-all focus:border-[#F4B400] focus:shadow-[0_0_0_2px_rgba(244,180,0,0.12)] disabled:opacity-50"
             />
             <button
               onClick={handleAddComment}
               disabled={addingComment || !commentInput.trim()}
-              className="rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-bold text-[#0D0D0D] transition-colors hover:bg-[#C49000] disabled:opacity-50"
+              className="rounded-[10px] bg-[#F4B400] px-4 py-2 text-sm font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[#C49000] disabled:opacity-50"
             >
               {addingComment ? "..." : "Post"}
             </button>
@@ -248,27 +248,27 @@ export default function PostInteractions({
 
           {/* Comments List */}
           {comments.length === 0 ? (
-            <div className="py-4 text-center text-sm text-[#5C5248]">No comments yet. Be the first!</div>
+            <div className="py-4 text-center text-sm text-[var(--profile-text-muted)]">No comments yet. Be the first!</div>
           ) : (
             <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
               {comments.map((comment, index) => {
                 if (!comment) {
                   return (
-                    <div key={`comment-placeholder-${index}`} className="py-2 text-xs text-[#5C5248]">
+                    <div key={`comment-placeholder-${index}`} className="py-2 text-xs text-[var(--profile-text-muted)]">
                       Loading comment...
                     </div>
                   )
                 }
 
                 return (
-                  <div key={comment.id} className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] p-3 transition-colors hover:bg-[#1C1C1C]">
+                  <div key={comment.id} className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-3 transition-colors hover:bg-[var(--profile-hover)]">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <button className="truncate text-left text-sm font-semibold text-[#F4B400] transition-colors hover:text-[#C49000]">
                           @{comment.profiles?.username || "unknown"}
                         </button>
-                        <p className="mt-1 break-words text-sm text-[#F5F0E8]">{comment.content}</p>
-                        <p className="mt-1.5 text-xs text-[#5C5248]">
+                        <p className="mt-1 break-words text-sm text-[var(--profile-text)]">{comment.content}</p>
+                        <p className="mt-1.5 text-xs text-[var(--profile-text-muted)]">
                           {new Date(comment.created_at).toLocaleString("en-US", {
                             month: "short",
                             day: "numeric",
@@ -287,7 +287,7 @@ export default function PostInteractions({
                               event.stopPropagation()
                               setActiveCommentMenuId((prev) => (prev === comment.id ? null : comment.id))
                             }}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#2A2A2A] bg-[#141414] text-[#A09080] transition-colors hover:border-[#F4B400] hover:text-[#F5F0E8]"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] transition-colors hover:border-[#F4B400] hover:text-[var(--profile-text)]"
                             aria-label="Open comment options"
                             title="More options"
                           >
@@ -297,7 +297,7 @@ export default function PostInteractions({
                           {activeCommentMenuId === comment.id && (
                             <div
                               data-comment-menu="true"
-                              className="absolute right-0 top-8 z-20 min-w-[140px] rounded-[10px] border border-[#1F1F1F] bg-[#111111] p-1.5 shadow-2xl"
+                              className="absolute right-0 top-8 z-20 min-w-[140px] rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-1.5 shadow-2xl"
                             >
                               <button
                                 type="button"

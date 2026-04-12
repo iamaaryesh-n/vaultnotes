@@ -1,4 +1,5 @@
 import { supabase } from "./supabase"
+import { createNotification } from "./notificationHelpers"
 
 /**
  * Check if current user follows another user
@@ -45,6 +46,13 @@ export const followUser = async (followerId, followingId) => {
       console.error("[FollowsLib] Error following user:", error)
       return { success: false, error: error.message }
     }
+
+    // Best-effort notification: do not fail follow if notification insert fails.
+    await createNotification({
+      recipientId: followingId,
+      actorId: followerId,
+      type: "follow"
+    })
 
     return { success: true }
   } catch (err) {

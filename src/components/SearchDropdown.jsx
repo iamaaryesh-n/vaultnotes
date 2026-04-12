@@ -45,7 +45,7 @@ export function SearchDropdown({
     <AnimatePresence>
       {searchOpen && (
         <motion.div
-          className="absolute top-full left-0 right-0 mt-3 bg-[#0D0D0D] dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50 dark:bg-slate-900 dark:border-slate-700"
+          className="absolute left-0 right-0 top-full z-50 mt-3 overflow-hidden rounded-xl border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]"
           variants={containerVariants}
           initial="hidden"
           animate="visible"
@@ -55,7 +55,7 @@ export function SearchDropdown({
             // Loading State
             <div className="px-6 py-12 text-center">
               <motion.svg
-                className="animate-spin h-6 w-6 m-auto text-blue-500"
+                className="m-auto h-6 w-6 animate-spin text-[var(--chat-accent)]"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -69,13 +69,13 @@ export function SearchDropdown({
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                 />
               </motion.svg>
-              <p className="mt-2 text-sm text-slate-500 dark:text-[#A09080]">Searching...</p>
+              <p className="mt-2 text-sm text-[var(--overlay-text-subtle)]">Searching...</p>
             </div>
           ) : searchResults.isEmpty ? (
             // Empty State
             <div className="px-6 py-12 text-center">
               <svg
-                className="w-12 h-12 mx-auto text-[#A09080] dark:text-slate-500 mb-3"
+                className="mx-auto mb-3 h-12 w-12 text-[var(--overlay-text-subtle)]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -87,21 +87,21 @@ export function SearchDropdown({
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
               </svg>
-              <p className="text-sm text-slate-600 dark:text-[#F5F0E8] font-medium">No results found</p>
-              <p className="text-xs text-slate-500 dark:text-[#5C5248] mt-1">
+              <p className="text-sm font-medium text-[var(--overlay-text)]">No results found</p>
+              <p className="mt-1 text-xs text-[var(--overlay-text-muted)]">
                 {searchQuery.trim() ? `"${searchQuery}" didn't match anything` : "Start typing to search"}
               </p>
             </div>
           ) : (
             // Results Sections
-            <div className="max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700">
+            <div className="max-h-96 divide-y divide-[var(--overlay-border)] overflow-y-auto">
               {/* Users Section */}
               {searchResults.users.length > 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.05 }}>
-                  <div className="px-4 py-2 bg-slate-50 sticky top-0 z-10 dark:bg-slate-800">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-[#A09080] uppercase tracking-wide">Users</p>
+                  <div className="sticky top-0 z-10 bg-[var(--overlay-elev)] px-4 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--overlay-text-subtle)]">Users</p>
                   </div>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <div className="divide-y divide-[var(--overlay-border)]">
                     {searchResults.users.map((user, i) => (
                       <motion.button
                         key={user.id}
@@ -109,12 +109,12 @@ export function SearchDropdown({
                         variants={itemVariants}
                         initial="hidden"
                         animate="visible"
-                        whileHover={{ backgroundColor: "#f8fafc" }}
+                        whileHover={{ backgroundColor: "var(--overlay-hover)" }}
                         onClick={() => {
                           handleResultClick(user)
                           onClose?.()
                         }}
-                        className="w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-slate-50 transition-colors dark:hover:bg-slate-800"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
                       >
                         {user.avatar_url ? (
                           <img
@@ -128,11 +128,11 @@ export function SearchDropdown({
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-slate-900 dark:text-[#F5F0E8]">{user.title}</p>
-                          <p className="text-xs text-slate-500 dark:text-[#5C5248] truncate">{user.subtitle}</p>
+                          <p className="text-sm font-medium text-[var(--overlay-text)]">{user.title}</p>
+                          <p className="truncate text-xs text-[var(--overlay-text-muted)]">{user.subtitle}</p>
                         </div>
                         <svg
-                          className="w-4 h-4 text-[#A09080] dark:text-slate-500 flex-shrink-0"
+                          className="h-4 w-4 flex-shrink-0 text-[var(--overlay-text-subtle)]"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -153,10 +153,10 @@ export function SearchDropdown({
               {/* Posts Section */}
               {searchResults.posts.length > 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
-                  <div className="px-4 py-2 bg-slate-50 sticky top-0 z-10 dark:bg-slate-800">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-[#A09080] uppercase tracking-wide">Posts</p>
+                  <div className="sticky top-0 z-10 bg-[var(--overlay-elev)] px-4 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--overlay-text-subtle)]">Posts</p>
                   </div>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <div className="divide-y divide-[var(--overlay-border)]">
                     {searchResults.posts.map((post, i) => (
                       <motion.button
                         key={post.id}
@@ -164,12 +164,12 @@ export function SearchDropdown({
                         variants={itemVariants}
                         initial="hidden"
                         animate="visible"
-                        whileHover={{ backgroundColor: "#f8fafc" }}
+                        whileHover={{ backgroundColor: "var(--overlay-hover)" }}
                         onClick={() => {
                           handleResultClick(post)
                           onClose?.()
                         }}
-                        className="w-full px-4 py-3 text-left flex items-start gap-3 hover:bg-slate-50 transition-colors dark:hover:bg-slate-800"
+                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors"
                       >
                         {post.image_url && (
                           <img
@@ -179,15 +179,15 @@ export function SearchDropdown({
                           />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-slate-900 dark:text-[#F5F0E8] line-clamp-2">{post.title}</p>
-                          <p className="text-xs text-slate-500 dark:text-[#5C5248] mt-0.5 flex items-center gap-1">
+                          <p className="line-clamp-2 text-sm font-medium text-[var(--overlay-text)]">{post.title}</p>
+                          <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--overlay-text-muted)]">
                             <span>{post.subtitle}</span>
                             <span>·</span>
                             <span>{formatSearchTime(post.created_at)}</span>
                           </p>
                         </div>
                         <svg
-                          className="w-4 h-4 text-[#A09080] dark:text-slate-500 flex-shrink-0 mt-0.5"
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--overlay-text-subtle)]"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -208,10 +208,10 @@ export function SearchDropdown({
               {/* Vaults Section */}
               {searchResults.workspaces.length > 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
-                  <div className="px-4 py-2 bg-slate-50 sticky top-0 z-10 dark:bg-slate-800">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-[#A09080] uppercase tracking-wide">Vaults</p>
+                  <div className="sticky top-0 z-10 bg-[var(--overlay-elev)] px-4 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--overlay-text-subtle)]">Vaults</p>
                   </div>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <div className="divide-y divide-[var(--overlay-border)]">
                     {searchResults.workspaces.map((workspace, i) => (
                       <motion.button
                         key={workspace.id}
@@ -219,12 +219,12 @@ export function SearchDropdown({
                         variants={itemVariants}
                         initial="hidden"
                         animate="visible"
-                        whileHover={{ backgroundColor: "#f8fafc" }}
+                        whileHover={{ backgroundColor: "var(--overlay-hover)" }}
                         onClick={() => {
                           handleResultClick(workspace)
                           onClose?.()
                         }}
-                        className="w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-slate-50 transition-colors dark:hover:bg-slate-800"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
                       >
                         <div className="w-9 h-9 rounded bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center flex-shrink-0">
                           <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -232,11 +232,11 @@ export function SearchDropdown({
                           </svg>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-slate-900 dark:text-[#F5F0E8]">{workspace.title}</p>
-                          <p className="text-xs text-slate-500 dark:text-[#5C5248] truncate">{workspace.subtitle}</p>
+                          <p className="text-sm font-medium text-[var(--overlay-text)]">{workspace.title}</p>
+                          <p className="truncate text-xs text-[var(--overlay-text-muted)]">{workspace.subtitle}</p>
                         </div>
                         <svg
-                          className="w-4 h-4 text-[#A09080] dark:text-slate-500 flex-shrink-0"
+                          className="h-4 w-4 flex-shrink-0 text-[var(--overlay-text-subtle)]"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"
@@ -257,10 +257,10 @@ export function SearchDropdown({
               {/* Notes Section */}
               {searchResults.notes.length > 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
-                  <div className="px-4 py-2 bg-slate-50 sticky top-0 z-10 dark:bg-slate-800">
-                    <p className="text-xs font-semibold text-slate-500 dark:text-[#A09080] uppercase tracking-wide">Notes</p>
+                  <div className="sticky top-0 z-10 bg-[var(--overlay-elev)] px-4 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--overlay-text-subtle)]">Notes</p>
                   </div>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                  <div className="divide-y divide-[var(--overlay-border)]">
                     {searchResults.notes.map((note, i) => (
                       <motion.button
                         key={note.id}
@@ -268,12 +268,12 @@ export function SearchDropdown({
                         variants={itemVariants}
                         initial="hidden"
                         animate="visible"
-                        whileHover={{ backgroundColor: "#f8fafc" }}
+                        whileHover={{ backgroundColor: "var(--overlay-hover)" }}
                         onClick={() => {
                           handleResultClick(note)
                           onClose?.()
                         }}
-                        className="w-full px-4 py-3 text-left flex items-center gap-3 hover:bg-slate-50 transition-colors dark:hover:bg-slate-800"
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
                       >
                         <div className="w-9 h-9 rounded bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center flex-shrink-0">
                           <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -281,15 +281,15 @@ export function SearchDropdown({
                           </svg>
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-slate-900 dark:text-[#F5F0E8]">{note.title}</p>
-                          <p className="text-xs text-slate-500 dark:text-[#5C5248] truncate flex items-center gap-1">
+                          <p className="text-sm font-medium text-[var(--overlay-text)]">{note.title}</p>
+                          <p className="flex items-center gap-1 truncate text-xs text-[var(--overlay-text-muted)]">
                             <span>{note.subtitle}</span>
                             <span>·</span>
                             <span>{formatSearchTime(note.created_at)}</span>
                           </p>
                         </div>
                         <svg
-                          className="w-4 h-4 text-[#A09080] dark:text-slate-500 flex-shrink-0"
+                          className="h-4 w-4 flex-shrink-0 text-[var(--overlay-text-subtle)]"
                           fill="none"
                           stroke="currentColor"
                           viewBox="0 0 24 24"

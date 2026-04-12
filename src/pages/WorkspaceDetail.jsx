@@ -1222,10 +1222,10 @@ export default function WorkspaceDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
+      <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
         <div style={{ maxWidth: '900px' }} className="mx-auto px-4 pb-[90px] pt-6">
-          <div className="mb-6 h-8 w-1/3 animate-pulse rounded bg-[#141414]"></div>
-          <div className="mb-8 h-4 w-1/2 animate-pulse rounded bg-[#141414]"></div>
+          <div className="mb-6 h-8 w-1/3 animate-pulse rounded bg-[var(--profile-elev)]"></div>
+          <div className="mb-8 h-4 w-1/2 animate-pulse rounded bg-[var(--profile-elev)]"></div>
           <MemoryGridSkeleton />
         </div>
       </div>
@@ -1234,22 +1234,22 @@ export default function WorkspaceDetail() {
 
   return (
 
-    <div className="min-h-screen bg-[#000000] text-[#F5F0E8]">
-      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[#1F1F1F] bg-[#000000] px-5 pb-3 pt-5">
+    <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-3 pt-5">
         <div style={{ maxWidth: '900px' }} className="mx-auto">
           <button
             onClick={(e) => handleNavigationClick(e, () => navigate("/workspaces"))}
-            className="mb-3 text-[13px] font-medium text-[#A09080] transition-colors hover:text-[#F4B400]"
+            className="mb-3 text-[13px] font-medium text-[var(--profile-text-subtle)] transition-colors hover:text-[#F4B400]"
           >
             ← Back to Vaults
           </button>
 
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h1 className="font-['Sora'] text-[24px] font-[800] text-[#F5F0E8]">{workspace?.name}</h1>
-              <p className="mt-1 text-[12px] text-[#5C5248]">Encrypted memory workspace</p>
+              <h1 className="font-['Sora'] text-[24px] font-[800] text-[var(--profile-text)]">{workspace?.name}</h1>
+              <p className="mt-1 text-[12px] text-[var(--profile-text-muted)]">Encrypted memory workspace</p>
               {workspaceAttribution?.invitedByUsername && (
-                <p className="mt-1 text-[11px] text-[#5C5248]">Added by {workspaceAttribution.invitedByUsername}</p>
+                <p className="mt-1 text-[11px] text-[var(--profile-text-muted)]">Added by {workspaceAttribution.invitedByUsername}</p>
               )}
             </div>
 
@@ -1257,7 +1257,7 @@ export default function WorkspaceDetail() {
               {canShare(userRole) && (
                 <button
                   onClick={() => setShowRemoveUserModal(true)}
-                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[13px] font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-2 text-[13px] font-medium text-[var(--profile-text-subtle)] transition-all hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
                   title="Manage vault members - Owner only"
                 >
                   Members
@@ -1267,7 +1267,7 @@ export default function WorkspaceDetail() {
               {canShare(userRole) && (
                 <button
                   onClick={() => setShowInviteModal(true)}
-                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[13px] font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-2 text-[13px] font-medium text-[var(--profile-text-subtle)] transition-all hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
                   title="Invite users to vault - Owner only"
                 >
                   Share
@@ -1277,7 +1277,7 @@ export default function WorkspaceDetail() {
               {canShare(userRole) && (
                 <button
                   onClick={() => setShowSettingsModal(true)}
-                  className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[13px] font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                  className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-2 text-[13px] font-medium text-[var(--profile-text-subtle)] transition-all hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
                   title="Vault settings - Owner only"
                 >
                   Settings
@@ -1287,7 +1287,7 @@ export default function WorkspaceDetail() {
               {canCreate(userRole) && (
                 <button
                   onClick={(e) => handleNavigationClick(e, () => navigate(`/workspace/${id}/new`))}
-                  className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] text-[13px] font-[700] text-[#0D0D0D] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all hover:bg-[#C49000]"
+                  className="rounded-[12px] border-none bg-[#F4B400] px-[18px] py-[10px] text-[13px] font-[700] text-[var(--profile-on-accent)] shadow-[0_3px_18px_rgba(244,180,0,0.4)] transition-all hover:bg-[#C49000]"
                   title="Create a new memory"
                 >
                   + Add Memory
@@ -1295,7 +1295,7 @@ export default function WorkspaceDetail() {
               )}
 
               {isViewer(userRole) && (
-                <div className="rounded-[10px] border border-[#1F1F1F] bg-[#141414] px-4 py-2 text-[12px] font-medium text-[#5C5248]" title="You have read-only access to this vault">
+                <div className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-2 text-[12px] font-medium text-[var(--profile-text-muted)]" title="You have read-only access to this vault">
                   Viewer
                 </div>
               )}
@@ -1306,13 +1306,13 @@ export default function WorkspaceDetail() {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowFavoritesOnly(false)}
-                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${!showFavoritesOnly ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
+                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${!showFavoritesOnly ? 'bg-[#F4B400] text-[var(--profile-on-accent)]' : 'border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]'}`}
               >
                 All
               </button>
               <button
                 onClick={() => setShowFavoritesOnly(true)}
-                className={`flex items-center gap-1.5 rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${showFavoritesOnly ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
+                className={`flex items-center gap-1.5 rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${showFavoritesOnly ? 'bg-[#F4B400] text-[var(--profile-on-accent)]' : 'border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
                   <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
@@ -1322,13 +1322,13 @@ export default function WorkspaceDetail() {
             </div>
 
             <div className="flex items-center gap-1">
-              <span className="text-xs font-medium text-[#5C5248]">Sort:</span>
+              <span className="text-xs font-medium text-[var(--profile-text-muted)]">Sort:</span>
               <button
                 onClick={() => {
                   setSortOrder("newest")
                   saveSortPreference("newest")
                 }}
-                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${sortOrder === "newest" ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
+                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${sortOrder === "newest" ? 'bg-[#F4B400] text-[var(--profile-on-accent)]' : 'border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]'}`}
               >
                 Newest
               </button>
@@ -1337,7 +1337,7 @@ export default function WorkspaceDetail() {
                   setSortOrder("oldest")
                   saveSortPreference("oldest")
                 }}
-                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${sortOrder === "oldest" ? 'bg-[#F4B400] text-[#0D0D0D]' : 'border border-[#1F1F1F] bg-[#141414] text-[#A09080] hover:border-[#2A2A2A] hover:text-[#F5F0E8]'}`}
+                className={`rounded-[20px] px-[14px] py-[6px] text-[12px] font-[600] transition-all ${sortOrder === "oldest" ? 'bg-[#F4B400] text-[var(--profile-on-accent)]' : 'border border-[var(--profile-border)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]'}`}
               >
                 Oldest
               </button>
@@ -1350,11 +1350,11 @@ export default function WorkspaceDetail() {
 
         {/* Non-Member Viewing Public Workspace Banner */}
         {!isMember && workspace && isWorkspacePublic(workspace) && (
-          <div className="mb-6 flex items-start gap-3 rounded-[14px] border border-[#1F1F1F] bg-[#141414] p-4">
+          <div className="mb-6 flex items-start gap-3 rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-4">
             <div className="text-xl text-[#F4B400]">👁️</div>
             <div className="flex-1">
-              <p className="font-semibold text-[#F5F0E8]">Viewing as Guest</p>
-              <p className="mt-1 text-sm text-[#A09080]">You're viewing this public vault with read-only access. Join to create and edit memories.</p>
+              <p className="font-semibold text-[var(--profile-text)]">Viewing as Guest</p>
+              <p className="mt-1 text-sm text-[var(--profile-text-subtle)]">You're viewing this public vault with read-only access. Join to create and edit memories.</p>
             </div>
           </div>
         )}
@@ -1362,14 +1362,14 @@ export default function WorkspaceDetail() {
         {/* Members Section - Phase 1 */}
         {members.length > 0 && (
           <div className="mb-8">
-            <h2 className="mb-3 text-lg font-semibold text-[#F5F0E8]">
+            <h2 className="mb-3 text-lg font-semibold text-[var(--profile-text)]">
               Vault Members ({members.length})
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {members.map((member) => (
                 <div
                   key={member.user_id}
-                  className="flex items-center gap-3 rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D] p-3 transition-colors duration-200 hover:border-[#2A2A2A]"
+                  className="flex items-center gap-3 rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-3 transition-colors duration-200 hover:border-[var(--profile-border-strong)]"
                 >
                   {/* Avatar */}
                   <div className="flex-shrink-0">
@@ -1377,7 +1377,7 @@ export default function WorkspaceDetail() {
                       <img
                         src={member.profiles[0].avatar_url}
                         alt={member.profiles[0].username || "User"}
-                        className="h-10 w-10 rounded-full border border-[#1F1F1F] object-cover"
+                        className="h-10 w-10 rounded-full border border-[var(--profile-border)] object-cover"
                       />
                     ) : (
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1C1C1C] font-semibold text-[#F4B400]">
@@ -1388,7 +1388,7 @@ export default function WorkspaceDetail() {
 
                   {/* Username and Role */}
                   <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium text-[#F5F0E8]">
+                    <p className="truncate font-medium text-[var(--profile-text)]">
                       {member.profiles?.[0]?.username || "Unknown User"}
                     </p>
                     <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded mt-1 ${
@@ -1396,7 +1396,7 @@ export default function WorkspaceDetail() {
                         ? "bg-[#1E1528] text-[#8B5CF6] border border-[rgba(139,92,246,0.25)]"
                         : member.role === "editor"
                         ? "bg-[#2A2000] text-[#F4B400] border border-[rgba(244,180,0,0.25)]"
-                        : "bg-[#141414] text-[#A09080] border border-[#1F1F1F]"
+                        : "bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] border border-[var(--profile-border)]"
                     }`}>
                       {member.role === "owner" ? "👑 Owner" : member.role === "editor" ? "✏️ Editor" : "👁️ Viewer"}
                     </span>
@@ -1410,31 +1410,31 @@ export default function WorkspaceDetail() {
         {/* Recent Activity Section - Phase 2 */}
         {recentActivity.length > 0 && (
           <div className="mb-8">
-            <h2 className="mb-3 text-lg font-semibold text-[#F5F0E8]">
+            <h2 className="mb-3 text-lg font-semibold text-[var(--profile-text)]">
               Recent Activity
             </h2>
-            <div className="space-y-2 overflow-hidden rounded-[14px] border border-[#1F1F1F] bg-[#0D0D0D]">
+            <div className="space-y-2 overflow-hidden rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)]">
               {recentActivity.map((activity, index) => (
                 <div
                   key={activity.id}
                   className={`flex items-center gap-3 p-4 ${
-                    index !== recentActivity.length - 1 ? "border-b border-[#1F1F1F]" : ""
-                  } transition-colors duration-200 hover:bg-[#141414]`}
+                    index !== recentActivity.length - 1 ? "border-b border-[var(--profile-border)]" : ""
+                  } transition-colors duration-200 hover:bg-[var(--profile-elev)]`}
                 >
                   {/* Timeline Dot */}
                   <div className="flex-shrink-0 relative w-8 h-8 flex items-center justify-center">
-                    <div className="h-3 w-3 rounded-full border-2 border-[#0D0D0D] bg-[#F4B400] shadow-sm"></div>
+                    <div className="h-3 w-3 rounded-full border-2 border-[var(--profile-surface)] bg-[#F4B400] shadow-sm"></div>
                   </div>
 
                   {/* Activity Content */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-[#A09080]">
-                      <span className="font-medium text-[#F5F0E8]">
+                    <p className="text-sm text-[var(--profile-text-subtle)]">
+                      <span className="font-medium text-[var(--profile-text)]">
                         {activity.profiles?.[0]?.username || "Unknown User"}
                       </span>
-                      <span className="text-[#5C5248]"> joined this vault</span>
+                      <span className="text-[var(--profile-text-muted)]"> joined this vault</span>
                     </p>
-                    <p className="mt-0.5 text-xs text-[#5C5248]">
+                    <p className="mt-0.5 text-xs text-[var(--profile-text-muted)]">
                       {activity.responded_at
                         ? new Date(activity.responded_at).toLocaleDateString("en-US", {
                             month: "short",
@@ -1521,13 +1521,13 @@ export default function WorkspaceDetail() {
         >
           <div className="p-6 space-y-6">
             <div>
-              <h3 className="mb-4 text-lg font-semibold text-[#F5F0E8]">Visibility</h3>
-              <div className="flex items-center justify-between rounded-lg border border-[#1F1F1F] bg-[#0D0D0D] p-4">
+              <h3 className="mb-4 text-lg font-semibold text-[var(--profile-text)]">Visibility</h3>
+              <div className="flex items-center justify-between rounded-lg border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4">
                 <div>
-                  <p className="font-medium text-[#F5F0E8]">
+                  <p className="font-medium text-[var(--profile-text)]">
                     {workspace?.is_public ? '🌐 Public' : '🔒 Private'}
                   </p>
-                  <p className="mt-1 text-sm text-[#5C5248]">
+                  <p className="mt-1 text-sm text-[var(--profile-text-muted)]">
                     {workspace?.is_public 
                       ? 'Anyone can view memories in this vault' 
                       : 'Only members can access this vault'}
@@ -1550,7 +1550,7 @@ export default function WorkspaceDetail() {
             <div className="flex justify-end gap-2 pt-4">
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="rounded-lg border border-[#1F1F1F] bg-[#141414] px-4 py-2 font-medium text-[#A09080] transition-all hover:border-[#2A2A2A] hover:text-[#F5F0E8]"
+                className="rounded-lg border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 py-2 font-medium text-[var(--profile-text-subtle)] transition-all hover:border-[var(--profile-border-strong)] hover:text-[var(--profile-text)]"
               >
                 Close
               </button>

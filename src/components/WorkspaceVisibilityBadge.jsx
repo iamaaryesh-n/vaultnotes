@@ -14,8 +14,8 @@ export default function WorkspaceVisibilityBadge({ isPublic = false, size = 'sm'
   const icon = isPublic ? '🌍' : '🔒'
   const label = isPublic ? 'Public' : 'Private'
   const styles = isPublic
-    ? 'bg-blue-100 text-blue-700 border-blue-200'
-    : 'bg-red-100 text-red-700 border-red-200'
+    ? 'bg-[var(--visibility-public-bg)] text-[var(--visibility-public-text)] border-[var(--visibility-public-border)]'
+    : 'bg-[var(--visibility-private-bg)] text-[var(--visibility-private-text)] border-[var(--visibility-private-border)]'
 
   return (
     <motion.div
