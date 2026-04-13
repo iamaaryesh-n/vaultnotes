@@ -3,6 +3,20 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  overscroll-behavior-y: contain;
+}
+
+* {
+  touch-action: manipulation;
+}
+
 /* Global light background */
 body, html {
   min-height: 100vh;

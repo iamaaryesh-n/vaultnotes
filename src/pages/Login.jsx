@@ -434,7 +434,7 @@ export default function Login({ initialMode = "login" }) {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--profile-bg)] flex items-center justify-center relative overflow-hidden px-5 py-6">
+    <div className="relative flex min-h-screen min-h-dvh items-start justify-center overflow-x-hidden overflow-y-auto bg-[var(--profile-bg)] px-4 py-6 sm:items-center">
       <div
         className="pointer-events-none absolute inset-0 opacity-100"
         style={{ backgroundImage: "radial-gradient(circle, rgba(244,180,0,0.06) 1px, transparent 1px)", backgroundSize: "32px 32px" }}

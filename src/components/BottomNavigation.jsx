@@ -10,6 +10,7 @@ export default function BottomNavigation() {
   const { user } = useAuth()
   const [profile, setProfile] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   const [currentUserId, setCurrentUserId] = useState(null)
   const [unreadDirectCount, setUnreadDirectCount] = useState(0)
   const [unreadGroupCount, setUnreadGroupCount] = useState(0)
@@ -18,6 +19,7 @@ export default function BottomNavigation() {
   useEffect(() => {
     if (user?.id) {
       setCurrentUserId(user.id)
+      setAvatarLoadFailed(false)
       fetchProfile(user.id)
     }
   }, [user?.id])
@@ -29,7 +31,7 @@ export default function BottomNavigation() {
       console.log("[BottomNav] Fetching profile for user:", userId)
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("username")
+        .select("username, name, avatar_url")
         .eq("id", userId)
         .single()
 
@@ -182,21 +184,35 @@ export default function BottomNavigation() {
     setMenuOpen(!menuOpen)
   }
 
-  const handleProfileNavigation = () => {
-    const currentUsername = profile?.username || user?.user_metadata?.username
+  const handleProfileNavigation = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const anchorX = rect.left + (rect.width / 2)
+    const anchorTop = rect.top
 
-    if (currentUsername) {
-      navigate(`/profile/${currentUsername}`)
-      return
-    }
-
-    navigate("/profile")
+    window.dispatchEvent(new CustomEvent("openAccountMenu", {
+      detail: { anchorX, anchorTop }
+    }))
   }
+
+  const getInitials = (name) => {
+    if (!name) return "?"
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  const avatarSrc = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null
 
   return (
     <>
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_-6px_22px_rgba(0,0,0,0.45)] backdrop-blur-[20px]">
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_-6px_22px_rgba(0,0,0,0.45)] backdrop-blur-[20px]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <div className="flex h-[62px] items-center justify-around px-2">
           {/* Explore */}
           <button
@@ -279,24 +295,33 @@ export default function BottomNavigation() {
 
           {/* Profile */}
           <button
+            data-account-menu-trigger="true"
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={handleProfileNavigation}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/profile") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
             }`}
           >
-            <svg
-              className="h-[22px] w-[22px]"
-              fill={isActive("/profile") ? "currentColor" : "none"}
-              stroke="currentColor"
-              strokeWidth={isActive("/profile") ? 0 : 2}
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+            {avatarSrc && !avatarLoadFailed ? (
+              <img
+                src={avatarSrc}
+                alt="Profile"
+                className={`h-[24px] w-[24px] rounded-full object-cover ${
+                  isActive("/profile") ? "ring-2 ring-[var(--chat-accent)]" : "ring-1 ring-[var(--chat-border-strong)]"
+                }`}
+                onError={() => setAvatarLoadFailed(true)}
               />
-            </svg>
+            ) : (
+              <div
+                className={`flex h-[24px] w-[24px] items-center justify-center rounded-full border text-[9px] font-bold ${
+                  isActive("/profile")
+                    ? "border-[var(--chat-accent)] bg-[var(--chat-accent-soft)] text-[var(--chat-accent)]"
+                    : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
+                }`}
+              >
+                {getInitials(profile?.name || user?.email || "?")}
+              </div>
+            )}
             <span className="text-[10px] font-semibold">Profile</span>
           </button>
         </div>

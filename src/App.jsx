@@ -13,6 +13,7 @@ import { initializeTheme } from "./utils/theme"
 import { useNavigationStore } from "./stores/navigationStore"
 import { initializeWebPush } from "./lib/firebaseMessaging"
 import { supabase } from "./lib/supabase"
+import vaultNotesLogoMark from "./assets/branding/vaultnotes-logo-mark.png"
 
 // Eagerly load lightweight pages
 import Login from "./pages/Login"
@@ -26,6 +27,7 @@ const WorkspaceDetail = lazy(() => import("./pages/WorkspaceDetail"))
 const MemoryView = lazy(() => import("./pages/MemoryView"))
 const MemoryEditor = lazy(() => import("./pages/MemoryEditor"))
 const Profile = lazy(() => import("./pages/Profile"))
+const Settings = lazy(() => import("./pages/Settings"))
 const Chat = lazy(() => import("./pages/Chat"))
 const GroupChat = lazy(() => import("./pages/GroupChat"))
 const PublicWorkspaceLanding = lazy(() => import("./pages/PublicWorkspaceLanding"))
@@ -73,8 +75,8 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
           isChatRoute
             ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
             : isVaultRoute
-              ? `min-h-screen overflow-x-hidden bg-[var(--profile-bg)] ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-20"}`
-              : `min-h-screen ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-20"}`
+              ? `min-h-screen overflow-x-hidden bg-[var(--profile-bg)] ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-[calc(5rem+env(safe-area-inset-bottom))]"}`
+              : `min-h-screen ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-[calc(5rem+env(safe-area-inset-bottom))]"}`
         }
       >
         <Outlet />
@@ -183,6 +185,11 @@ function AppContent() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in dark:from-slate-950 dark:to-slate-900 dark:text-[var(--profile-text)]">
         <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
+          <img
+            src={vaultNotesLogoMark}
+            alt="VaultNotes logo"
+            className="mb-2 h-12 w-12 object-contain"
+          />
           <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Vaults</h1>
           <p className="text-slate-600 mb-8">Loading your vaults...</p>
           <div className="space-y-3">
@@ -247,6 +254,17 @@ function AppContent() {
             <ErrorBoundary resetKey={location.pathname}>
               <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
                 <Profile />
+              </Suspense>
+            </ErrorBoundary>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <ErrorBoundary resetKey={location.pathname}>
+              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+                <Settings />
               </Suspense>
             </ErrorBoundary>
           }

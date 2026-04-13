@@ -914,7 +914,7 @@ export default function Profile() {
 
   return (
     <div className="-mt-[64px] min-h-screen bg-[var(--profile-bg)]">
-      <div className="mx-auto w-full max-w-5xl px-4 pb-8 pt-3 text-[var(--profile-text)] md:px-6">
+      <div className="mx-auto w-full max-w-4xl px-4 pb-8 pt-3 text-[var(--profile-text)] md:px-6 lg:max-w-3xl">
       {/* ========== Premium Social Header ========== */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -922,7 +922,7 @@ export default function Profile() {
         className="mb-8 overflow-hidden rounded-3xl border border-[var(--profile-border)] bg-[var(--profile-surface)] shadow-[0_20px_50px_-30px_rgba(0,0,0,0.7)]"
       >
         {/* Section 1: Cover only */}
-        <div className="relative z-0 h-[280px] overflow-hidden rounded-t-3xl md:h-[320px]">
+        <div className="relative z-0 h-[clamp(188px,48vw,228px)] overflow-hidden rounded-t-3xl md:h-[320px]">
           {profile?.cover_photo_url ? (
             <img
               src={profile.cover_photo_url}
@@ -932,6 +932,7 @@ export default function Profile() {
                 objectPosition: `${profile?.cover_position_x ?? 50}% ${profile?.cover_position_y ?? 50}%`,
                 transform: `scale(${profile?.cover_zoom ?? 1})`,
                 transformOrigin: "center center",
+                willChange: "transform",
               }}
             />
           ) : (
@@ -940,35 +941,35 @@ export default function Profile() {
         </div>
 
         {/* Section 2: Profile info row */}
-        <div className="relative z-20 border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-4">
-          <div className="mb-6 flex flex-col items-start gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="flex items-end gap-[20px]">
-              <div className="relative z-10 -mt-[42px] shrink-0">
+        <div className="relative z-20 border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-4 sm:px-5">
+          <div className="mb-5 flex flex-col items-start gap-3.5 md:mb-6 md:flex-row md:items-end md:justify-between">
+            <div className="flex items-end gap-[clamp(12px,3.8vw,20px)]">
+              <div className="relative z-10 -mt-[clamp(28px,8.5vw,42px)] shrink-0">
                 {avatarUrl ? (
                   <img
                     src={avatarUrl}
                     alt="Avatar"
                     loading="lazy"
-                    className="h-[144px] w-[144px] shrink-0 rounded-full border-[3px] border-[var(--profile-bg)] object-cover"
+                    className="h-[clamp(96px,24vw,120px)] w-[clamp(96px,24vw,120px)] shrink-0 rounded-full border-[3px] border-[var(--profile-bg)] object-cover md:h-[144px] md:w-[144px]"
                   />
                 ) : (
-                  <div className="flex h-[144px] w-[144px] shrink-0 items-center justify-center rounded-full border-[3px] border-[var(--profile-bg)] bg-[var(--profile-accent-soft)] font-['Sora'] text-[42px] font-bold text-[var(--profile-accent)]">
+                  <div className="flex h-[clamp(96px,24vw,120px)] w-[clamp(96px,24vw,120px)] shrink-0 items-center justify-center rounded-full border-[3px] border-[var(--profile-bg)] bg-[var(--profile-accent-soft)] font-['Sora'] text-[clamp(30px,7vw,36px)] font-bold text-[var(--profile-accent)] md:h-[144px] md:w-[144px] md:text-[42px]">
                     {profile?.name?.charAt(0)?.toUpperCase() || "?"}
                   </div>
                 )}
               </div>
 
-              <div className="flex flex-col">
-                <h1 className="font-['Sora'] text-[28px] font-bold text-[var(--profile-text)]">
+              <div className="min-w-0 flex flex-1 flex-col">
+                <h1 className="font-['Sora'] text-[clamp(1.5rem,6.2vw,1.75rem)] font-bold leading-tight text-[var(--profile-text)] md:text-[28px]">
                   {profile?.name || "User"}
                 </h1>
 
-                <p className="mt-[2px] text-[16px] text-[var(--profile-text-muted)]">
+                <p className="mt-[2px] text-[clamp(13px,3.6vw,16px)] text-[var(--profile-text-muted)] md:text-[16px]">
                   @{profile?.username || "username"}
                 </p>
 
                 {profile?.bio && (
-                  <p className="mt-[8px] max-w-[380px] text-[13px] leading-relaxed text-[var(--profile-text-subtle)]">
+                  <p className="mt-[8px] max-w-[min(56vw,380px)] text-[13px] leading-relaxed text-[var(--profile-text-subtle)] sm:max-w-[380px]">
                     {profile.bio}
                   </p>
                 )}
@@ -1067,7 +1068,7 @@ export default function Profile() {
             transition={{ duration: 0.2 }}
           >
             {postsLoading ? (
-              <div className="space-y-3 px-5 py-4">
+              <div className="space-y-3 py-4">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 animate-pulse">
                     <div className="mb-4 flex items-center gap-3">
@@ -1084,7 +1085,7 @@ export default function Profile() {
                 ))}
               </div>
             ) : posts.length === 0 ? (
-              <div className="mx-5 my-4 bg-transparent p-10 text-center border border-dashed border-[var(--profile-border-strong)] rounded-[14px]">
+              <div className="my-4 rounded-[14px] border border-dashed border-[var(--profile-border-strong)] bg-transparent p-10 text-center">
                 <svg className="mx-auto mb-2 h-12 w-12 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v12a2 2 0 01-2 2z" />
                 </svg>
@@ -1092,15 +1093,16 @@ export default function Profile() {
                 <p className="text-[12px] text-[var(--profile-text-muted)]">Share your first post with the community!</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-3 px-5 py-4">
-                {posts.map((post, index) => (
-                  <motion.article
-                    key={post.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 transition-colors hover:border-[var(--profile-border-strong)]"
-                  >
+              <div className="w-full py-4">
+                <div className="flex flex-col gap-3">
+                  {posts.map((post, index) => (
+                    <motion.article
+                      key={post.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="w-full max-w-none rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 transition-colors hover:border-[var(--profile-border-strong)]"
+                    >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex flex-col gap-1">
                         <button
@@ -1204,17 +1206,18 @@ export default function Profile() {
                       <img
                         src={post.image_url}
                         alt="Post"
-                        className="mb-3 max-h-96 w-full rounded-[10px] border border-[var(--profile-border)] object-cover"
+                        className="mb-3 h-auto w-full rounded-[10px] border border-[var(--profile-border)] object-contain"
                       />
                     )}
 
-                    <PostInteractions
-                      post={post}
-                      initialComments={commentsByPost[post.id] || []}
-                      initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
-                    />
-                  </motion.article>
-                ))}
+                      <PostInteractions
+                        post={post}
+                        initialComments={commentsByPost[post.id] || []}
+                        initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
+                      />
+                    </motion.article>
+                  ))}
+                </div>
               </div>
             )}
           </motion.div>

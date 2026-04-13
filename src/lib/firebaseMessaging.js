@@ -112,7 +112,7 @@ function bindForegroundMessageListener(messaging) {
         payload.notification?.title || "New notification",
         {
           body: payload.notification?.body || "",
-          icon: "/icon-192.png",
+          icon: "/icons/icon-192.png",
           tag: payload.data?.conversationId || payload.data?.conversation_id || "vaultnotes-message",
           renotify: true,
         }

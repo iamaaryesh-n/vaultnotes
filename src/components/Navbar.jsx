@@ -7,6 +7,7 @@ import { SearchDropdown } from "./SearchDropdown"
 import { EditProfileModal } from "./EditProfileModal"
 import Modal from "./Modal"
 import { applyTheme, getStoredTheme, setStoredTheme } from "../utils/theme"
+import vaultNotesLogoMark from "../assets/branding/vaultnotes-logo-mark.png"
 
 const NotificationDropdown = lazy(() =>
   import("./NotificationDropdown").then((module) => ({ default: module.NotificationDropdown }))
@@ -29,6 +30,7 @@ export default function Navbar() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const [accountMenuAnchor, setAccountMenuAnchor] = useState(null)
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [selectedTheme, setSelectedTheme] = useState("system")
   const [confirmModal, setConfirmModal] = useState({
@@ -55,6 +57,7 @@ export default function Navbar() {
 
   useEffect(() => {
     setAccountMenuOpen(false)
+    setAccountMenuAnchor(null)
   }, [location.pathname])
 
   useEffect(() => {
@@ -62,6 +65,34 @@ export default function Navbar() {
     setSelectedTheme(savedTheme)
     applyTheme(savedTheme)
   }, [])
+
+  useEffect(() => {
+    const handleBottomNavAccountMenu = (event) => {
+      const rawAnchorX = event?.detail?.anchorX
+      const anchorTop = event?.detail?.anchorTop
+      if (typeof rawAnchorX !== "number" || typeof anchorTop !== "number") {
+        return
+      }
+
+      if (accountMenuOpen) {
+        setAccountMenuOpen(false)
+        return
+      }
+
+      const menuHalfWidth = 112
+      const viewportWidth = window.innerWidth
+      const minX = 16 + menuHalfWidth
+      const maxX = viewportWidth - 16 - menuHalfWidth
+      const safeAnchorX = Math.max(minX, Math.min(rawAnchorX, maxX))
+
+      setSelectedTheme(getStoredTheme())
+      setAccountMenuAnchor({ x: safeAnchorX, y: anchorTop })
+      setAccountMenuOpen(true)
+    }
+
+    window.addEventListener("openAccountMenu", handleBottomNavAccountMenu)
+    return () => window.removeEventListener("openAccountMenu", handleBottomNavAccountMenu)
+  }, [accountMenuOpen])
 
   // Listen for profile updates from other components
   useEffect(() => {
@@ -86,6 +117,10 @@ export default function Navbar() {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         setSearchOpen(false)
+      }
+
+      if (event.target?.closest?.("[data-account-menu-trigger='true']")) {
+        return
       }
 
       if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) {
@@ -191,19 +226,6 @@ export default function Navbar() {
     setIsEditProfileOpen(true)
   }
 
-  const handleSwitchAccount = async () => {
-    setAccountMenuOpen(false)
-
-    setConfirmModal({
-      open: true,
-      title: "Switch account?",
-      message: "Your current session will be signed out and you can login with another account.",
-      confirmText: "Continue",
-      cancelText: "Cancel",
-      action: "switch",
-    })
-  }
-
   const closeConfirmModal = () => {
     setConfirmModal((prev) => ({ ...prev, open: false, action: null }))
   }
@@ -240,6 +262,11 @@ export default function Navbar() {
     applyTheme(theme)
     setSelectedTheme(theme)
     setAccountMenuOpen(false)
+  }
+
+  const handleOpenSettings = () => {
+    setAccountMenuOpen(false)
+    navigate("/settings")
   }
 
   const handleEditProfileSave = async (updateData, mediaChanges = {}) => {
@@ -406,7 +433,7 @@ export default function Navbar() {
     <>
       {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-[100] h-[56px] border-b border-[var(--chat-border)] bg-[var(--chat-bg)] backdrop-blur-[16px]">
-        <div className="px-4 md:px-6 h-full flex justify-between items-center gap-4">
+        <div className="px-4 md:px-6 h-full flex items-center gap-3">
           {/* Left: Logo */}
           <div className="flex-shrink-0">
             {/* Logo */}
@@ -414,15 +441,17 @@ export default function Navbar() {
               onClick={() => navigate("/")}
               className="flex items-center gap-2 transition-opacity hover:opacity-90"
             >
-              <div className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[var(--chat-accent)] font-['Sora'] text-[13px] font-bold text-[var(--chat-on-accent)] shadow-[0_2px_12px_rgba(244,180,0,0.35)]">
-                VN
-              </div>
+              <img
+                src={vaultNotesLogoMark}
+                alt="VaultNotes logo"
+                className="h-[30px] w-[30px] rounded-[8px] object-contain"
+              />
               <h1 className="hidden font-['Sora'] text-[16px] font-bold text-[var(--chat-text)] sm:inline">VaultNotes</h1>
             </button>
           </div>
 
           {/* Center: Search Bar */}
-          <div className="relative flex-1 max-w-xs sm:max-w-sm md:max-w-md lg:max-w-2xl" ref={searchRef}>
+          <div className="relative mx-auto w-full max-w-3xl flex-1" ref={searchRef}>
             <div className="relative">
               {/* Search Icon */}
               <svg
@@ -469,15 +498,18 @@ export default function Navbar() {
             />
           </div>
 
-          {/* Right: Notification Bell and Avatar */}
-          <div className="flex flex-shrink-0 items-center gap-2">
-            {/* Notification Bell Icon - Relative for dropdown */}
+          {/* Right: Notification Bell */}
+          <div className="flex flex-shrink-0 items-center">
+            {/* Notification Bell Icon - Corner aligned */}
             <div className="relative" ref={notificationsRef}>
               <button
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => {
-                  const newState = !notificationDropdownOpen
-                  console.log('[Navbar] Notification dropdown toggled:', newState, 'Unread count:', unreadCount)
-                  setNotificationDropdownOpen(newState)
+                  setNotificationDropdownOpen((prev) => {
+                    const next = !prev
+                    console.log('[Navbar] Notification dropdown toggled:', next, 'Unread count:', unreadCount)
+                    return next
+                  })
                 }}
                 title="Notifications"
                 className="relative flex h-[36px] w-[36px] items-center justify-center rounded-[10px] text-[var(--chat-text-subtle)] transition-colors duration-200 hover:bg-[var(--chat-elev)] hover:text-[var(--chat-text)]"
@@ -514,110 +546,48 @@ export default function Navbar() {
                 </Suspense>
               )}
             </div>
-
-            {/* Avatar + Name Account Menu */}
-            <div className="relative" ref={accountMenuRef}>
-              <button
-                onClick={handleAccountMenuToggle}
-                title="Account actions"
-                className="flex items-center gap-2 rounded-[10px] px-2 py-1.5 transition-colors duration-200 hover:bg-[var(--chat-elev)]"
-              >
-                {/* Avatar or Initials */}
-                {loading ? (
-                  <div className="h-[32px] w-[32px] animate-pulse rounded-full bg-[var(--chat-elev)]" />
-                ) : profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt="Avatar"
-                    className="h-[32px] w-[32px] rounded-full border-[2px] border-[var(--chat-border-strong)] object-cover transition-colors hover:border-[var(--chat-accent)]"
-                  />
-                ) : (
-                  <div className="flex h-[32px] w-[32px] items-center justify-center rounded-full border-[2px] border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)] font-['Sora'] text-[13px] font-bold text-[var(--chat-accent)] transition-colors hover:border-[var(--chat-accent)]">
-                    {getInitials(profile?.name || authUser?.email || "?")}
-                  </div>
-                )}
-
-                <span className="hidden text-sm font-medium text-[var(--chat-text)] sm:inline">
-                  {profile?.name || authUser?.email?.split("@")[0] || "User"}
-                </span>
-
-                <svg
-                  className={`h-4 w-4 text-[var(--chat-text-muted)] transition-transform ${accountMenuOpen ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {accountMenuOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-56 animate-fadeIn rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] py-2 shadow-[0_16px_40px_-20px_rgba(0,0,0,0.75)]">
-                  <button
-                    onClick={handleViewProfile}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
-                  >
-                    View Profile
-                  </button>
-                  <button
-                    onClick={handleOpenEditProfile}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
-                  >
-                    Edit Profile
-                  </button>
-                  <div className="my-1 border-t border-[var(--chat-border)]" />
-                  <button
-                    onClick={() => handleThemeChange("light")}
-                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
-                  >
-                    <span>Light Mode</span>
-                    {selectedTheme === "light" && (
-                      <svg className="h-4 w-4 text-[var(--chat-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleThemeChange("dark")}
-                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
-                  >
-                    <span>Dark Mode</span>
-                    {selectedTheme === "dark" && (
-                      <svg className="h-4 w-4 text-[var(--chat-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleThemeChange("system")}
-                    className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
-                  >
-                    <span>System Default</span>
-                    {selectedTheme === "system" && (
-                      <svg className="h-4 w-4 text-[var(--chat-accent)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
-                  <button
-                    onClick={handleSwitchAccount}
-                    disabled={loggingOut}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)] disabled:opacity-60"
-                  >
-                    {loggingOut ? "Switching..." : "Switch Account"}
-                  </button>
-                  <div className="my-1 border-t border-[var(--chat-border)]" />
-                  <button
-                    onClick={handleLogout}
-                    disabled={loggingOut}
-                    className="w-full px-4 py-2.5 text-left text-sm text-[#EF4444] transition-colors hover:bg-[rgba(239,68,68,0.08)] disabled:opacity-60"
-                  >
-                    {loggingOut ? "Logging out..." : "Logout"}
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
+
+          {/* Account dropdown moved trigger to bottom nav, menu still rendered here */}
+          {accountMenuOpen && accountMenuAnchor && (
+            <div
+              ref={accountMenuRef}
+              className="fixed z-50 w-56 animate-fadeIn rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] py-2 shadow-[0_16px_40px_-20px_rgba(0,0,0,0.75)]"
+              style={{
+                left: `${accountMenuAnchor.x}px`,
+                top: `${accountMenuAnchor.y}px`,
+                transform: "translate(-50%, calc(-100% - 8px))",
+                transformOrigin: "center bottom",
+              }}
+            >
+              <button
+                onClick={handleViewProfile}
+                className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
+              >
+                View Profile
+              </button>
+              <button
+                onClick={handleOpenEditProfile}
+                className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
+              >
+                Edit Profile
+              </button>
+              <button
+                onClick={handleOpenSettings}
+                className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
+              >
+                Settings
+              </button>
+              <div className="my-1 border-t border-[var(--chat-border)]" />
+              <button
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="w-full px-4 py-2.5 text-left text-sm text-[#EF4444] transition-colors hover:bg-[rgba(239,68,68,0.08)] disabled:opacity-60"
+              >
+                {loggingOut ? "Logging out..." : "Logout"}
+              </button>
+            </div>
+          )}
         </div>
       </nav>
 
@@ -666,11 +636,11 @@ export default function Navbar() {
         @keyframes fadeIn {
           from {
             opacity: 0;
-            transform: translateY(-4px);
+            transform: scale(0.96);
           }
           to {
             opacity: 1;
-            transform: translateY(0);
+            transform: scale(1);
           }
         }
 
