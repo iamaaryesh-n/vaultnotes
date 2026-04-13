@@ -4,21 +4,21 @@ import { motion, AnimatePresence } from "framer-motion"
 import { PostListSkeleton } from "./PostSkeleton"
 import PostInteractions from "./PostInteractions"
 import { getFeedImageUrl, getAvatarImageUrl } from "../utils/imageOptimization"
-
+ 
 function formatPostTime(value) {
   if (!value) return ""
   const date = new Date(value)
   const now = new Date()
   const seconds = Math.floor((now - date) / 1000)
-
+ 
   if (seconds < 60) return "now"
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
-
+ 
   return date.toLocaleDateString()
 }
-
+ 
 export default function PostFeed({
   activeTab,
   contextUser,
@@ -37,26 +37,26 @@ export default function PostFeed({
 }) {
   const navigate = useNavigate()
   const loadMoreRef = useRef(null)
-
+ 
   const filteredPosts = useMemo(() => {
     let filtered = [...posts]
-
+ 
     filtered = filtered.filter((post) => {
       if (post.visibility === "public") {
         return true
       }
-
+ 
       if (post.visibility === "private") {
         if (post.user_id === contextUser?.id) {
           return true
         }
-
+ 
         return followedUsers.includes(post.user_id)
       }
-
+ 
       return post.visibility === "public"
     })
-
+ 
     switch (activeTab) {
       case "following":
         filtered = filtered.filter((post) => followedUsers.includes(post.user_id))
@@ -75,13 +75,13 @@ export default function PostFeed({
       default:
         break
     }
-
+ 
     return filtered
   }, [activeTab, commentsByPost, contextUser?.id, followedUsers, likesByPost, posts])
-
+ 
   useEffect(() => {
     if (!loadMoreRef.current) return
-
+ 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -92,29 +92,29 @@ export default function PostFeed({
       },
       { threshold: 0.1, rootMargin: "300px" }
     )
-
+ 
     observer.observe(loadMoreRef.current)
-
+ 
     return () => {
       observer.disconnect()
     }
   }, [hasMore, loadingMore, page, filteredPosts.length, queueNextPageLoad])
-
+ 
   useEffect(() => {
     const handleScroll = () => {
       const isNearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 300
-
+ 
       if (isNearBottom && hasMore && !loadingMore) {
         queueNextPageLoad()
       }
     }
-
+ 
     window.addEventListener("scroll", handleScroll)
     return () => {
       window.removeEventListener("scroll", handleScroll)
     }
   }, [hasMore, loadingMore, queueNextPageLoad])
-
+ 
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8">
@@ -122,7 +122,7 @@ export default function PostFeed({
       </div>
     )
   }
-
+ 
   return (
     <div className="mx-auto max-w-2xl px-4 py-4">
       {error && (
@@ -134,7 +134,7 @@ export default function PostFeed({
           <p className="font-medium">{error}</p>
         </motion.div>
       )}
-
+ 
       {filteredPosts.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -164,7 +164,7 @@ export default function PostFeed({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.1) }}
                 data-post-id={post.id}
-                className="group border-b border-[var(--profile-border)] py-4 transition-colors duration-200 hover:bg-[rgba(255,255,255,0.015)] first:border-t first:border-[var(--profile-border)]"
+                className="group border-b border-[var(--profile-border)] px-4 py-4 transition-colors duration-200 hover:bg-[rgba(255,255,255,0.015)] first:border-t first:border-[var(--profile-border)]"
               >
                 <div
                   onClick={() => onOpenPost(post)}
@@ -195,7 +195,7 @@ export default function PostFeed({
                         </div>
                       )}
                     </button>
-
+ 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-[6px]">
                       <button
@@ -214,7 +214,7 @@ export default function PostFeed({
                       <span className="text-[12px] text-[var(--profile-text-muted)]">{formatPostTime(post.created_at)}</span>
                       </div>
                     </div>
-
+ 
                     {contextUser?.id && post.user_id !== contextUser.id && (
                       <button
                         onClick={(event) => {
@@ -233,32 +233,33 @@ export default function PostFeed({
                   </div>
                 </div>
 
+                <div className="mt-3 mb-3 h-px w-full bg-[var(--profile-border)] opacity-60" />
+ 
                 {post.content && (
-                  <div
+                  <p
                     onClick={() => onOpenPost(post)}
-                    className="mt-[6px] cursor-pointer break-words whitespace-pre-wrap pl-[51px] text-[14px] leading-[1.6] text-[var(--profile-text)]"
+                    className="w-full cursor-pointer text-left text-[15px] leading-7 text-[var(--profile-text)]"
                   >
                     {post.content}
-                  </div>
+                  </p>
                 )}
-
+ 
                 {post.image_url && (
                   <div
                     onClick={() => onOpenPost(post)}
-                    className="mt-[10px] cursor-pointer overflow-hidden pl-[51px]"
+                    className="relative mt-3 w-full cursor-pointer overflow-hidden rounded-[14px]"
+                    style={{ aspectRatio: "4/3" }}
                   >
                     <img
-                      src={getFeedImageUrl(post.image_url, { width: 400, quality: 60 })}
+                      src={getFeedImageUrl(post.image_url, { width: 600, quality: 75 })}
                       alt="Post"
-                      width={700}
-                      height={400}
-                      className="max-h-[320px] w-full rounded-[14px] border border-[var(--profile-border)] object-cover"
+                      className="absolute inset-0 block h-full w-full object-cover"
                       loading="lazy"
                     />
                   </div>
                 )}
-
-                <div className="mt-[12px] pl-[51px]">
+ 
+                <div className="mt-[12px]">
                   <PostInteractions
                     post={post}
                     initialComments={commentsByPost[post.id] || []}
@@ -268,9 +269,9 @@ export default function PostFeed({
               </motion.article>
             ))}
           </AnimatePresence>
-
+ 
           <div ref={loadMoreRef} className="h-20 w-full" />
-
+ 
           {loadingMore && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center py-4">
               <div className="flex gap-1">
@@ -285,3 +286,4 @@ export default function PostFeed({
     </div>
   )
 }
+ 
