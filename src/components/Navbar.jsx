@@ -16,7 +16,7 @@ const NotificationDropdown = lazy(() =>
 export default function Navbar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user: authUser, authLoading } = useAuth()
+  const { user: authUser, authLoading, authReady } = useAuth()
   
   const { notifications, loading: notificationsLoading, unreadCount, markAsRead } = useNotifications()
   
@@ -47,13 +47,20 @@ export default function Navbar() {
   const debounceTimer = useRef(null)
 
   useEffect(() => {
+    if (!authReady) {
+      return
+    }
+
     if (authUser) {
       fetchProfile(authUser.id)
+    } else {
+      setLoading(false)
     }
+
     // Close notification dropdown on mount (e.g., after refresh)
     setNotificationDropdownOpen(false)
     console.log('[Navbar] Component mounted - dropdown closed, fetching user profile')
-  }, [authUser])
+  }, [authReady, authUser])
 
   useEffect(() => {
     setAccountMenuOpen(false)

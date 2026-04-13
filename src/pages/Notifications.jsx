@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useNotifications } from "../hooks/useNotifications"
 import { useToast } from "../hooks/useToast"
+import { useAuth } from "../hooks/useAuth"
 import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { NotificationListSkeleton } from "../components/SkeletonLoader"
 import { supabase } from "../lib/supabase"
@@ -9,6 +10,7 @@ import { supabase } from "../lib/supabase"
 export function Notifications() {
   const navigate = useNavigate()
   const { addToast } = useToast()
+  const { user, authReady } = useAuth()
   const { markAsRead: hookMarkAsRead } = useNotifications()
 
   const [notifications, setNotifications] = useState([])
@@ -20,18 +22,18 @@ export function Notifications() {
   useRouteScrollRestoration("notifications")
 
   const fetchAllNotifications = useCallback(async () => {
+    if (!authReady) {
+      return
+    }
+
+    if (!user?.id) {
+      setLoading(false)
+      navigate("/login")
+      return
+    }
+
     try {
       setLoading(true)
-
-      const {
-        data: { user },
-        error: authError
-      } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        navigate("/login")
-        return
-      }
 
       const { data, error } = await supabase
         .from("notifications")
@@ -70,11 +72,15 @@ export function Notifications() {
     } finally {
       setLoading(false)
     }
-  }, [addToast, navigate])
+  }, [addToast, authReady, navigate, user?.id])
 
   useEffect(() => {
+    if (!authReady) {
+      return
+    }
+
     fetchAllNotifications()
-  }, [fetchAllNotifications])
+  }, [authReady, fetchAllNotifications])
 
   const handleMarkAllAsRead = useCallback(async () => {
     try {
@@ -167,19 +173,11 @@ export function Notifications() {
   }
 
   const handleInviteAction = async (notif, action) => {
-    if (!notif.workspace_id || !notif.actor_id) return
+    if (!notif.workspace_id || !notif.actor_id || !authReady || !user?.id) return
 
     setActionLoadingById((prev) => ({ ...prev, [notif.id]: action }))
 
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        console.error("[Notifications] Invite action auth error:", authError)
-        addToast("Authentication error", "error")
-        return
-      }
-
       const { data: invite, error: inviteFetchError } = await supabase
         .from("workspace_invites")
         .select("id, inviter_id")

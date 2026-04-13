@@ -13,6 +13,7 @@ import { fetchUserPublicWorkspaces } from "../lib/globalSearch"
 import VisibilityBadge from "../components/VisibilityBadge"
 import WorkspaceVisibilityBadge from "../components/WorkspaceVisibilityBadge"
 import { followUser, unfollowUser } from "../lib/followsLib"
+import { useAuth } from "../hooks/useAuth"
 
 const FollowersModal = lazy(() =>
   import("../components/FollowersModal").then((module) => ({ default: module.FollowersModal }))
@@ -24,6 +25,7 @@ const FollowingModal = lazy(() =>
 export default function Profile() {
   const navigate = useNavigate()
   const { username } = useParams()
+  const { user: authUser, authReady } = useAuth()
 
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -87,8 +89,12 @@ export default function Profile() {
   )
 
   useEffect(() => {
+    if (!authReady) {
+      return
+    }
+
     fetchUserAndProfile()
-  }, [username])
+  }, [username, authReady, authUser?.id])
 
   useEffect(() => {
     if (profile) {
@@ -127,14 +133,15 @@ export default function Profile() {
   }, [activePostMenuId])
 
   const fetchUserAndProfile = async () => {
+    if (!authReady) {
+      return
+    }
+
     try {
       setLoading(true)
 
-      // Get current authenticated user
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        console.error("[Profile] Auth error:", authError)
+      if (!authUser) {
+        console.error("[Profile] Auth error: missing authenticated user")
         setModalConfig({
           open: true,
           title: "Error",
@@ -147,13 +154,13 @@ export default function Profile() {
         return
       }
 
-      setUser(user)
-      console.log("[Profile] Fetched user:", user)
+      setUser(authUser)
+      console.log("[Profile] Fetched user:", authUser)
 
       const profileQuery = supabase.from("profiles").select("*")
       const { data: profileData, error: profileError } = username
         ? await profileQuery.eq("username", username).single()
-        : await profileQuery.eq("id", user.id).single()
+        : await profileQuery.eq("id", authUser.id).single()
 
       if (profileError && profileError.code !== "PGRST116") {
         // PGRST116 = no rows returned, which is fine for new users
@@ -194,9 +201,9 @@ export default function Profile() {
         const { data: newProfile, error: insertError } = await supabase
           .from("profiles")
           .insert({
-            id: user.id,
-            email: user.email,
-            name: user.email.split("@")[0] || "",
+            id: authUser.id,
+            email: authUser.email,
+            name: authUser.email.split("@")[0] || "",
             bio: "",
             avatar_url: null
           })
@@ -213,13 +220,13 @@ export default function Profile() {
           console.warn("[Profile] Could not create default profile:", insertError?.message)
           // Set basic profile structure anyway
           setProfile({
-            id: user.id,
-            email: user.email,
-            name: user.email.split("@")[0] || "",
+            id: authUser.id,
+            email: authUser.email,
+            name: authUser.email.split("@")[0] || "",
             bio: "",
             avatar_url: null
           })
-          setNameInput(user.email.split("@")[0] || "")
+          setNameInput(authUser.email.split("@")[0] || "")
           setBioInput("")
           // Posts will be fetched via useSmartFetchPosts hook automatically
         }

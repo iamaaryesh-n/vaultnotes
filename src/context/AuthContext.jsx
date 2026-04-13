@@ -7,34 +7,28 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [session, setSession] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [authReady, setAuthReady] = useState(false)
 
   useEffect(() => {
-    // Fetch session and user once on app load
+    // Fetch auth state once on app load (single Supabase auth read to avoid lock contention)
     const initializeAuth = async () => {
       try {
         console.log('[AuthContext] Initializing auth...')
-        
-        // Get session
+
+        // getSession already contains the user when a session exists.
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
         if (sessionError) {
           console.error('[AuthContext] Error getting session:', sessionError)
         } else {
           setSession(sessionData.session)
+          setUser(sessionData.session?.user || null)
           console.log('[AuthContext] Session loaded:', sessionData.session?.user?.email)
-        }
-
-        // Get user
-        const { data: userData, error: userError } = await supabase.auth.getUser()
-        if (userError) {
-          console.error('[AuthContext] Error getting user:', userError)
-        } else {
-          setUser(userData.user)
-          console.log('[AuthContext] User loaded:', userData.user?.email)
         }
       } catch (err) {
         console.error('[AuthContext] Error during auth initialization:', err)
       } finally {
         setAuthLoading(false)
+        setAuthReady(true)
       }
     }
 
@@ -46,6 +40,7 @@ export function AuthProvider({ children }) {
       setSession(newSession)
       setUser(newSession?.user || null)
       setAuthLoading(false)
+      setAuthReady(true)
     })
 
     return () => listener?.subscription?.unsubscribe()
@@ -68,6 +63,7 @@ export function AuthProvider({ children }) {
     user,
     session,
     authLoading,
+    authReady,
     logout,
     isAuthenticated: !!user
   }

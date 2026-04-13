@@ -31,7 +31,7 @@ export default function Chat() {
 
   const navigate = useNavigate()
   const { conversationId: routeConversationId, groupId: routeGroupId } = useParams()
-  const { user: contextUser } = useAuth()
+  const { user: contextUser, authReady } = useAuth()
   const { success: showSuccess, error: showToastError } = useToast()
   const cachedConversations = useChatStore((state) => state.conversations)
   const cachedCurrentChatId = useChatStore((state) => state.currentChatId)
@@ -48,7 +48,7 @@ export default function Chat() {
   const [activeConversationId, setActiveConversationId] = useState(cachedCurrentChatId || null)
   const [messages, setMessages] = useState([])
   const [profilesById, setProfilesById] = useState({})
-  const [draft, setDraft] = useState("")
+  const [hasDraft, setHasDraft] = useState(false)
   const [loadingConversations, setLoadingConversations] = useState((cachedConversations || []).length === 0)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
@@ -171,6 +171,14 @@ export default function Chat() {
   const directMessagesContainerRef = useRef(null)
   const directLongPressTimeoutRef = useRef(null)
   const groupLongPressTimeoutRef = useRef(null)
+  const draftValueRef = useRef("")
+  const directSwipeStateRef = useRef({
+    messageId: null,
+    startX: 0,
+    startY: 0,
+    triggered: false,
+    element: null,
+  })
   
   const requestedConversationId = routeConversationId || searchParams.get("conversation")
   const requestedTab = searchParams.get("tab")
@@ -1126,10 +1134,22 @@ export default function Chat() {
     [activeConversationId, contextUser?.id]
   )
 
+  const setDraftInputValue = useCallback((value) => {
+    const nextValue = typeof value === "string" ? value : ""
+    draftValueRef.current = nextValue
+    setHasDraft(Boolean(nextValue.trim()))
+
+    if (inputRef.current && inputRef.current.value !== nextValue) {
+      inputRef.current.value = nextValue
+    }
+  }, [])
+
   const handleDraftChange = useCallback((value) => {
-    setDraft(value)
+    draftValueRef.current = value
 
     const trimmed = value.trim()
+    const nextHasDraft = Boolean(trimmed)
+    setHasDraft((prev) => (prev === nextHasDraft ? prev : nextHasDraft))
 
     if (!activeConversationId || !contextUser?.id || !activeConversationChannelRef.current) {
       return
@@ -1449,7 +1469,70 @@ export default function Chat() {
         return
       }
 
-      const rawConversations = data || []
+      const allConversations = data || []
+      const allConversationIds = allConversations.map((conversation) => conversation.id).filter(Boolean)
+      const deletedConversationIds = new Set()
+      const nonDeletedPreferenceMap = {}
+
+      if (allConversationIds.length > 0) {
+        const [deletedPrefsResult, nonDeletedPrefsResult] = await Promise.all([
+          supabase
+            .from("conversation_preferences")
+            .select("conversation_id")
+            .eq("user_id", userId)
+            .is("group_id", null)
+            .eq("is_deleted", true)
+            .in("conversation_id", allConversationIds),
+          supabase
+            .from("conversation_preferences")
+            .select("conversation_id, is_archived, is_deleted")
+            .eq("user_id", userId)
+            .is("group_id", null)
+            .in("conversation_id", allConversationIds)
+            .or("is_deleted.is.null,is_deleted.eq.false")
+        ])
+
+        if (deletedPrefsResult.error) {
+          console.warn("[Chat] Failed to fetch deleted conversation preferences:", deletedPrefsResult.error)
+        } else {
+          ;(deletedPrefsResult.data || []).forEach((row) => {
+            if (row?.conversation_id) {
+              deletedConversationIds.add(row.conversation_id)
+            }
+          })
+        }
+
+        if (nonDeletedPrefsResult.error) {
+          console.warn("[Chat] Failed to fetch non-deleted conversation preferences:", nonDeletedPrefsResult.error)
+        } else {
+          ;(nonDeletedPrefsResult.data || []).forEach((row) => {
+            if (!row?.conversation_id) return
+            nonDeletedPreferenceMap[row.conversation_id] = {
+              is_archived: row.is_archived === true,
+              is_deleted: row.is_deleted === true
+            }
+          })
+        }
+
+        setConversationPreferencesById((prev) => {
+          const next = { ...prev }
+
+          deletedConversationIds.forEach((conversationId) => {
+            delete next[conversationId]
+          })
+
+          Object.entries(nonDeletedPreferenceMap).forEach(([conversationId, preference]) => {
+            next[conversationId] = preference
+          })
+
+          return next
+        })
+      }
+
+      // Filter deleted conversations BEFORE any hydration/state updates to avoid stale flash.
+      const rawConversations = allConversations.filter(
+        (conversation) => !deletedConversationIds.has(conversation.id)
+      )
 
       const conversationIds = rawConversations.map((conversation) => conversation.id)
       let latestMessageByConversationId = {}
@@ -1627,6 +1710,10 @@ export default function Chat() {
   }, [unreadCountsByConversation, setUnreadCountsCache])
 
   useEffect(() => {
+    if (!authReady) {
+      return
+    }
+
     if (!contextUser?.id) {
       setError("You need to sign in to use chat")
       setLoadingConversations(false)
@@ -1636,7 +1723,7 @@ export default function Chat() {
     }
 
     fetchConversations(contextUser.id, { silent: cachedConversations.length > 0 })
-  }, [contextUser?.id, fetchConversations, cachedConversations.length])
+  }, [authReady, contextUser?.id, fetchConversations, cachedConversations.length])
 
   useEffect(() => {
     setCurrentChatIdCache(activeConversationId)
@@ -2730,10 +2817,10 @@ export default function Chat() {
     setSelectedImageComposerUrl(URL.createObjectURL(processedFile))
     setImageCaption((prev) => {
       if (prev?.trim()) return prev
-      return draft.trim()
+      return draftValueRef.current.trim()
     })
-    if (draft.trim()) {
-      setDraft("")
+    if (draftValueRef.current.trim()) {
+      setDraftInputValue("")
     }
 
     requestAnimationFrame(() => {
@@ -2749,7 +2836,7 @@ export default function Chat() {
     setSelectedImageFile(null)
     setSelectedImageComposerUrl("")
     setImageCaption("")
-  }, [selectedImageComposerUrl])
+  }, [selectedImageComposerUrl, setDraftInputValue])
 
   useEffect(() => {
     return () => {
@@ -3085,6 +3172,72 @@ export default function Chat() {
     }, 0)
   }, [])
 
+  const handleDirectMessageSwipeStart = useCallback((event, message) => {
+    if (!isMobileView || !message?.id || message.is_deleted || event.touches?.length !== 1) {
+      return
+    }
+
+    const touch = event.touches[0]
+    directSwipeStateRef.current = {
+      messageId: message.id,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      triggered: false,
+      element: event.currentTarget,
+    }
+  }, [isMobileView])
+
+  const handleDirectMessageSwipeMove = useCallback((event, message) => {
+    const state = directSwipeStateRef.current
+    if (!isMobileView || !state?.element || !message?.id || state.messageId !== message.id || event.touches?.length !== 1) {
+      return
+    }
+
+    const touch = event.touches[0]
+    const deltaX = touch.clientX - state.startX
+    const deltaY = touch.clientY - state.startY
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+
+    if (absY > absX) {
+      return
+    }
+
+    cancelDirectMessageLongPress()
+
+    if (event.cancelable) {
+      event.preventDefault()
+    }
+
+    const clamped = Math.max(-72, Math.min(72, deltaX))
+    state.element.style.transition = "none"
+    state.element.style.transform = `translateX(${clamped}px)`
+
+    if (absX >= 56 && !state.triggered) {
+      state.triggered = true
+      handleReply(message)
+      if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        navigator.vibrate(10)
+      }
+    }
+  }, [cancelDirectMessageLongPress, handleReply, isMobileView])
+
+  const handleDirectMessageSwipeEnd = useCallback(() => {
+    const state = directSwipeStateRef.current
+    if (state?.element) {
+      state.element.style.transition = "transform 180ms ease-out"
+      state.element.style.transform = "translateX(0px)"
+    }
+
+    directSwipeStateRef.current = {
+      messageId: null,
+      startX: 0,
+      startY: 0,
+      triggered: false,
+      element: null,
+    }
+  }, [])
+
   const handleStartEditingMessage = useCallback((message) => {
     if (!message?.id || message.is_deleted) {
       return
@@ -3093,12 +3246,12 @@ export default function Chat() {
     setReplyToMessage(null)
     setActiveMessageMenuId(null)
     setEditingMessage(message)
-    setDraft(message.content || "")
+    setDraftInputValue(message.content || "")
 
     requestAnimationFrame(() => {
       inputRef.current?.focus()
     })
-  }, [])
+  }, [setDraftInputValue])
 
   const openForwardModal = useCallback((message) => {
     if (!message?.id || message.is_deleted) {
@@ -3343,7 +3496,7 @@ export default function Chat() {
 
       if (editingMessage?.id === message.id) {
         setEditingMessage(null)
-        setDraft("")
+        setDraftInputValue("")
       }
 
       if (replyToMessage?.id === message.id) {
@@ -3380,7 +3533,7 @@ export default function Chat() {
         }
       }
     },
-    [contextUser?.id, editingMessage?.id, replyToMessage?.id, showSuccess]
+    [contextUser?.id, editingMessage?.id, replyToMessage?.id, setDraftInputValue, showSuccess]
   )
 
   const handleRemoveReaction = async (messageId, emoji, userId, reactionId = null) => {
@@ -3431,18 +3584,14 @@ export default function Chat() {
     }
   }
 
-  const handleSendMessage = async () => {
-    const content = draft.trim()
+  const handleSendMessage = useCallback(async () => {
+    const content = draftValueRef.current.trim()
 
     if (!activeConversationId || !contextUser?.id || sending) {
       return
     }
 
-    if (editingMessage && !content) {
-      return
-    }
-
-    if (!editingMessage && !content) {
+    if (!content) {
       return
     }
 
@@ -3453,16 +3602,12 @@ export default function Chat() {
 
       if (editingMessage?.id) {
         const editedAt = new Date().toISOString()
-
-        // Get encryption key for this conversation
         const cryptoKey = await getOrCreateConversationKey(activeConversationId)
         if (!cryptoKey) {
-          console.error("[Chat] Failed to get encryption key for editing message")
           setError("Failed to encrypt message")
           return
         }
 
-        // Encrypt the edited content
         let encryptedData = null
         try {
           encryptedData = await encrypt(content, cryptoKey)
@@ -3477,7 +3622,7 @@ export default function Chat() {
           .update({
             encrypted_content: encryptedData.ciphertext,
             iv: encryptedData.iv,
-            edited_at: editedAt
+            edited_at: editedAt,
           })
           .eq("id", editingMessage.id)
           .eq("sender_id", contextUser.id)
@@ -3489,7 +3634,6 @@ export default function Chat() {
           return
         }
 
-        // Sender sees immediate edited state while receiver gets it via realtime UPDATE.
         setMessages((prev) =>
           prev.map((message) =>
             message.id === editingMessage.id
@@ -3498,17 +3642,16 @@ export default function Chat() {
                   content,
                   encrypted_content: encryptedData.ciphertext,
                   iv: encryptedData.iv,
-                  edited_at: editedAt
+                  edited_at: editedAt,
                 }
               : message
           )
         )
 
-        setDraft("")
+        setDraftInputValue("")
         setEditingMessage(null)
         requestAnimationFrame(() => {
           inputRef.current?.focus()
-          console.log("[Chat] activeElement after send:", document.activeElement)
         })
         bottomRef.current?.scrollIntoView({ behavior: "smooth" })
         return
@@ -3523,15 +3666,12 @@ export default function Chat() {
         return
       }
 
-      // Get encryption key for this conversation
       const cryptoKey = await getOrCreateConversationKey(activeConversationId)
       if (!cryptoKey) {
-        console.error("[Chat] Failed to get encryption key for sending message")
         setError("Failed to encrypt message")
         return
       }
 
-      // Encrypt the content
       let encryptedData = null
       try {
         encryptedData = await encrypt(content, cryptoKey)
@@ -3541,95 +3681,132 @@ export default function Chat() {
         return
       }
 
-      const { data: insertedData, error: insertError } = await supabase.from("messages").insert([
-        {
-          conversation_id: activeConversationId,
-          sender_id: contextUser.id,
-          receiver_id: receiverId,
-          encrypted_content: encryptedData.ciphertext,
-          iv: encryptedData.iv,
-          type: "text",
-          media_url: null,
-          reply_to_id: replyToMessage?.id || null,
-          delivery_status: 'sent'
-        }
-      ]).select()
-
-      if (insertError) {
-        console.error("[Chat] Failed to send message:", insertError)
-        setError("Failed to send message")
-        return
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const optimisticCreatedAt = new Date().toISOString()
+      const replyReference = replyToMessage
+      const optimisticMessage = {
+        id: tempId,
+        conversation_id: activeConversationId,
+        sender_id: contextUser.id,
+        receiver_id: receiverId,
+        content,
+        encrypted_content: encryptedData.ciphertext,
+        iv: encryptedData.iv,
+        type: "text",
+        media_url: null,
+        reply_to_id: replyReference?.id || null,
+        delivery_status: "sending",
+        created_at: optimisticCreatedAt,
+        is_read: false,
+        reactions: [],
       }
 
-      const resolvedConversationId = insertedData?.[0]?.conversation_id || activeConversation?.id || activeConversationId
-
-      await dispatchPushNotification({
-        recipientId: receiverId,
-        actorId: contextUser.id,
-        title: senderDisplayName,
-        body: content,
-        route: `/chat/direct/${resolvedConversationId}`,
-        data: {
-          type: "message",
-          senderName: senderDisplayName,
-          messageText: content,
-          conversation_id: resolvedConversationId,
-          notification_id: insertedData?.[0]?.id || null,
-          recipient_id: receiverId,
-          receiver_id: receiverId,
-          markReadEndpoint: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mark-chat-read`,
-          sender_id: contextUser.id,
-        },
+      setMessages((prev) => [...prev, optimisticMessage])
+      setConversations((prev) => {
+        const updated = prev.map((conversation) =>
+          conversation.id === activeConversationId
+            ? {
+                ...conversation,
+                last_message_content: `You: ${content}`,
+                last_message_type: "text",
+                last_message_sender_id: contextUser.id,
+                last_message_is_read: false,
+                last_message_at: optimisticCreatedAt,
+              }
+            : conversation
+        )
+        return sortConversationsByPriority(updated)
       })
 
-      // Optimistically add the message to the state immediately
-      if (insertedData && insertedData.length > 0) {
-        const sentMessage = {
-          ...insertedData[0],
-          content: content, // Store decrypted content
-          type: "text"
-        }
-
-        setMessages((prev) => {
-          // Check if message already exists to avoid duplicates
-          if (prev.some((item) => item.id === sentMessage.id)) {
-            return prev
-          }
-          return [...prev, sentMessage]
-        })
-
-        // Update conversation list with new message preview
-        setConversations((prev) => {
-          const updated = prev.map((conversation) =>
-            conversation.id === activeConversationId
-              ? {
-                  ...conversation,
-                      last_message_content: `You: ${content}`,
-                  last_message_type: "text",
-                  last_message_sender_id: contextUser.id,
-                  last_message_is_read: false,
-                  last_message_at: sentMessage.created_at || new Date().toISOString()
-                }
-              : conversation
-          )
-          return sortConversationsByPriority(updated)
-        })
-      }
-
-      setDraft("")
+      setDraftInputValue("")
       setReplyToMessage(null)
       requestAnimationFrame(() => {
         inputRef.current?.focus()
-        console.log("[Chat] activeElement after send:", document.activeElement)
       })
       bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+
+      void (async () => {
+        const { data: insertedData, error: insertError } = await supabase
+          .from("messages")
+          .insert([
+            {
+              conversation_id: activeConversationId,
+              sender_id: contextUser.id,
+              receiver_id: receiverId,
+              encrypted_content: encryptedData.ciphertext,
+              iv: encryptedData.iv,
+              type: "text",
+              media_url: null,
+              reply_to_id: replyReference?.id || null,
+              delivery_status: "sent",
+            },
+          ])
+          .select()
+
+        if (insertError) {
+          console.error("[Chat] Failed to send message:", insertError)
+          setMessages((prev) => prev.filter((item) => item.id !== tempId))
+          setError("Failed to send message")
+          return
+        }
+
+        const sentMessage = insertedData?.[0]
+        if (sentMessage) {
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === tempId
+                ? {
+                    ...sentMessage,
+                    content,
+                    type: "text",
+                    reactions: item.reactions || [],
+                  }
+                : item
+            )
+          )
+        }
+
+        const resolvedConversationId = sentMessage?.conversation_id || activeConversation?.id || activeConversationId
+
+        await dispatchPushNotification({
+          recipientId: receiverId,
+          actorId: contextUser.id,
+          title: senderDisplayName,
+          body: content,
+          route: `/chat/direct/${resolvedConversationId}`,
+          data: {
+            type: "message",
+            senderName: senderDisplayName,
+            messageText: content,
+            conversation_id: resolvedConversationId,
+            notification_id: sentMessage?.id || null,
+            recipient_id: receiverId,
+            receiver_id: receiverId,
+            markReadEndpoint: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mark-chat-read`,
+            sender_id: contextUser.id,
+          },
+        })
+      })()
     } catch (err) {
       console.error("[Chat] Send exception:", err)
       setError("Failed to send message")
     } finally {
       setSending(false)
     }
-  }
+  }, [
+    activeConversation,
+    activeConversationId,
+    contextUser?.id,
+    dispatchPushNotification,
+    editingMessage?.id,
+    getOrCreateConversationKey,
+    replyToMessage,
+    senderDisplayName,
+    sending,
+    setDraftInputValue,
+    sortConversationsByPriority,
+    stopTyping,
+  ])
 
   useEffect(() => {
     if (!activeConversationId || !contextUser?.id) {
@@ -3900,30 +4077,20 @@ export default function Chat() {
 
   // Validate group membership for RLS policy compliance
   const validateGroupMembership = useCallback(async (groupId) => {
-    if (!groupId) return false
+    if (!groupId || !contextUser?.id) return false
 
     try {
-      // Use actual Supabase auth user ID (not contextUser)
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser()
-      
-      if (authError || !authUser?.id) {
-        console.warn('[GroupChat] [RLS-FIX] Failed to get authenticated user in validateGroupMembership:', {
-          error: authError?.message
-        })
-        return false
-      }
-
       const { data, error } = await supabase
         .from('group_members')
         .select('id')
         .eq('group_id', groupId)
-        .eq('user_id', authUser.id)
+        .eq('user_id', contextUser.id)
         .limit(1)
 
       if (error) {
         console.warn('[GroupChat] [RLS-FIX] Error checking group membership:', {
           groupId,
-          authUserId: authUser.id,
+          authUserId: contextUser.id,
           error: error.message
         })
         return false
@@ -3932,7 +4099,7 @@ export default function Chat() {
       const isMember = (data && data.length > 0)
       console.log('[GroupChat] [RLS-FIX] Group membership validation:', {
         groupId,
-        authUserId: authUser.id,
+        authUserId: contextUser.id,
         is_member: isMember,
         rls_requirement: 'User must be in group_members for auth.uid() to pass nested EXISTS check'
       })
@@ -3941,7 +4108,7 @@ export default function Chat() {
       console.warn('[GroupChat] [RLS-FIX] Exception validating group membership:', err)
       return false
     }
-  }, [])
+  }, [contextUser?.id])
 
   const fetchGroupMessageReads = useCallback(async (messageIds) => {
     if (!messageIds || messageIds.length === 0) return
@@ -4546,14 +4713,12 @@ export default function Chat() {
     setCreatingGroup(true)
 
     try {
-      // Always get fresh user from Supabase auth
-      const { data: authData, error: authError } = await supabase.auth.getUser()
-      if (authError || !authData?.user) {
+      if (!authReady || !contextUser?.id) {
         showToastError('Authentication error. Please refresh and try again.')
         setCreatingGroup(false)
         return
       }
-      const userId = authData.user.id
+      const userId = contextUser.id
       console.log('[GroupChat] Creating group as user:', userId)
 
       // Generate encryption key
@@ -5094,15 +5259,20 @@ export default function Chat() {
   // Handle click outside of direct message menus to close them
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (directMessagesContainerRef.current && !directMessagesContainerRef.current.contains(event.target)) {
-        setActiveReactionPickerMessageId(null)
-        setActiveMessageMenuId(null)
-      }
+      const interactiveNode = event.target?.closest?.("[data-direct-message-interactive='true']")
+      if (interactiveNode) return
+
+      setActiveReactionPickerMessageId(null)
+      setActiveMessageMenuId(null)
     }
 
     if (activeReactionPickerMessageId || activeMessageMenuId) {
       document.addEventListener("mousedown", handleClickOutside)
-      return () => document.removeEventListener("mousedown", handleClickOutside)
+      document.addEventListener("touchstart", handleClickOutside)
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside)
+        document.removeEventListener("touchstart", handleClickOutside)
+      }
     }
   }, [activeReactionPickerMessageId, activeMessageMenuId])
 
@@ -5906,6 +6076,7 @@ export default function Chat() {
                       )}
                       <div
                         id={`message-${message.id}`}
+                        data-direct-message-interactive="true"
                         className={`relative w-fit cursor-pointer ${
                           isMatchedMessage
                             ? isActiveMatchedMessage
@@ -5915,16 +6086,30 @@ export default function Chat() {
                         }`}
                         onClick={() => {
                           if (isMobileView) {
+                            setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                            setActiveReactionPickerMessageId(null)
                             return
                           }
 
                           setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
                           setActiveMessageMenuId(null)
                         }}
-                        onTouchStart={() => startDirectMessageLongPress(message.id)}
-                        onTouchEnd={cancelDirectMessageLongPress}
-                        onTouchCancel={cancelDirectMessageLongPress}
-                        onTouchMove={cancelDirectMessageLongPress}
+                        onTouchStart={(event) => {
+                          startDirectMessageLongPress(message.id)
+                          handleDirectMessageSwipeStart(event, message)
+                        }}
+                        onTouchMove={(event) => {
+                          handleDirectMessageSwipeMove(event, message)
+                        }}
+                        onTouchEnd={() => {
+                          cancelDirectMessageLongPress()
+                          handleDirectMessageSwipeEnd()
+                        }}
+                        onTouchCancel={() => {
+                          cancelDirectMessageLongPress()
+                          handleDirectMessageSwipeEnd()
+                        }}
+                        style={{ willChange: "transform" }}
                         onContextMenu={(event) => {
                           event.preventDefault()
                           if (isMobileView) {
@@ -5982,6 +6167,7 @@ export default function Chat() {
 
                         {isMessageMenuOpen && canShowActionTrigger && (
                           <div
+                            data-direct-message-interactive="true"
                             className={`absolute z-40 top-full mt-2 ${mine ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)]/95 p-1.5 text-[var(--chat-text)] shadow-2xl backdrop-blur transition-all duration-150`}
                             onClick={(event) => event.stopPropagation()}
                           >
@@ -6083,7 +6269,7 @@ export default function Chat() {
                         )}
 
                         {isReactionPickerOpen && (
-                          <div className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2 py-1 shadow-md`}>
+                          <div data-direct-message-interactive="true" className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2 py-1 shadow-md`}>
                             {REACTION_EMOJIS.map((emoji) => (
                               <button
                                 key={emoji}
@@ -6272,7 +6458,7 @@ export default function Chat() {
                   type="button"
                   onClick={() => {
                     setEditingMessage(null)
-                    setDraft("")
+                    setDraftInputValue("")
                     requestAnimationFrame(() => {
                       inputRef.current?.focus()
                     })
@@ -6347,7 +6533,6 @@ export default function Chat() {
               </button>
               <input
                 ref={inputRef}
-                value={draft}
                 onChange={(event) => handleDraftChange(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
@@ -6369,7 +6554,7 @@ export default function Chat() {
               />
               <button
                 onClick={handleSendMessage}
-                disabled={!activeConversation || sending || uploadingImage || !draft.trim() || Boolean(selectedImageFile)}
+                disabled={!activeConversation || sending || uploadingImage || !hasDraft || Boolean(selectedImageFile)}
                 className="h-[42px] w-[42px] rounded-full bg-[var(--chat-accent)] font-['DM_Sans'] text-xs font-semibold text-[var(--chat-surface)] transition hover:bg-[var(--chat-accent-hover)] disabled:cursor-not-allowed disabled:bg-[var(--chat-border-strong)] disabled:text-[var(--chat-text-muted)]"
               >
                 {sending ? "Sending..." : "Send"}

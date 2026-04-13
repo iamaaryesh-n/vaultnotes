@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "framer-motion"
 export default function BottomNavigation() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user } = useAuth()
+  const { user, authReady } = useAuth()
   const [profile, setProfile] = useState(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
@@ -17,12 +17,19 @@ export default function BottomNavigation() {
   const unreadChatCount = unreadDirectCount + unreadGroupCount
 
   useEffect(() => {
+    if (!authReady) {
+      return
+    }
+
     if (user?.id) {
       setCurrentUserId(user.id)
       setAvatarLoadFailed(false)
       fetchProfile(user.id)
+    } else {
+      setCurrentUserId(null)
+      setProfile(null)
     }
-  }, [user?.id])
+  }, [authReady, user?.id])
 
   const fetchProfile = async (userId) => {
     if (!userId) return
