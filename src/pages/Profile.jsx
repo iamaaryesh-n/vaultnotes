@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import Modal from "../components/Modal"
 import PostInteractions from "../components/PostInteractions"
+import PostContent from "../components/PostContent"
 import { useSmartFetchPosts } from "../hooks/useSmartFetchPosts"
 import { usePostsRealtime } from "../hooks/usePostsRealtime"
 import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
@@ -21,6 +22,75 @@ const FollowersModal = lazy(() =>
 const FollowingModal = lazy(() =>
   import("../components/FollowingModal").then((module) => ({ default: module.FollowingModal }))
 )
+
+function SkeletonBlock({ className = "" }) {
+  return <div className={`profile-skeleton-shimmer ${className}`} />
+}
+
+function ProfilePageSkeleton() {
+  return (
+    <div className="-mt-[64px] min-h-screen bg-[var(--profile-bg)]">
+      <div className="mx-auto w-full max-w-4xl px-4 pb-8 pt-3 text-[var(--profile-text)] md:px-6 lg:max-w-3xl">
+        <div className="mb-8 overflow-hidden rounded-3xl border border-[var(--profile-border)] bg-[var(--profile-surface)] shadow-[0_20px_50px_-30px_rgba(0,0,0,0.7)]">
+          <SkeletonBlock className="h-[clamp(188px,48vw,228px)] rounded-t-3xl md:h-[320px]" />
+          <div className="border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-4 sm:px-5">
+            <div className="mb-5 flex flex-col items-start gap-3.5 md:mb-6 md:flex-row md:items-end md:justify-between">
+              <div className="flex w-full items-end gap-[clamp(12px,3.8vw,20px)]">
+                <SkeletonBlock className="-mt-[clamp(28px,8.5vw,42px)] h-[clamp(96px,24vw,120px)] w-[clamp(96px,24vw,120px)] shrink-0 rounded-full border-[3px] border-[var(--profile-bg)] md:h-[144px] md:w-[144px]" />
+                <div className="min-w-0 flex-1 pb-1">
+                  <SkeletonBlock className="mb-3 h-8 w-[min(72%,280px)] rounded-[10px]" />
+                  <SkeletonBlock className="mb-4 h-4 w-36 rounded-full" />
+                  <SkeletonBlock className="h-4 w-[min(80%,340px)] rounded-full" />
+                </div>
+              </div>
+              <SkeletonBlock className="h-10 w-full rounded-[10px] md:w-28" />
+            </div>
+            <div className="mt-4 grid grid-cols-5 overflow-hidden rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-surface)]">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="border-r border-[var(--profile-border)] px-3 py-3 last:border-r-0">
+                  <SkeletonBlock className="mx-auto mb-2 h-5 w-8 rounded-full" />
+                  <SkeletonBlock className="mx-auto h-3 w-12 rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-6 flex gap-1 border-b border-[var(--profile-border)] px-5">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <SkeletonBlock key={index} className="h-10 w-20 rounded-t-[10px]" />
+          ))}
+        </div>
+
+        <ProfilePostsSkeleton />
+      </div>
+    </div>
+  )
+}
+
+function ProfilePostsSkeleton() {
+  return (
+    <div className="space-y-3 py-4">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4">
+          <div className="mb-4 flex items-center gap-3">
+            <SkeletonBlock className="h-10 w-10 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <SkeletonBlock className="mb-2 h-4 w-32 rounded-full" />
+              <SkeletonBlock className="h-3 w-24 rounded-full" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <SkeletonBlock className="h-4 w-full rounded-full" />
+            <SkeletonBlock className="h-4 w-5/6 rounded-full" />
+            <SkeletonBlock className="h-4 w-3/5 rounded-full" />
+          </div>
+          <SkeletonBlock className="mt-4 h-40 rounded-[10px]" />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function Profile() {
   const navigate = useNavigate()
@@ -880,25 +950,7 @@ export default function Profile() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[var(--profile-bg)]">
-        <div className="mx-auto w-full max-w-4xl px-4 py-12 text-[var(--profile-text)] md:px-6">
-        <div className="animate-pulse space-y-6">
-          <div className="text-center space-y-4">
-            <div className="mx-auto h-32 w-32 rounded-full bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-            <div className="mx-auto h-8 w-3/4 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-            <div className="mx-auto h-4 w-1/2 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-          </div>
-          <div className="h-10 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-          <div className="space-y-4">
-            {Array(3).fill(0).map((_, i) => (
-              <div key={i} className="h-24 rounded-[8px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }}></div>
-            ))}
-          </div>
-        </div>
-        </div>
-      </div>
-    )
+    return <ProfilePageSkeleton />
   }
 
   if (!user || !profile) {
@@ -1075,22 +1127,7 @@ export default function Profile() {
             transition={{ duration: 0.2 }}
           >
             {postsLoading ? (
-              <div className="space-y-3 py-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 animate-pulse">
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                      <div className="flex-1">
-                        <div className="mb-1 h-4 w-32 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                        <div className="h-3 w-24 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                      </div>
-                    </div>
-                    <div className="mb-2 h-4 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                    <div className="mb-2 h-4 w-5/6 rounded bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                    <div className="h-40 rounded-[10px] bg-[var(--profile-elev)]" style={{ background: "linear-gradient(90deg, var(--profile-elev) 25%, var(--profile-hover) 50%, var(--profile-elev) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
-                  </div>
-                ))}
-              </div>
+              <ProfilePostsSkeleton />
             ) : posts.length === 0 ? (
               <div className="my-4 rounded-[14px] border border-dashed border-[var(--profile-border-strong)] bg-transparent p-10 text-center">
                 <svg className="mx-auto mb-2 h-12 w-12 text-[var(--profile-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1203,9 +1240,10 @@ export default function Profile() {
                       </div>
                     ) : (
                       (postContentOverrides[post.id] || post.content) && (
-                        <p className="mb-3 whitespace-pre-wrap text-[14px] leading-relaxed text-[var(--profile-text)]">
-                          {postContentOverrides[post.id] || post.content}
-                        </p>
+                        <PostContent
+                          content={postContentOverrides[post.id] || post.content}
+                          className="mb-3 text-[14px] leading-relaxed text-[var(--profile-text)]"
+                        />
                       )
                     )}
 

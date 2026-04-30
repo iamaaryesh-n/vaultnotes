@@ -10,6 +10,42 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="VaultNotes" />
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        background-color: #0a0a0a;
+        color-scheme: dark;
+      }
+    </style>
+    <script>
+      (function () {
+        try {
+          var themeKey = "theme";
+          var legacyThemeKey = "vaultnotes-theme";
+          var storedTheme = localStorage.getItem(themeKey) || localStorage.getItem(legacyThemeKey) || "system";
+          var validThemes = ["light", "dark", "system"];
+          if (validThemes.indexOf(storedTheme) === -1) {
+            storedTheme = "system";
+          }
+
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolvedTheme = storedTheme === "system" ? (prefersDark ? "dark" : "light") : storedTheme;
+          var root = document.documentElement;
+
+          root.classList.toggle("dark", resolvedTheme === "dark");
+          root.setAttribute("data-theme", storedTheme);
+          root.setAttribute("data-resolved-theme", resolvedTheme);
+          root.style.colorScheme = resolvedTheme;
+          root.style.backgroundColor = resolvedTheme === "dark" ? "#0a0a0a" : "#f8fafc";
+        } catch (error) {
+          document.documentElement.classList.add("dark");
+          document.documentElement.setAttribute("data-theme", "system");
+          document.documentElement.setAttribute("data-resolved-theme", "dark");
+        }
+      })();
+    </script>
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <title>VaultNotes</title>

@@ -1,9 +1,12 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { lazy, Suspense, useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import VisibilitySelector from './VisibilitySelector'
 import VisibilityBadge from './VisibilityBadge'
 import { useToast } from '../hooks/useToast'
 import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from '../lib/imageCompression'
+import { sanitizePostHtml } from '../utils/postContent'
+
+const RichPostEditor = lazy(() => import('./RichPostEditor'))
  
 // ─── Image Cropper ────────────────────────────────────────────────────────────
 // Pure canvas-based cropper with selectable target ratios.
@@ -321,6 +324,7 @@ function ImageCropper({ src, onConfirm, onCancel }) {
 export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }) {
   const { addToast } = useToast()
   const [postContent, setPostContent] = useState('')
+  const [postText, setPostText] = useState('')
   const [postImageFile, setPostImageFile] = useState(null)   // final cropped file
   const [cropSrc, setCropSrc] = useState(null)               // raw data-URL for cropper
   const [previewUrl, setPreviewUrl] = useState(null)         // preview of cropped result
@@ -376,6 +380,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
   const handleClose = () => {
     if (posting) return
     setPostContent('')
+    setPostText('')
     setPostImageFile(null)
     setCropSrc(null)
     setPreviewCropRatio(DEFAULT_CROP_RATIO)
@@ -387,8 +392,9 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
   if (!isOpen || !user) return null
  
   const handleCreatePost = async () => {
-    const trimmedContent = postContent.trim()
-    if (!trimmedContent && !postImageFile) {
+    const sanitizedContent = sanitizePostHtml(postContent).trim()
+    const trimmedText = postText.trim()
+    if (!trimmedText && !postImageFile) {
       setModalConfig({
         open: true, title: 'Error',
         message: 'Add text content or an image before posting.',
@@ -400,6 +406,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
     setPosting(true)
     try {
       let uploadedImageUrl = null
+      const contentForInsert = trimmedText ? sanitizedContent : null
  
       if (postImageFile) {
         const ext = 'jpg' // always jpeg from canvas
@@ -424,7 +431,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
  
       const { data, error } = await supabase
         .from('posts')
-        .insert([{ user_id: user.id, content: trimmedContent || null, visibility, image_url: uploadedImageUrl || null }])
+        .insert([{ user_id: user.id, content: contentForInsert, visibility, image_url: uploadedImageUrl || null }])
         .select()
  
       if (error) {
@@ -441,6 +448,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
       if (onPostCreated) onPostCreated(insertedPost)
  
       setPostContent('')
+      setPostText('')
       setPostImageFile(null)
       setPreviewCropRatio(DEFAULT_CROP_RATIO)
       if (previewUrl) { URL.revokeObjectURL(previewUrl); setPreviewUrl(null) }
@@ -482,13 +490,22 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
             ) : (
               <>
                 {/* Text */}
-                <textarea
-                  value={postContent}
-                  onChange={(e) => setPostContent(e.target.value)}
-                  rows={4}
-                  placeholder="What's on your mind?"
-                  className="w-full resize-none rounded-lg border border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-4 py-3 text-[var(--overlay-text)] placeholder:text-[var(--overlay-text-muted)] focus:border-[#F4B400] focus:outline-none focus:ring-2 focus:ring-[rgba(244,180,0,0.25)]"
-                />
+                <Suspense
+                  fallback={
+                    <div className="min-h-[150px] rounded-[12px] border border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-4 py-3 text-sm text-[var(--overlay-text-muted)]">
+                      Loading editor...
+                    </div>
+                  }
+                >
+                  <RichPostEditor
+                    value={postContent}
+                    onChange={({ html, text }) => {
+                      setPostContent(html)
+                      setPostText(text)
+                    }}
+                    placeholder="Write your shayari..."
+                  />
+                </Suspense>
  
                 {/* Image picker / preview */}
                 <div>
@@ -586,7 +603,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
               </button>
               <button
                 onClick={handleCreatePost}
-                disabled={posting || (!postContent.trim() && !postImageFile)}
+                disabled={posting || (!postText.trim() && !postImageFile)}
                 className="rounded-lg bg-[#F4B400] px-4 py-2 font-semibold text-[#1a1612] hover:bg-[#C49000] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {posting ? 'Posting…' : 'Post'}

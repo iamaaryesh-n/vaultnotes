@@ -1,4 +1,5 @@
 import { supabase } from "./supabase"
+import { getPostPlainText } from "../utils/postContent"
 
 /**
  * Global unified search across profiles, posts, workspaces, and memories
@@ -104,17 +105,21 @@ async function searchPosts(searchTerm) {
       return []
     }
 
-    return (data || []).map(post => ({
+    return (data || []).map(post => {
+      const title = getPostPlainText(post.content || "")
+
+      return ({
       id: post.id,
       type: "post",
-      title: post.content ? (post.content.substring(0, 60) + (post.content.length > 60 ? "..." : "")) : "Image post",
+      title: title ? (title.substring(0, 60) + (title.length > 60 ? "..." : "")) : "Image post",
       subtitle: `by @${post.profiles?.username || "unknown"}`,
       avatar_url: post.profiles?.avatar_url,
       image_url: post.image_url,
       created_at: post.created_at,
       navigationPath: null, // Will be handled by opening modal in Explore
       postId: post.id
-    }))
+      })
+    })
   } catch (err) {
     console.error("[GlobalSearch] Post search exception:", err)
     return []

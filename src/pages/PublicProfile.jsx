@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase"
 import { useNavigate, useParams } from "react-router-dom"
 import Modal from "../components/Modal"
 import PostInteractions from "../components/PostInteractions"
+import PostContent from "../components/PostContent"
 import { useSmartFetchPosts } from "../hooks/useSmartFetchPosts"
 import { PostListSkeleton } from "../components/PostSkeleton"
 import { usePostsRealtime } from "../hooks/usePostsRealtime"
@@ -649,7 +650,7 @@ export default function PublicProfile() {
                 </div>
 
                 {post.content && (
-                  <p className="text-gray-800 whitespace-pre-wrap leading-relaxed mb-3">{post.content}</p>
+                  <PostContent content={post.content} className="mb-3 text-gray-800 leading-relaxed dark:text-white" />
                 )}
 
                 {post.image_url && (

@@ -74,6 +74,25 @@ function VaultsRouteFallback() {
   )
 }
 
+function AppLoadingFallback({ label = "Loading VaultNotes..." }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-6 text-[#f5f0e8]">
+      <div className="text-center">
+        <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[rgba(244,180,0,0.24)] bg-[rgba(244,180,0,0.08)] shadow-[0_0_36px_rgba(244,180,0,0.12)]">
+          <img
+            src={vaultNotesLogoMark}
+            alt="VaultNotes logo"
+            className="h-10 w-10 object-contain"
+          />
+          <span className="absolute inset-0 rounded-[18px] border border-[rgba(244,180,0,0.12)] animate-pulse" />
+        </div>
+        <p className="font-['Sora'] text-sm font-semibold text-[#f4b400]">VaultNotes</p>
+        <p className="mt-2 font-['DM_Sans'] text-xs text-[#a09080]">{label}</p>
+      </div>
+    </div>
+  )
+}
+
 function AppShell({ user, createPostOpen, setCreatePostOpen }) {
   const location = useLocation()
   const [postDetailFocusMode, setPostDetailFocusMode] = useState(false)
@@ -216,27 +235,7 @@ function AppContent() {
   }, [])
 
   if (authLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900 fade-in dark:from-slate-950 dark:to-slate-900 dark:text-[var(--profile-text)]">
-        <div style={{ maxWidth: "900px" }} className="mx-auto px-6 py-12">
-          <img
-            src={vaultNotesLogoMark}
-            alt="VaultNotes logo"
-            className="mb-2 h-12 w-12 object-contain"
-          />
-          <h1 className="text-4xl text-yellow-500 font-bold mb-2">My Vaults</h1>
-          <p className="text-slate-600 mb-8">Loading your vaults...</p>
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="card p-4 animate-pulse">
-                <div className="h-6 bg-slate-200 rounded mb-2 w-1/3"></div>
-                <div className="h-4 bg-slate-200 rounded w-1/4"></div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
+    return <AppLoadingFallback label="Preparing your vaults..." />
   }
 
   return (
@@ -255,7 +254,7 @@ function AppContent() {
           path="/explore"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Suspense fallback={<AppLoadingFallback />}>
                 <Explore />
               </Suspense>
             </ErrorBoundary>
@@ -275,7 +274,7 @@ function AppContent() {
           path="/profile"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Suspense fallback={<AppLoadingFallback />}>
                 <Profile />
               </Suspense>
             </ErrorBoundary>
@@ -286,7 +285,7 @@ function AppContent() {
           path="/profile/:username"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Suspense fallback={<AppLoadingFallback />}>
                 <Profile />
               </Suspense>
             </ErrorBoundary>
@@ -297,7 +296,7 @@ function AppContent() {
           path="/settings"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Suspense fallback={<AppLoadingFallback />}>
                 <Settings />
               </Suspense>
             </ErrorBoundary>
@@ -361,7 +360,7 @@ function AppContent() {
           path="/workspace/:id"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+              <Suspense fallback={<AppLoadingFallback />}>
                 <WorkspaceDetail />
               </Suspense>
             </ErrorBoundary>
@@ -371,7 +370,7 @@ function AppContent() {
         <Route
           path="/workspace-preview/:id"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<AppLoadingFallback />}>
               <PublicWorkspaceLanding />
             </Suspense>
           }
@@ -382,7 +381,7 @@ function AppContent() {
         <Route
           path="/workspace/:id/new"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<AppLoadingFallback />}>
               <MemoryEditor />
             </Suspense>
           }
@@ -391,7 +390,7 @@ function AppContent() {
         <Route
           path="/workspace/:id/memory/:memoryId"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<AppLoadingFallback />}>
               <MemoryView />
             </Suspense>
           }
@@ -400,7 +399,7 @@ function AppContent() {
         <Route
           path="/workspace/:id/memory/:memoryId/edit"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<AppLoadingFallback />}>
               <MemoryEditor />
             </Suspense>
           }
@@ -409,7 +408,7 @@ function AppContent() {
         <Route
           path="/notifications"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<AppLoadingFallback />}>
               <Notifications />
             </Suspense>
           }

@@ -8,6 +8,7 @@ import { followUser, unfollowUser } from "../lib/followsLib"
 import { fetchComments } from "../lib/postInteractions"
 import PostInteractions from "../components/PostInteractions"
 import PostFeed from "../components/PostFeed"
+import PostContent from "../components/PostContent"
 import PublicWorkspaceShelf from "../components/PublicWorkspaceShelf"
 import { getAvatarImageUrl } from "../utils/imageOptimization"
 import { useExploreFeed } from "../hooks/useExploreFeed"
@@ -400,7 +401,11 @@ export default function Explore() {
                 )}
 
                 <div className={`${selectedPost?.image_url ? "p-5" : "p-8"} text-base leading-7 text-[var(--overlay-text)]`}>
-                  {selectedPost?.content || "No content available"}
+                  {selectedPost?.content ? (
+                    <PostContent content={selectedPost.content} className="text-base leading-7 text-[var(--overlay-text)]" />
+                  ) : (
+                    "No content available"
+                  )}
                 </div>
 
                 <div className="border-t border-[var(--overlay-border)] px-6 py-4">

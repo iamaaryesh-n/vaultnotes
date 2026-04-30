@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { PostListSkeleton } from "./PostSkeleton"
 import PostInteractions from "./PostInteractions"
+import PostContent from "./PostContent"
 import { getFeedImageUrl, getAvatarImageUrl } from "../utils/imageOptimization"
  
 function formatPostTime(value) {
@@ -236,12 +237,11 @@ export default function PostFeed({
                 <div className="mt-3 mb-3 h-px w-full bg-[var(--profile-border)] opacity-60" />
  
                 {post.content && (
-                  <p
+                  <PostContent
+                    content={post.content}
                     onClick={() => onOpenPost(post)}
                     className="w-full cursor-pointer text-left text-[15px] leading-7 text-[var(--profile-text)]"
-                  >
-                    {post.content}
-                  </p>
+                  />
                 )}
  
                 {post.image_url && (

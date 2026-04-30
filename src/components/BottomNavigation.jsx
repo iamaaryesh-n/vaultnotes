@@ -15,6 +15,7 @@ export default function BottomNavigation() {
   const [unreadDirectCount, setUnreadDirectCount] = useState(0)
   const [unreadGroupCount, setUnreadGroupCount] = useState(0)
   const unreadChatCount = unreadDirectCount + unreadGroupCount
+  const avatarSrc = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null
 
   useEffect(() => {
     if (!authReady) {
@@ -27,7 +28,6 @@ export default function BottomNavigation() {
       const globalProfile = window.__vn_profile
       if (globalProfile && globalProfile.id === user.id) {
         setProfile(globalProfile)
-        return;
       }
 
       // Listen for profileLoaded event which Navbar emits when it has fetched the profile
@@ -46,6 +46,10 @@ export default function BottomNavigation() {
       window.addEventListener('profileLoaded', onProfileLoaded)
       window.addEventListener('profileUpdated', onProfileUpdated)
 
+      if (!globalProfile || globalProfile.id !== user.id) {
+        fetchProfile(user.id)
+      }
+
       // Cleanup listeners when user changes/unmount
       return () => {
         window.removeEventListener('profileLoaded', onProfileLoaded)
@@ -57,6 +61,10 @@ export default function BottomNavigation() {
     }
   }, [authReady, user?.id])
 
+  useEffect(() => {
+    setAvatarLoadFailed(false)
+  }, [avatarSrc])
+
   const fetchProfile = async (userId) => {
     if (!userId) return
 
@@ -64,7 +72,7 @@ export default function BottomNavigation() {
       console.log("[BottomNav] Fetching profile for user:", userId)
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("username, name, avatar_url")
+        .select("id, username, name, avatar_url")
         .eq("id", userId)
         .single()
 
@@ -237,13 +245,11 @@ export default function BottomNavigation() {
       .slice(0, 2)
   }
 
-  const avatarSrc = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null
-
   return (
     <>
       {/* Bottom Navigation */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_-6px_22px_rgba(0,0,0,0.45)] backdrop-blur-[20px]"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_-6px_22px_rgba(26,22,18,0.10)] backdrop-blur-[20px] dark:shadow-[0_-6px_22px_rgba(0,0,0,0.45)]"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex h-[62px] items-center justify-around px-2">
@@ -397,7 +403,7 @@ export default function BottomNavigation() {
           <>
             {/* Backdrop for menu */}
             <motion.div
-              className="fixed inset-0 z-50 bg-black/35 backdrop-blur-[1px]"
+              className="fixed inset-0 z-50 bg-[rgba(26,22,18,0.28)] backdrop-blur-[1px] dark:bg-black/35"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
@@ -407,7 +413,7 @@ export default function BottomNavigation() {
 
             {/* Create Menu */}
             <motion.div
-              className="fixed bottom-[66px] left-1/2 z-[60] w-[244px] overflow-hidden rounded-[16px] border border-[var(--profile-border-strong)] bg-[linear-gradient(180deg,var(--profile-elev)_0%,#0B0B0B_100%)] shadow-[0_22px_44px_rgba(0,0,0,0.62),0_0_0_1px_rgba(244,180,0,0.08)]"
+              className="fixed bottom-[66px] left-1/2 z-[60] w-[244px] overflow-hidden rounded-[16px] border border-[var(--profile-border-strong)] bg-[linear-gradient(180deg,var(--profile-surface)_0%,var(--profile-elev)_100%)] shadow-[0_18px_38px_rgba(26,22,18,0.18),0_0_0_1px_rgba(244,180,0,0.10)] dark:shadow-[0_22px_44px_rgba(0,0,0,0.62),0_0_0_1px_rgba(244,180,0,0.08)]"
               style={{ x: "-50%", transformOrigin: "center bottom" }}
               initial={{ opacity: 0, y: 10, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}

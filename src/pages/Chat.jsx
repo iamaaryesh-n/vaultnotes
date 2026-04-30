@@ -8,7 +8,7 @@ import { encrypt, decrypt, importKey, generateKey, exportKey, validateKey, debug
 import { getSignedImageUrl, uploadImageToPrivateStorage, isSignedUrlValid, deletePrivateImage } from "../lib/privateImageStorage"
 import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 import { dispatchPushNotification } from "../lib/pushNotifications"
-import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown } from "lucide-react"
+import { Copy, Forward, Info, MessageCircle, MoreHorizontal, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown, UserPlus, Users } from "lucide-react"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -146,6 +146,7 @@ export default function Chat() {
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const userSearchInputRef = useRef(null)
   const conversationSearchInputRef = useRef(null)
   const imageCaptionInputRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -4525,6 +4526,22 @@ export default function Chat() {
     })
   }, [conversations, conversationPreferencesById, directSidebarView, isPreferenceArchived, isPreferenceDeleted, CHAT_LIST_VIEW.ARCHIVED])
 
+  const availableConversationCount = useMemo(() => {
+    return conversations.filter((conversation) => {
+      const preference = conversationPreferencesById[conversation.id]
+      return !isPreferenceDeleted(preference)
+    }).length
+  }, [conversations, conversationPreferencesById, isPreferenceDeleted])
+
+  const focusDirectUserSearch = useCallback(() => {
+    setChatMode("direct")
+    setDirectSidebarView(CHAT_LIST_VIEW.ACTIVE)
+    navigate("/chat", { replace: true })
+    requestAnimationFrame(() => {
+      userSearchInputRef.current?.focus()
+    })
+  }, [navigate])
+
   const archivedConversationCount = useMemo(() => {
     return conversations.filter((conversation) => {
       const preference = conversationPreferencesById[conversation.id]
@@ -5548,6 +5565,7 @@ export default function Chat() {
             {directSidebarView === CHAT_LIST_VIEW.ACTIVE && (
               <div className="relative mt-2">
                 <input
+                  ref={userSearchInputRef}
                   value={userSearchQuery}
                   onChange={(event) => setUserSearchQuery(event.target.value)}
                   placeholder="Search users by username"
@@ -6021,7 +6039,50 @@ export default function Chat() {
 
           <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-[var(--chat-bg)] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4">
             {!activeConversation ? (
-              <p className="font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">Select a conversation to start chatting</p>
+              <div className="flex min-h-full items-center justify-center px-3 py-8">
+                <div className="relative w-full max-w-md overflow-hidden rounded-[24px] border border-[var(--chat-border)] bg-[linear-gradient(145deg,var(--chat-surface)_0%,var(--chat-elev)_100%)] p-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.36)] sm:p-8">
+                  <div className="pointer-events-none absolute -left-20 -top-20 h-44 w-44 rounded-full bg-[rgba(244,180,0,0.12)] blur-3xl" />
+                  <div className="pointer-events-none absolute -bottom-24 -right-16 h-48 w-48 rounded-full bg-[rgba(14,165,233,0.08)] blur-3xl" />
+
+                  <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[20px] border border-[rgba(244,180,0,0.24)] bg-[rgba(244,180,0,0.10)] text-[var(--chat-accent)] shadow-[0_0_32px_rgba(244,180,0,0.12)]">
+                    <MessageCircle className="h-8 w-8" />
+                  </div>
+
+                  <div className="relative">
+                    <h3 className="font-['Sora'] text-xl font-semibold text-[var(--chat-text)]">
+                      {availableConversationCount === 0 ? "No conversations yet" : "Select a conversation"}
+                    </h3>
+                    <p className="mx-auto mt-2 max-w-xs font-['DM_Sans'] text-sm leading-6 text-[var(--chat-text-subtle)]">
+                      {availableConversationCount === 0
+                        ? "Start a conversation by searching for someone from the left panel."
+                        : "Select a chat from the left or search for someone to begin"}
+                    </p>
+
+                    <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={focusDirectUserSearch}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-[var(--chat-accent)] px-5 py-3 font-['DM_Sans'] text-sm font-bold text-[var(--chat-surface)] shadow-[0_10px_30px_rgba(244,180,0,0.28)] transition duration-200 hover:-translate-y-0.5 hover:bg-[var(--chat-accent-hover)] hover:shadow-[0_14px_34px_rgba(244,180,0,0.36)] active:translate-y-0 sm:w-auto"
+                      >
+                        <UserPlus className="h-4 w-4" />
+                        <span>New Chat</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setChatMode("groups")
+                          setShowNewGroupModal(true)
+                          navigate("/chat?tab=groups", { replace: true })
+                        }}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-[var(--chat-border-strong)] bg-[rgba(255,255,255,0.02)] px-5 py-3 font-['DM_Sans'] text-sm font-semibold text-[var(--chat-text-subtle)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(244,180,0,0.35)] hover:bg-[rgba(244,180,0,0.06)] hover:text-[var(--chat-accent)] active:translate-y-0 sm:w-auto"
+                      >
+                        <Users className="h-4 w-4" />
+                        <span>Create Group</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : loadingMessages ? (
               <div className="space-y-3">
                 {Array.from({ length: 6 }).map((_, index) => (
@@ -6420,6 +6481,7 @@ export default function Chat() {
             <div ref={bottomRef} />
           </div>
 
+          {activeConversation && (
           <div className="sticky bottom-0 z-10 shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-[10px] pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] sm:px-3">
             {selectedImageFile && selectedImageComposerUrl && (
               <div className="mb-2 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-elev)] p-2.5">
@@ -6583,6 +6645,7 @@ export default function Chat() {
               </button>
             </div>
           </div>
+          )}
           </div>
           </div>
         </section>

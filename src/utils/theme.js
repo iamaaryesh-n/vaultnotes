@@ -37,18 +37,26 @@ export function applyTheme(theme) {
 
   const root = document.documentElement
   const normalizedTheme = VALID_THEMES.includes(theme) ? theme : "system"
+  let resolvedTheme = "light"
 
   if (normalizedTheme === "dark") {
     root.classList.add("dark")
+    resolvedTheme = "dark"
   } else if (normalizedTheme === "light") {
     root.classList.remove("dark")
+    resolvedTheme = "light"
   } else {
     const prefersDark = getSystemTheme() === "dark"
     root.classList.toggle("dark", prefersDark)
+    resolvedTheme = prefersDark ? "dark" : "light"
   }
 
   root.setAttribute("data-theme", normalizedTheme)
+  root.setAttribute("data-resolved-theme", resolvedTheme)
+  root.style.colorScheme = resolvedTheme
+  root.style.backgroundColor = resolvedTheme === "dark" ? "#0a0a0a" : "#f8fafc"
   document.body?.setAttribute("data-theme", normalizedTheme)
+  document.body?.setAttribute("data-resolved-theme", resolvedTheme)
 }
 
 export function setStoredTheme(theme) {
