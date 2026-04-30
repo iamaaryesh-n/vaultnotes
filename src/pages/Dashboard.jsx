@@ -60,8 +60,18 @@ export default function Dashboard({ session }) {
   const fetchControllerRef = useRef(null)
   const lastFetchTimeRef = useRef(0)
   const isFetchingRef = useRef(false)
+  const workspacesLengthRef = useRef(workspaces.length)
+  workspacesLengthRef.current = workspaces.length
 
   const fetchWorkspaces = useCallback(async ({ force = false, silent = false } = {}) => {
+    if (isFetchingRef.current) {
+      console.log("[Dashboard] Fetch already in progress, skipping duplicate request")
+      if (!silent && workspacesLengthRef.current === 0) {
+        setLoading(true)
+      }
+      return
+    }
+
     try {
       if (!force && !shouldFetchWorkspaceList()) {
         setHasResolvedInitialFetch(true)
@@ -72,12 +82,6 @@ export default function Dashboard({ session }) {
         setLoading(true)
       }
       
-      // Prevent multiple concurrent fetches
-      if (isFetchingRef.current) {
-        console.log("[Dashboard] Fetch already in progress, skipping duplicate request")
-        return
-      }
-
       // Cancel any pending fetch request
       if (fetchControllerRef.current) {
         fetchControllerRef.current.abort()

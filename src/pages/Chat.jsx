@@ -186,7 +186,29 @@ export default function Chat() {
   const isMobileGroupDetailView = isMobileView && Boolean(routeGroupId)
   const isMobileDetailView = isMobileConversationView || isMobileGroupDetailView
 
-  useRouteScrollRestoration(`chat-${chatMode}`)
+  useRouteScrollRestoration(`chat-${chatMode}`, false)
+
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const previousHtmlOverflow = html.style.overflow
+    const previousBodyOverflow = body.style.overflow
+    const previousHtmlOverscroll = html.style.overscrollBehavior
+    const previousBodyOverscroll = body.style.overscrollBehavior
+
+    html.style.overflow = "hidden"
+    body.style.overflow = "hidden"
+    html.style.overscrollBehavior = "none"
+    body.style.overscrollBehavior = "none"
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" })
+
+    return () => {
+      html.style.overflow = previousHtmlOverflow
+      body.style.overflow = previousBodyOverflow
+      html.style.overscrollBehavior = previousHtmlOverscroll
+      body.style.overscrollBehavior = previousBodyOverscroll
+    }
+  }, [])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 767px)")
@@ -5437,14 +5459,14 @@ export default function Chat() {
 
 
   return (
-    <div className="chat-theme mx-auto flex h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[var(--chat-text)]">
+    <div className="chat-theme mx-auto flex h-full max-h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[var(--chat-text)]">
       {error && (
         <div className="mb-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <div className={`grid h-full min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden rounded-2xl bg-[var(--chat-bg)] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] ${isMobileDetailView ? "" : "lg:grid-cols-[268px,minmax(0,1fr)]"}`}>
+      <div className={`grid h-full min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden overscroll-none rounded-2xl bg-[var(--chat-bg)] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] ${isMobileDetailView ? "" : "lg:grid-cols-[268px,minmax(0,1fr)]"}`}>
         {!isMobileDetailView && <section className="flex h-full min-h-0 w-full lg:w-[268px] flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
           {/* Mode Toggle */}
           <div className="border-b border-[var(--chat-border)] px-3.5 pt-4 pb-3">
@@ -5584,7 +5606,7 @@ export default function Chat() {
             )}
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             {loadingConversations ? (
               <div className="p-4">
                 <ChatListSkeleton />
@@ -5774,7 +5796,7 @@ export default function Chat() {
                 />
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 {loadingGroups ? (
                   <div className="space-y-3 p-4">
                     {Array.from({ length: 5 }).map((_, index) => (
@@ -5997,7 +6019,7 @@ export default function Chat() {
             )}
           </div>
 
-          <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-[var(--chat-bg)] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4">
+          <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-[var(--chat-bg)] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4">
             {!activeConversation ? (
               <p className="font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">Select a conversation to start chatting</p>
             ) : loadingMessages ? (
@@ -6730,7 +6752,7 @@ export default function Chat() {
                   setActiveGroupEmojiPickerMessageId(null)
                   setActiveGroupMessageMenuId(null)
                 }}
-                className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3.5 py-2.5 pb-3 md:px-4"
+                className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3.5 py-2.5 pb-3 md:px-4"
               >
                 {loadingGroupMessages ? (
                   <div className="flex items-center justify-center h-full">

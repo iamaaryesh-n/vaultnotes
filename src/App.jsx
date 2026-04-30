@@ -40,6 +40,40 @@ function ProtectedRoute({ user, children }) {
   return children
 }
 
+function VaultsRouteFallback() {
+  return (
+    <div className="min-h-screen bg-[var(--profile-bg)] text-[var(--profile-text)]">
+      <div className="fixed left-0 right-0 top-[56px] z-[95] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-5 pb-0 pt-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="font-['Sora'] text-[24px] font-[800] text-[var(--profile-text)]">My Vaults</h1>
+            <p className="mt-1 text-[12px] text-[var(--profile-text-muted)]">Manage your encrypted knowledge spaces</p>
+          </div>
+          <div className="rounded-[12px] bg-[#F4B400] px-[18px] py-[10px] font-['Sora'] text-[13px] font-[700] text-[var(--profile-on-accent)] shadow-[0_3px_18px_rgba(244,180,0,0.4)]">
+            + Create Vault
+          </div>
+        </div>
+        <div className="scrollbar-hide flex gap-[6px] overflow-x-auto pb-3">
+          <div className="rounded-[20px] bg-[#F4B400] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-on-accent)]">All</div>
+          <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Owned</div>
+          <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Shared with me</div>
+          <div className="rounded-[20px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-[14px] py-[6px] text-[12px] font-[600] text-[var(--profile-text-muted)]">Public</div>
+        </div>
+      </div>
+      <div style={{ maxWidth: "900px" }} className="mx-auto px-4 pb-[90px] pt-[170px]">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="mb-[10px] rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-4 shadow-none">
+            <div className="mb-3 h-2 w-1/2 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+            <div className="mb-2 h-4 w-full animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+            <div className="mb-2 h-4 w-4/5 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+            <div className="h-4 w-2/3 animate-pulse rounded-[8px] bg-[var(--profile-elev)]" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function AppShell({ user, createPostOpen, setCreatePostOpen }) {
   const location = useLocation()
   const [postDetailFocusMode, setPostDetailFocusMode] = useState(false)
@@ -57,7 +91,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]">
+    <div className={`${isChatRoute ? "h-screen overflow-hidden" : "min-h-screen"} bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]`}>
       {!postDetailFocusMode && <Navbar />}
       <ToastContainer />
       <LoadingBar />
@@ -73,7 +107,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
       <main
         className={
           isChatRoute
-            ? "h-[calc(100dvh-64px-64px)] overflow-hidden"
+            ? "fixed inset-0 overflow-hidden bg-[var(--chat-bg)] pt-[64px] pb-[calc(62px+env(safe-area-inset-bottom))]"
             : isVaultRoute
               ? `min-h-screen overflow-x-hidden bg-[var(--profile-bg)] ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-[calc(5rem+env(safe-area-inset-bottom))]"}`
               : `min-h-screen ${postDetailFocusMode ? "pt-0 pb-0" : "pt-[64px] pb-[calc(5rem+env(safe-area-inset-bottom))]"}`
@@ -231,7 +265,7 @@ function AppContent() {
         <Route
           path="/workspaces"
           element={
-            <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+            <Suspense fallback={<VaultsRouteFallback />}>
               <Dashboard session={session} />
             </Suspense>
           }
@@ -274,7 +308,7 @@ function AppContent() {
           path="/chat"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
                 <Chat />
               </Suspense>
             </ErrorBoundary>
@@ -285,7 +319,7 @@ function AppContent() {
           path="/chat/group/:groupId"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
                 <Chat />
               </Suspense>
             </ErrorBoundary>
@@ -296,7 +330,7 @@ function AppContent() {
           path="/chat/direct/:conversationId"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
                 <Chat />
               </Suspense>
             </ErrorBoundary>
@@ -307,7 +341,7 @@ function AppContent() {
           path="/chat/:conversationId"
           element={
             <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
                 <Chat />
               </Suspense>
             </ErrorBoundary>
@@ -317,7 +351,7 @@ function AppContent() {
         <Route
           path="/groups"
           element={
-            <Suspense fallback={<div className="h-[calc(100dvh-64px-64px)] bg-slate-50" />}>
+            <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
               <GroupChat />
             </Suspense>
           }
