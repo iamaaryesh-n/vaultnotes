@@ -196,6 +196,13 @@ export default function Navbar() {
       if (profileData) {
         setProfile(profileData)
         console.log("[Navbar] Fetched profile:", profileData.name)
+        try {
+          // Expose profile globally so other components can reuse without refetching
+          window.__vn_profile = profileData
+          window.dispatchEvent(new CustomEvent("profileLoaded", { detail: profileData }))
+        } catch (e) {
+          // ignore
+        }
       } else if (profileError && profileError.code !== "PGRST116") {
         console.error("[Navbar] Error fetching profile:", profileError.message)
       }

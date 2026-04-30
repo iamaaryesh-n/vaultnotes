@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase'
  * @param {boolean} forceFresh - Force refetch even if cached
  * @returns {Object} { posts, comments, likes, loading, error }
  */
-export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
+export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, authReady) {
   const store = usePostCacheStore()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -33,16 +33,13 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
   }, [cacheKey])
   
   useEffect(() => {
+    if (!authReady) return;
     const fetchData = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
         setCurrentUserId(user?.id || null)
-        
-        // Fetch new posts
         setLoading(true)
         setError(null)
         store.setFetching(true)
-        
         const fetchedPosts = await fetchFn()
         if (!fetchedPosts || fetchedPosts.length === 0) {
           setPosts([])
@@ -50,19 +47,12 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
           store.setFetching(false)
           return
         }
-        
-        // Cache posts
         store.setCachedPosts(fetchedPosts)
-        
-        // Fetch and cache interactions
         const postIds = fetchedPosts.map(p => p.id)
-        
-        // Prefetch comments and likes in parallel
         const [comments, likeData] = await Promise.all([
           fetchCommentsForPosts(postIds),
           fetchLikesForPosts(postIds, user?.id)
         ])
-        
         store.setCachedComments(comments)
         store.setCachedLikes(likeData)
         const postsWithCounts = fetchedPosts.map(post => ({
@@ -73,7 +63,6 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
         setPosts(postsWithCounts)
         setCommentsByPost(comments)
         setLikesByPost(likeData)
-        
         console.log('[useSmartFetchPosts] Fetched fresh data for', cacheKey)
       } catch (err) {
         console.error('[useSmartFetchPosts] Error:', err)
@@ -84,9 +73,8 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false) {
         store.setFetching(false)
       }
     }
-    
     fetchData()
-  }, [cacheKey, forceFresh])
+  }, [cacheKey, forceFresh, user, authReady])
   
   return {
     posts,

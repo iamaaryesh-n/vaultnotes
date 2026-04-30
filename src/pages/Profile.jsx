@@ -70,22 +70,21 @@ export default function Profile() {
   } = useSmartFetchPosts(
     async () => {
       if (!profile?.id) return []
-      
       const { data, error } = await supabase
         .from("posts")
         .select("id, user_id, content, image_url, created_at, visibility, profiles(username)")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
-
       if (error) {
         console.error("[Profile] Error fetching posts:", error)
         throw error
       }
-
       return data || []
     },
     `profile_${profile?.id || 'loading'}`,
-    false // Don't force fresh on initial mount
+    false, // Don't force fresh on initial mount
+    authUser,
+    authReady
   )
 
   useEffect(() => {
@@ -870,7 +869,8 @@ export default function Profile() {
   usePostsRealtime(
     posts.map((p) => p.id),
     handleLikesRealtime,
-    handleCommentsRealtime
+    handleCommentsRealtime,
+    authReady
   )
 
   const formatPostTime = (value) => {

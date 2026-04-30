@@ -5,7 +5,7 @@ import { usePostCacheStore } from "../stores/postCacheStore"
 
 const BATCH_SIZE = 3
 
-export function useExploreFeed() {
+export function useExploreFeed(user, authReady) {
   const initialCachedPosts = (() => {
     const state = usePostCacheStore.getState()
     return Object.values(state.posts || {})
@@ -33,15 +33,9 @@ export function useExploreFeed() {
   }, [hasMore])
 
   useEffect(() => {
-    const getUserId = async () => {
-      const {
-        data: { user }
-      } = await supabase.auth.getUser()
-      setCurrentUserId(user?.id || null)
-    }
-
-    getUserId()
-  }, [])
+    if (!authReady) return;
+    setCurrentUserId(user?.id || null)
+  }, [user, authReady])
 
   const fetchPostsBatch = useCallback(
     async (pageNum) => {
@@ -162,8 +156,10 @@ export function useExploreFeed() {
       }
     }
 
+    if (!authReady) return
+
     loadInitialPosts()
-  }, [fetchPostsBatch])
+  }, [fetchPostsBatch, authReady])
 
   return {
     posts,

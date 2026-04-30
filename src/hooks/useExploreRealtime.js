@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { supabase } from "../lib/supabase"
 import { usePostsRealtime } from "./usePostsRealtime"
 
-export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost }) {
+export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost }, authReady = true) {
   const optimisticLikeActionsRef = useRef(new Map())
 
   useEffect(() => {
@@ -148,6 +148,7 @@ export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCo
   usePostsRealtime(
     posts.map((post) => post.id),
     handleLikesRealtime,
-    handleCommentsRealtime
+    handleCommentsRealtime,
+    authReady
   )
 }

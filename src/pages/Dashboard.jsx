@@ -761,6 +761,7 @@ export default function Dashboard({ session }) {
     }
   }, [editVisibilityId, editVisibilityValue, success, showError, workspaces, currentVisibilityState])
 
+  // Show skeleton if loading, or if initial fetch not resolved and no workspaces
   const shouldShowLoadingSkeleton = loading || (!hasResolvedInitialFetch && workspaces.length === 0)
   const filteredWorkspaces = workspaces.filter((workspace) => {
     if (activeFilter === "owned") return workspace.is_public === false
@@ -863,7 +864,9 @@ export default function Dashboard({ session }) {
 
       <div style={{ maxWidth: "900px" }} className={`mx-auto px-4 pb-[90px] ${headerVisible ? "pt-[170px]" : "pt-[70px]"}`}>
 
-        {hasResolvedInitialFetch && filteredWorkspaces.length === 0 ? (
+        {/* Loader/Skeleton: show while loading */}
+        {shouldShowLoadingSkeleton && null}
+        {!shouldShowLoadingSkeleton && !loading && hasResolvedInitialFetch && filteredWorkspaces.length === 0 && (
           <div className="rounded-[18px] border border-[var(--profile-border)] bg-[var(--profile-surface)] p-12 text-center">
             <p className="mb-6 text-lg text-[var(--profile-text-subtle)]">No vaults found</p>
             <p className="mb-6 text-sm text-[var(--profile-text-muted)]">Try another filter or create a new vault</p>
@@ -876,7 +879,8 @@ export default function Dashboard({ session }) {
             </button>
             <p className="mt-4 text-xs text-[var(--profile-text-muted)]">Tip: Press "W" to create a new vault</p>
           </div>
-        ) : (
+        )}
+        {!shouldShowLoadingSkeleton && !( !loading && hasResolvedInitialFetch && filteredWorkspaces.length === 0 ) && (
           filteredWorkspaces.map((workspace) => (
             <div
               key={workspace.id}
@@ -907,7 +911,6 @@ export default function Dashboard({ session }) {
                     : "border border-[var(--visibility-public-border)] bg-[var(--visibility-public-bg)] text-[var(--visibility-public-text)]"
                 const badgeLabel = visType === "private" ? "Private" : visType === "shared" ? "Shared" : "Public"
                 const isOwner = role === "owner"
-
                 return (
                   <>
                     <div className={`h-[2px] w-full ${accentClass}`} />

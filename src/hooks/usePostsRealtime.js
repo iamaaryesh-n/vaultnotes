@@ -16,7 +16,7 @@ import { supabase } from "../lib/supabase"
  * @param {Function} onLikesChange - Callback when likes change (INSERT/DELETE events)
  * @param {Function} onCommentsChange - Callback when comments change (INSERT events)
  */
-export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
+export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, authReady = true) {
   const channelsRef = useRef(null)
   const onLikesChangeRef = useRef(onLikesChange)
   const onCommentsChangeRef = useRef(onCommentsChange)
@@ -37,6 +37,7 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
 
   // Subscribe when post IDs actually change
   useEffect(() => {
+    if (!authReady) return
     const uniquePostIds = postIdsKey ? postIdsKey.split(",") : []
 
     if (uniquePostIds.length === 0) {
@@ -126,5 +127,5 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange) {
         channelsRef.current = null
       }
     }
-  }, [postIdsKey])
+  }, [postIdsKey, authReady])
 }

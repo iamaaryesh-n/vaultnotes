@@ -16,7 +16,7 @@ import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 
 export default function Explore() {
   const navigate = useNavigate()
-  const { user: contextUser } = useAuth()
+  const { user: contextUser, authReady } = useAuth()
 
   const [activeTab, setActiveTab] = useState("for-you")
   const [viewMode, setViewMode] = useState("posts")
@@ -44,9 +44,9 @@ export default function Explore() {
     queueNextPageLoad,
     setCommentsByPost,
     setLikesByPost
-  } = useExploreFeed()
+  } = useExploreFeed(contextUser, authReady)
 
-  useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost })
+  useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost }, authReady)
 
   usePrefetchWorkspaces()
 

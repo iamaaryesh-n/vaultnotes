@@ -20,11 +20,37 @@ export default function BottomNavigation() {
     if (!authReady) {
       return
     }
-
     if (user?.id) {
       setCurrentUserId(user.id)
       setAvatarLoadFailed(false)
-      fetchProfile(user.id)
+
+      const globalProfile = window.__vn_profile
+      if (globalProfile && globalProfile.id === user.id) {
+        setProfile(globalProfile)
+        return;
+      }
+
+      // Listen for profileLoaded event which Navbar emits when it has fetched the profile
+      const onProfileLoaded = (ev) => {
+        const pd = ev?.detail
+        if (pd && pd.id === user.id) {
+          setProfile(pd)
+        }
+      }
+
+      const onProfileUpdated = (ev) => {
+        const update = ev?.detail || {}
+        setProfile((prev) => ({ ...(prev || {}), ...(update || {}) }))
+      }
+
+      window.addEventListener('profileLoaded', onProfileLoaded)
+      window.addEventListener('profileUpdated', onProfileUpdated)
+
+      // Cleanup listeners when user changes/unmount
+      return () => {
+        window.removeEventListener('profileLoaded', onProfileLoaded)
+        window.removeEventListener('profileUpdated', onProfileUpdated)
+      }
     } else {
       setCurrentUserId(null)
       setProfile(null)

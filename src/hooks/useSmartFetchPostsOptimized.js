@@ -21,7 +21,7 @@ import { supabase } from '../lib/supabase'
  * @param {boolean} countsOnly - If true, only fetch interaction counts (lighter payload)
  * @returns {Object} { posts, comments, likes, loading, error }
  */
-export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = false, countsOnly = false) {
+export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = false, countsOnly = false, user, authReady) {
   const store = usePostCacheStore()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -40,16 +40,13 @@ export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = fals
   }, [cacheKey])
   
   useEffect(() => {
+    if (!authReady) return;
     const fetchData = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
         setCurrentUserId(user?.id || null)
-        
-        // Fetch new posts
         setLoading(true)
         setError(null)
         store.setFetching(true)
-        
         const fetchedPosts = await fetchFn()
         if (!fetchedPosts || fetchedPosts.length === 0) {
           setPosts([])
@@ -59,30 +56,19 @@ export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = fals
           store.setFetching(false)
           return
         }
-        
-        // Cache posts
         store.setCachedPosts(fetchedPosts)
-        
-        // Fetch interactions based on mode
         const postIds = fetchedPosts.map(p => p.id)
-        
         if (countsOnly) {
-          // OPTIMIZED: Only fetch counts for feed display
-          console.log('[useSmartFetchPostsOptimized] Fetching counts only for', postIds.length, 'posts')
           const [commentCounts, likeData] = await Promise.all([
             fetchCommentCountsForPosts(postIds),
             fetchLikeCountsForPosts(postIds, user?.id)
           ])
-          
-          // Convert counts to comment array format (empty arrays) for compatibility
           const comments = {}
           Object.keys(commentCounts).forEach(postId => {
             comments[postId] = new Array(commentCounts[postId]).fill(null)
           })
-          
           store.setCachedComments(comments)
           store.setCachedLikes(likeData)
-          
           const postsWithCounts = fetchedPosts.map(post => ({
             ...post,
             likes_count: likeData[post.id]?.count || 0,
@@ -91,19 +77,14 @@ export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = fals
           setPosts(postsWithCounts)
           setCommentsByPost(comments)
           setLikesByPost(likeData)
-          
           console.log('[useSmartFetchPostsOptimized] Fetched counts for', cacheKey)
         } else {
-          // Standard: Fetch full comment data
-          console.log('[useSmartFetchPostsOptimized] Fetching full data for', postIds.length, 'posts')
           const [comments, likeData] = await Promise.all([
             fetchCommentsForPosts(postIds),
             fetchLikesForPosts(postIds, user?.id)
           ])
-          
           store.setCachedComments(comments)
           store.setCachedLikes(likeData)
-          
           const postsWithCounts = fetchedPosts.map(post => ({
             ...post,
             likes_count: likeData[post.id]?.count || 0,
@@ -112,7 +93,6 @@ export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = fals
           setPosts(postsWithCounts)
           setCommentsByPost(comments)
           setLikesByPost(likeData)
-          
           console.log('[useSmartFetchPostsOptimized] Fetched fresh data for', cacheKey)
         }
       } catch (err) {
@@ -124,9 +104,8 @@ export function useSmartFetchPostsOptimized(fetchFn, cacheKey, forceFresh = fals
         store.setFetching(false)
       }
     }
-    
     fetchData()
-  }, [cacheKey, forceFresh, countsOnly])
+  }, [cacheKey, forceFresh, countsOnly, user, authReady])
   
   return {
     posts,

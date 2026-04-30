@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
+import { useAuth } from "../hooks/useAuth"
 import { supabase } from "../lib/supabase"
 import { useNavigate, useParams } from "react-router-dom"
 import Modal from "../components/Modal"
@@ -53,8 +54,12 @@ export default function PublicProfile() {
       return data || []
     },
     `public_profile_${profile?.id || 'loading'}`,
-    false
+    false,
+    authUser,
+    authReady
   )
+
+  const { user: authUser, authReady } = useAuth()
 
   useEffect(() => {
     fetchCurrentUser()
@@ -439,8 +444,10 @@ export default function PublicProfile() {
   usePostsRealtime(
     posts.map((p) => p.id),
     handleLikesRealtime,
-    handleCommentsRealtime
+    handleCommentsRealtime,
+    authReady
   )
+  
 
   const formatPostTime = (value) => {
     if (!value) return ""
