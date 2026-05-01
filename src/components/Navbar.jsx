@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, lazy, Suspense } from "react"
+import { useState, useEffect, useRef, lazy, Suspense } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { useAuth } from "../hooks/useAuth"
@@ -370,7 +370,7 @@ export default function Navbar() {
         .from(bucketName)
         .getPublicUrl(fileName)
 
-      return publicUrlData.publicUrl
+      return publicUrlData.publicUrl + `?t=${Date.now()}`
     }
 
     if (mediaChanges.pendingAvatarFile) {

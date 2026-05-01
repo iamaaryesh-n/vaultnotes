@@ -12,6 +12,7 @@ import PostContent from "../components/PostContent"
 import CommentItem from "../components/CommentItem"
 import PublicWorkspaceShelf from "../components/PublicWorkspaceShelf"
 import { getAvatarImageUrl } from "../utils/imageOptimization"
+import PostModal from "../components/PostModal"
 import { useExploreFeed } from "../hooks/useExploreFeed"
 import { useExploreRealtime } from "../hooks/useExploreRealtime"
 import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
@@ -184,7 +185,6 @@ export default function Explore() {
   const openPostModal = (post) => {
     setSelectedPost(post)
     setModalOpen(true)
-    setShowModalComments(false)
     // Push a synthetic history entry so the mobile back button pops this
     // entry instead of navigating to the previous route.
     window.history.pushState({ explorePostModal: true }, "")
@@ -192,80 +192,13 @@ export default function Explore() {
 
   const closePostModal = () => {
     setModalOpen(false)
-    setSelectedPost(null)
-    setShowModalComments(false)
-    setModalCommentsLoading(false)
+    setTimeout(() => setSelectedPost(null), 300)
     // Clean up the synthetic history entry when the user closes via X button
     // so the history stack stays accurate.
     if (window.history.state?.explorePostModal) {
       window.history.back()
     }
   }
-
-  useEffect(() => {
-    document.body.style.overflow = modalOpen ? "hidden" : "unset"
-    window.dispatchEvent(
-      new CustomEvent("postDetailFocusMode", {
-        detail: { enabled: modalOpen }
-      })
-    )
-
-    return () => {
-      document.body.style.overflow = "unset"
-      window.dispatchEvent(
-        new CustomEvent("postDetailFocusMode", {
-          detail: { enabled: false }
-        })
-      )
-    }
-  }, [modalOpen])
-
-  // Intercept hardware/browser back button while the modal is open.
-  // popstate fires after history.back() pops our synthetic entry — we
-  // close the modal in-place so the Explore feed stays visible.
-  useEffect(() => {
-    if (!modalOpen) return
-
-    const handlePopState = () => {
-      setModalOpen(false)
-      setSelectedPost(null)
-      setShowModalComments(false)
-      setModalCommentsLoading(false)
-    }
-
-    window.addEventListener("popstate", handlePopState)
-    return () => window.removeEventListener("popstate", handlePopState)
-  }, [modalOpen])
-
-  useEffect(() => {
-    if (!selectedPost?.id || !authReady) return
-
-    let canceled = false
-
-    const loadFullComments = async () => {
-      console.log("Fetching comments for:", selectedPost.id)
-      setModalCommentsLoading(true)
-      try {
-        const fullComments = await fetchComments(selectedPost.id)
-        if (canceled) return
-
-        setCommentsByPost((prev) => ({
-          ...prev,
-          [selectedPost.id]: fullComments || []
-        }))
-      } finally {
-        if (!canceled) {
-          setModalCommentsLoading(false)
-        }
-      }
-    }
-
-    loadFullComments()
-
-    return () => {
-      canceled = true
-    }
-  }, [selectedPost?.id, authReady, setCommentsByPost])
 
   const handleToggleFollow = useCallback(
     async (userId) => {
@@ -376,180 +309,12 @@ export default function Explore() {
         <PublicWorkspaceShelf contextUserId={contextUser?.id} />
       )}
 
-      <AnimatePresence>
-        {modalOpen && selectedPost && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closePostModal}
-              className="fixed inset-0 z-[120] bg-[var(--overlay-backdrop)] backdrop-blur-sm"
-            />
-
-            <motion.div
-              initial={isMobileViewport ? { opacity: 0, y: 48 } : { opacity: 0, scale: 0.95, y: 20 }}
-              animate={isMobileViewport ? { opacity: 1, y: 0 } : { opacity: 1, scale: 1, y: 0 }}
-              exit={isMobileViewport ? { opacity: 0, y: 48 } : { opacity: 0, scale: 0.95, y: 20 }}
-              transition={isMobileViewport ? { duration: 0.24, ease: "easeOut" } : { type: "spring", stiffness: 300, damping: 30 }}
-              onClick={(event) => event.stopPropagation()}
-              className="fixed inset-0 z-[130] flex h-[100dvh] w-[100vw] flex-col overflow-hidden border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)] md:m-auto md:h-auto md:max-h-[90vh] md:w-[90vw] md:max-w-3xl md:rounded-[20px]"
-            >
-              {/* Sticky header — never scrolls */}
-              <div className="flex-shrink-0 border-b border-[var(--overlay-border)] px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (selectedPost?.profiles?.username) {
-                            closePostModal()
-                            navigate(`/profile/${selectedPost?.profiles?.username}`)
-                          }
-                        }}
-                      >
-                        {selectedPost?.profiles?.avatar_url ? (
-                          <img
-                            src={getAvatarImageUrl(selectedPost?.profiles?.avatar_url)}
-                            alt={selectedPost?.profiles?.username}
-                            width={40}
-                            height={40}
-                            className="h-10 w-10 rounded-full border border-[var(--overlay-border-strong)] object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] text-xs font-bold text-[var(--chat-accent)]">
-                            {selectedPost?.profiles?.name?.charAt(0) || selectedPost?.profiles?.username?.charAt(0) || "?"}
-                          </div>
-                        )}
-                      </button>
-                      <div>
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            if (selectedPost?.profiles?.username) {
-                              closePostModal()
-                              navigate(`/profile/${selectedPost?.profiles?.username}`)
-                            }
-                          }}
-                          className="text-sm font-semibold text-[var(--overlay-text)] transition-colors hover:text-[#F4B400]"
-                        >
-                          {selectedPost?.profiles?.name || selectedPost?.profiles?.username || "Unknown"}
-                        </button>
-                        <p className="text-xs text-[var(--overlay-text-muted)]">{formatPostTime(selectedPost?.created_at)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {contextUser?.id && selectedPost?.user_id !== contextUser.id && (
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleToggleFollow(selectedPost.user_id)
-                          }}
-                          className={`rounded-[16px] border px-3 py-[5px] text-xs font-semibold transition-all duration-200 ${
-                            followedUsers.includes(selectedPost.user_id)
-                              ? "border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] text-[var(--overlay-text)]"
-                              : "border-transparent bg-[#F4B400] text-[var(--profile-on-accent)]"
-                          }`}
-                        >
-                          {followedUsers.includes(selectedPost.user_id) ? "Following" : "Follow"}
-                        </motion.button>
-                      )}
-                      <button
-                        onClick={closePostModal}
-                        className="rounded-full p-2 text-[var(--overlay-text-subtle)] transition-colors hover:bg-[var(--overlay-elev)] hover:text-[var(--overlay-text)]"
-                      >
-                        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                </div>
-              </div>
-
-              {/* Scrollable content area — only this region scrolls */}
-              <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
-                {selectedPost?.image_url && (
-                  <img
-                    src={selectedPost.image_url}
-                    alt="Post"
-                    className="max-h-[60vh] w-full object-contain bg-[var(--overlay-elev)]"
-                    loading="lazy"
-                  />
-                )}
-
-                <div className={`${selectedPost?.image_url ? "p-5" : "p-8"} text-base leading-7 text-[var(--overlay-text)]`}>
-                  {selectedPost?.content ? (
-                    <PostContent content={selectedPost.content} className="text-base leading-7 text-[var(--overlay-text)]" />
-                  ) : (
-                    "No content available"
-                  )}
-                </div>
-
-                <div className="border-t border-[var(--overlay-border)] px-6 py-4">
-                  <PostInteractions
-                    post={selectedPost}
-                    initialComments={commentsByPost[selectedPost?.id] || []}
-                    initialLikes={likesByPost[selectedPost?.id] || { count: 0, userLiked: false }}
-                    onCommentClick={() => setShowModalComments((prev) => !prev)}
-                    showInlineComments={false}
-                  />
-                </div>
-
-                {((commentsByPost[selectedPost?.id] || []).length > 0 || showModalComments) && (
-                  <div className="border-t border-[var(--overlay-border)] px-6 py-4">
-                    <div className="mb-4 flex items-center gap-2">
-                      <p className="text-sm font-semibold text-[var(--overlay-text)]">
-                        Comments ({(commentsByPost[selectedPost?.id] || []).length})
-                      </p>
-                    </div>
-
-                    {modalCommentsLoading && (
-                      <p className="mb-3 text-xs text-[var(--overlay-text-subtle)]">Loading comments...</p>
-                    )}
-
-                    <div className="space-y-2">
-                      {(commentsByPost[selectedPost?.id] || []).filter(Boolean).length === 0 ? (
-                        <p className="py-4 text-center text-xs text-[var(--overlay-text-muted)]">No comments yet. Be the first!</p>
-                      ) : (
-                        (commentsByPost[selectedPost?.id] || []).map((comment, index) =>
-                          comment ? (
-                            <CommentItem
-                              key={comment.id}
-                              comment={comment}
-                              currentUserId={contextUser?.id || null}
-                              postOwnerId={selectedPost?.user_id}
-                              onDelete={(commentId) => {
-                                setCommentsByPost((prev) => ({
-                                  ...prev,
-                                  [selectedPost.id]: (prev[selectedPost.id] || []).filter(
-                                    (c) => c?.id !== commentId
-                                  ),
-                                }))
-                              }}
-                              onNavigate={(username) => {
-                                closePostModal()
-                                navigate(`/profile/${username}`)
-                              }}
-                              theme="overlay"
-                            />
-                          ) : (
-                            <div key={`placeholder-${index}`} className="py-2 text-xs text-[var(--overlay-text-muted)]">
-                              Loading comment...
-                            </div>
-                          )
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <PostModal
+        isOpen={modalOpen}
+        onClose={closePostModal}
+        postId={selectedPost?.id}
+        initialPostData={selectedPost}
+      />
 
       <style>{`
         .explore-feed > div {

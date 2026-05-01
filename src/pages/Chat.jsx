@@ -9,6 +9,7 @@ import { getSignedImageUrl, uploadImageToPrivateStorage, isSignedUrlValid, delet
 import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 import { dispatchPushNotification } from "../lib/pushNotifications"
 import { Copy, Forward, Info, MessageCircle, MoreVertical, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown, UserPlus, Users } from "lucide-react"
+import PostPreview from "../components/PostPreview"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -896,12 +897,12 @@ export default function Chat() {
   }, [])
 
   const dispatchUnreadBadgeUpdate = useCallback((countsByConversation) => {
-    const totalUnreadConversations = Object.values(countsByConversation || {}).filter((count) => count > 0).length
+    const totalUnreadCount = Object.values(countsByConversation || {}).reduce((sum, count) => sum + count, 0)
 
     window.dispatchEvent(
       new CustomEvent("chatUnreadChanged", {
         detail: {
-          totalUnreadConversations,
+          totalUnreadCount,
           unreadCountsByConversation: countsByConversation || {}
         }
       })
@@ -968,10 +969,7 @@ export default function Chat() {
     }
 
     setActiveConversationId(conversationId || null)
-    if (conversationId) {
-      clearUnreadForConversation(conversationId)
-    }
-  }, [clearUnreadForConversation, navigate])
+  }, [navigate])
 
   const startDirectMessageLongPress = useCallback(
     (messageId) => {
@@ -1453,6 +1451,9 @@ export default function Chat() {
       setMessages(decryptedMessages)
       setMessagesCache(conversationId, decryptedMessages)
       
+      // Clear unread badge only when messages are actually loaded and visible
+      clearUnreadForConversation(conversationId)
+      
       // Then fetch and attach reactions
       await fetchReactionsForMessages(decryptedMessages)
     } catch (err) {
@@ -1463,7 +1464,7 @@ export default function Chat() {
         setLoadingMessages(false)
       }
     }
-  }, [fetchProfilesByIds, fetchReactionsForMessages, getMessageType, setMessagesCache, shouldFetchMessages])
+  }, [fetchProfilesByIds, fetchReactionsForMessages, getMessageType, setMessagesCache, shouldFetchMessages, clearUnreadForConversation])
 
   const fetchConversations = useCallback(async (userId, { force = false, silent = false } = {}) => {
     if (!userId) return
@@ -1612,6 +1613,8 @@ export default function Chat() {
           displayContent = "📷 Photo"
         } else if (latestMessage?.type === "file") {
           displayContent = "📎 File"
+        } else if (latestMessage?.type === "post") {
+          displayContent = "📝 Post"
         } else if (latestMessage?.content?.trim()) {
           // Use plaintext content if available
           let content = latestMessage.content.trim()
@@ -1630,6 +1633,8 @@ export default function Chat() {
         } else if (latestMessage?.encrypted_content) {
           // For encrypted messages without plaintext, show nothing
           displayContent = ""
+        } else if (latestMessage?.type === "post") {
+          displayContent = "📝 Shared a post"
         }
 
         return {
@@ -1668,6 +1673,8 @@ export default function Chat() {
           displayContent = "📷 Photo"
         } else if (latestMessage?.type === "file") {
           displayContent = "📎 File"
+        } else if (latestMessage?.type === "post") {
+          displayContent = "📝 Post"
         } else if (latestMessage?.content?.trim()) {
           let content = latestMessage.content.trim()
           
@@ -1683,6 +1690,8 @@ export default function Chat() {
         } else if (latestMessage?.encrypted_content) {
           // For encrypted messages without plaintext, show nothing
           displayContent = ""
+        } else if (latestMessage?.type === "post") {
+          displayContent = "📝 Shared a post"
         }
 
         return {
@@ -1935,7 +1944,7 @@ export default function Chat() {
       if (import.meta.env.DEV) {
         console.log("[Chat][RouteRestore] No conversations available yet")
       }
-      setActiveConversationId(null)
+      setActiveConversationId((prev) => (prev === null ? prev : null))
       return
     }
 
@@ -1945,7 +1954,9 @@ export default function Chat() {
         if (import.meta.env.DEV) {
           console.log("[Chat][RouteRestore] Restored direct conversation", { requestedConversationId })
         }
-        setActiveConversationId(requestedConversationId)
+        setActiveConversationId((prev) =>
+          prev === requestedConversationId ? prev : requestedConversationId
+        )
         return
       }
 
@@ -1955,7 +1966,7 @@ export default function Chat() {
           routeConversationId
         })
       }
-      setActiveConversationId(null)
+      setActiveConversationId((prev) => (prev === null ? prev : null))
 
       if (routeConversationId) {
         navigate("/chat?tab=direct", { replace: true })
@@ -2049,15 +2060,23 @@ export default function Chat() {
         reactionsChannelRef.current = null
       }
     }
-  }, [activeConversationId])
+  }, [activeConversationId, handleReactionInsert, handleReactionDelete, updateReactionInState])
 
   useEffect(() => {
     if (!activeConversationId) return
     setConversationTypingState(activeConversationId, false)
+
+    // Ensure only one active conversation channel exists at a time.
+    if (activeConversationChannelRef.current) {
+      supabase.removeChannel(activeConversationChannelRef.current)
+      activeConversationChannelRef.current = null
+    }
+
     console.log("[Chat] Creating active conversation realtime channel:", activeConversationId)
+    console.log("SUBSCRIBED:", activeConversationId)
 
     const channel = supabase
-      .channel(`chat-messages-${activeConversationId}`)
+      .channel(`messages-${activeConversationId}`)
       .on(
         "broadcast",
         { event: "typing" },
@@ -2153,11 +2172,7 @@ export default function Chat() {
               return prev
             }
             appendMessageToCache(activeConversationId, normalizedNextMessage)
-            return [...prev, normalizedNextMessage]
-          })
-
-          // Update conversation list with new message preview (for both sender and receiver)
-          setConversations((prev) => {
+            
             // Format message for preview following same logic as hydration
             let displayContent = ""
             
@@ -2165,6 +2180,8 @@ export default function Chat() {
               displayContent = "📷 Photo"
             } else if (getMessageType(nextMessage) === "file") {
               displayContent = "📎 File"
+            } else if (getMessageType(nextMessage) === "post") {
+              displayContent = "📝 Shared a post"
             } else if (decryptedContent?.trim()) {
               let content = decryptedContent.trim()
               
@@ -2181,52 +2198,41 @@ export default function Chat() {
               displayContent = content
             }
             
-            const updated = prev.map((conversation) =>
-              conversation.id === activeConversationId
-                ? {
-                    ...conversation,
-                    last_message_content: displayContent,
-                    last_message_type: getMessageType(nextMessage),
-                    last_message_sender_id: nextMessage.sender_id,
-                    last_message_is_read: nextMessage.is_read || false,
-                    last_message_at: nextMessage.created_at || conversation.last_message_at
-                  }
-                : conversation
-            )
-
-            return sortConversationsByPriority(updated)
-          })
-
-          if (normalizedNextMessage.receiver_id === contextUser?.id && normalizedNextMessage.sender_id !== contextUser?.id) {
-            supabase
-              .from("messages")
-              .update({ is_read: true })
-              .eq("id", normalizedNextMessage.id)
-              .eq("is_read", false)
-              .then(({ error: markError }) => {
-                if (markError) {
-                  console.error("[Chat] Failed to mark incoming message as read:", markError)
-                  return
-                }
-
-                clearUnreadForConversation(activeConversationId)
-              })
-
-            setMessages((prev) =>
-              prev.map((message) =>
-                message.id === normalizedNextMessage.id ? { ...message, is_read: true } : message
-              )
-            )
-
-            // Also update conversation list to show message is read
-            setConversations((prev) =>
-              prev.map((conversation) =>
-                conversation.id === activeConversationId && conversation.last_message_at === normalizedNextMessage.created_at
-                  ? { ...conversation, last_message_is_read: true }
+            // Update conversations in same setState batch
+            setConversations((prev) => {
+              const updated = prev.map((conversation) =>
+                conversation.id === activeConversationId
+                  ? {
+                      ...conversation,
+                      last_message_content: displayContent,
+                      last_message_type: getMessageType(nextMessage),
+                      last_message_sender_id: nextMessage.sender_id,
+                      last_message_is_read: normalizedNextMessage.receiver_id === contextUser?.id ? true : (nextMessage.is_read || false),
+                      last_message_at: nextMessage.created_at || conversation.last_message_at
+                    }
                   : conversation
               )
-            )
-          }
+              return sortConversationsByPriority(updated)
+            })
+            
+            // Mark as read if received by current user
+            if (normalizedNextMessage.receiver_id === contextUser?.id && normalizedNextMessage.sender_id !== contextUser?.id) {
+              supabase
+                .from("messages")
+                .update({ is_read: true })
+                .eq("id", normalizedNextMessage.id)
+                .eq("is_read", false)
+                .then(({ error: markError }) => {
+                  if (markError) {
+                    console.error("[Chat] Failed to mark incoming message as read:", markError)
+                    return
+                  }
+                  clearUnreadForConversation(activeConversationId)
+                })
+            }
+            
+            return [...prev, normalizedNextMessage]
+          })
         }
       )
       .on(
@@ -2308,6 +2314,8 @@ export default function Chat() {
                 displayContent = "📷 Photo"
               } else if (getMessageType(updatedMessage) === "file") {
                 displayContent = "📎 File"
+              } else if (getMessageType(updatedMessage) === "post") {
+                displayContent = "📝 Shared a post"
               } else if (decryptedContent?.trim()) {
                 let content = decryptedContent.trim()
                 
@@ -2372,7 +2380,7 @@ export default function Chat() {
       isTypingRef.current = false
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId])
+  }, [activeConversationId, setConversationTypingState, getConversationKeyFresh, decrypt, getMessageType, appendMessageToCache, contextUser?.id, clearUnreadForConversation, handleReactionInsert, updateReactionInState, handleReactionDelete, clearTypingTimers])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -2758,6 +2766,8 @@ export default function Chat() {
               displayContent = "📷 Photo"
             } else if (getMessageType(nextMessage) === "file") {
               displayContent = "📎 File"
+            } else if (getMessageType(nextMessage) === "post") {
+              displayContent = "📝 Shared a post"
             } else if (decryptedContent?.trim() && decryptedContent !== "[Message]") {
               let content = decryptedContent.trim()
               
@@ -4023,7 +4033,7 @@ export default function Chat() {
       setLoadingGroupMessages(true)
       const { data: rawMessages, error: fetchError } = await supabase
         .from("group_messages")
-        .select("id, group_id, sender_id, content, encrypted_content, iv, is_encrypted, created_at, reply_to_id")
+        .select("*")
         .eq("group_id", groupId)
         .order("created_at", { ascending: true })
         .limit(100)
@@ -4351,6 +4361,27 @@ export default function Chat() {
               .eq("id", newMessage.sender_id)
               .single()
 
+            // Format message for preview
+            let displayContent = ""
+            if (content && typeof content === "string" && content.trim()) {
+              let previewText = content.trim()
+              // Add sender name prefix
+              if (senderProfile?.name) {
+                previewText = `${senderProfile.name}: ${previewText}`
+              }
+              // Truncate long previews
+              if (previewText.length > 50) {
+                previewText = previewText.substring(0, 47) + "..."
+              }
+              displayContent = previewText
+            } else if (newMessage.file_url) {
+              displayContent = "📎 File"
+            } else if (newMessage.image_url) {
+              displayContent = "📷 Photo"
+            } else {
+              displayContent = "[Message content unavailable]"
+            }
+
             setGroupMessages((prev) => [
               ...prev,
               {
@@ -4359,6 +4390,25 @@ export default function Chat() {
                 senderProfile: senderProfile
               }
             ])
+
+            // Update group list preview
+            setGroups((prev) =>
+              prev
+                .map((g) =>
+                  g.id === group.id
+                    ? {
+                        ...g,
+                        last_message: displayContent,
+                        last_message_at: newMessage.created_at
+                      }
+                    : g
+                )
+                .sort((a, b) => {
+                  const aTime = a.last_message_at || a.created_at
+                  const bTime = b.last_message_at || b.created_at
+                  return new Date(bTime).getTime() - new Date(aTime).getTime()
+                })
+            )
 
             setTimeout(() => {
               groupBottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -4501,15 +4551,13 @@ export default function Chat() {
     return () => clearTimeout(timer)
   }, [activeGroupId, groupMessages, contextUser?.id, markGroupMessagesAsRead])
 
-  // Issue 3: Calculate and sync unread counts
+  // Calculate unread counts - sum of all unread messages
   const unreadDirectCount = useMemo(() => {
-    const count = Object.values(unreadCountsByConversation).filter(count => count > 0).length
-    return count
+    return Object.values(unreadCountsByConversation).reduce((sum, count) => sum + count, 0)
   }, [unreadCountsByConversation])
 
   const unreadGroupCount = useMemo(() => {
-    const count = Object.values(unreadGroupCountsByGroup).filter((value) => value > 0).length
-    return count
+    return Object.values(unreadGroupCountsByGroup).reduce((sum, count) => sum + count, 0)
   }, [unreadGroupCountsByGroup])
 
   const totalUnreadChatCount = unreadDirectCount + unreadGroupCount
@@ -4656,6 +4704,17 @@ export default function Chat() {
       // Optimistic update: immediately append message to UI with plaintext content
       if (insertedData && insertedData.length > 0) {
         const newMessageId = insertedData[0].id
+        
+        // Format display content
+        let displayContent = sentContent
+        if (displayContent && displayContent.trim()) {
+          // Add "You: " prefix for sent messages
+          displayContent = `You: ${displayContent.trim()}`
+          if (displayContent.length > 50) {
+            displayContent = displayContent.substring(0, 47) + "..."
+          }
+        }
+        
         setGroupMessages((prev) => [
           ...prev,
               {
@@ -4670,6 +4729,26 @@ export default function Chat() {
             }
           }
         ])
+        
+        // Update group list preview
+        setGroups((prev) =>
+          prev
+            .map((g) =>
+              g.id === activeGroupId
+                ? {
+                    ...g,
+                    last_message: displayContent,
+                    last_message_at: insertedData[0].created_at
+                  }
+                : g
+            )
+            .sort((a, b) => {
+              const aTime = a.last_message_at || a.created_at
+              const bTime = b.last_message_at || b.created_at
+              return new Date(bTime).getTime() - new Date(aTime).getTime()
+            })
+        )
+        
         // Initialize empty read state for new message
         setGroupMessageReads((prev) => ({
           ...prev,
@@ -5090,14 +5169,34 @@ export default function Chat() {
         return
       }
 
-      // Update last message timestamp in group (do NOT store plaintext caption/preview)
+      // Update last message timestamp in group and preview (do NOT store plaintext caption/preview)
+      const currentTime = new Date().toISOString()
       await supabase
         .from('group_conversations')
         .update({
-          last_message_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          last_message_at: currentTime,
+          updated_at: currentTime
         })
         .eq('id', activeGroupId)
+      
+      // Update group list preview with image indicator
+      setGroups((prev) =>
+        prev
+          .map((g) =>
+            g.id === activeGroupId
+              ? {
+                  ...g,
+                  last_message: "📷 Photo",
+                  last_message_at: currentTime
+                }
+              : g
+          )
+          .sort((a, b) => {
+            const aTime = a.last_message_at || a.created_at
+            const bTime = b.last_message_at || b.created_at
+            return new Date(bTime).getTime() - new Date(aTime).getTime()
+          })
+      )
 
       // Reset
       setGroupSelectedImage(null)
@@ -6099,16 +6198,17 @@ export default function Chat() {
                 const senderProfile = profilesById[message.sender_id]
                 const imageUrl = loadedImageUrls[message.id] || null
                 const isImageMessage = Boolean(imageUrl) || getMessageType(message) === "image"
+                const isPostMessage = getMessageType(message) === "post"
                 const isDeletedMessage = message.is_deleted === true
                 const isForwardedMessage = message.is_forwarded === true
                 const reactionSummary = getReactionSummary(message.id)
                 const isReactionPickerOpen = activeReactionPickerMessageId === message.id
                 const isMessageMenuOpen = activeMessageMenuId === message.id
-                const canReplyMessage = !isDeletedMessage
+                const canReplyMessage = !isDeletedMessage && !isPostMessage
                 const canReactMessage = !isDeletedMessage
-                const canForwardMessage = !isDeletedMessage
-                const canCopyMessage = !isDeletedMessage && Boolean(message.content || imageUrl)
-                const canEditMessage = mine && !isDeletedMessage && !isImageMessage
+                const canForwardMessage = !isDeletedMessage && !isPostMessage
+                const canCopyMessage = !isDeletedMessage && !isPostMessage && Boolean(message.content || imageUrl)
+                const canEditMessage = mine && !isDeletedMessage && !isImageMessage && !isPostMessage
                 const canUnsendMessage = mine && !isDeletedMessage
                 const canDeleteMessage = mine && !isDeletedMessage
                 const canShowActionTrigger = canReplyMessage || canReactMessage || canForwardMessage || canCopyMessage || canEditMessage || canUnsendMessage || canDeleteMessage
@@ -6373,6 +6473,8 @@ export default function Chat() {
                           <div className="w-fit rounded-2xl bg-[var(--chat-elev)] px-2.5 py-1.5 font-['DM_Sans'] text-[13px] italic text-[var(--chat-text-subtle)]">
                             This message was unsent
                           </div>
+                        ) : isPostMessage ? (
+                          <PostPreview postId={message.post_id} isMine={mine} />
                         ) : isImageMessage ? (
                           <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)]">
                             <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
@@ -6850,13 +6952,14 @@ export default function Chat() {
                     })
                     const isDeleted = message.is_deleted
                     const isImage = message.type === 'image'
+                    const isPost = message.type === 'post'
                     const repliedTo = message.reply_to_id ? groupMessagesById.get(message.reply_to_id) : null
                     const isReactionPickerOpen = activeGroupEmojiPickerMessageId === message.id
                     const isMessageMenuOpen = activeGroupMessageMenuId === message.id
-                    const canReplyMessage = !isDeleted
+                    const canReplyMessage = !isDeleted && !isPost
                     const canReactMessage = !isDeleted
-                    const canForwardMessage = !isDeleted
-                    const canCopyMessage = !isDeleted && Boolean(message.content || message.storage_path)
+                    const canForwardMessage = !isDeleted && !isPost
+                    const canCopyMessage = !isDeleted && !isPost && Boolean(message.content || message.storage_path)
                     const canDeleteMessage = isOwn && !isDeleted
                     const canShowActionTrigger =
                       canReplyMessage || canReactMessage || canForwardMessage || canCopyMessage || canDeleteMessage
@@ -7091,6 +7194,8 @@ export default function Chat() {
                               <div className="rounded-lg px-3 py-2 text-sm text-[var(--chat-text-muted)] italic">
                                 This message was deleted
                               </div>
+                            ) : isPost ? (
+                              <PostPreview postId={message.post_id} isMine={isOwn} />
                             ) : isImage && message.storage_path ? (
                               <div className="relative w-full max-w-full cursor-pointer overflow-hidden rounded-2xl bg-[var(--chat-elev)] shadow-sm">
                                 <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">

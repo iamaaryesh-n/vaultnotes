@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import CommentItem from "./CommentItem"
+import SharePostModal from "./SharePostModal"
 import { useToast } from "../hooks/useToast"
 import { supabase } from "../lib/supabase"
 import {
@@ -17,9 +18,14 @@ export default function PostInteractions({
   onCommentClick,
   showInlineComments = true,
   authReady = true,
-  commentCount
+  commentCount,
+  onCommentAdded,
+  onCommentDeleted
 }) {
   const { success, error } = useToast()
+
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
 
   const [currentUserId, setCurrentUserId] = useState(null)
   const [commentInput, setCommentInput] = useState("")
@@ -36,12 +42,19 @@ export default function PostInteractions({
   const [commentsLoading, setCommentsLoading] = useState(false)
   const hasFetchedRef = useRef(false)
 
-  // Get current user ID on mount
+  // Get current user on mount
   useEffect(() => {
     const getCurrentUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setCurrentUserId(user.id)
+        // Also fetch profile for SharePostModal
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, name, username, avatar_url")
+          .eq("id", user.id)
+          .maybeSingle()
+        setCurrentUser(profile || { id: user.id })
       }
     }
     getCurrentUser()
@@ -156,6 +169,9 @@ export default function PostInteractions({
         const base = prev !== null ? prev : initialComments.filter(Boolean)
         return [result.comment, ...base]
       })
+      if (onCommentAdded) {
+        onCommentAdded(result.comment)
+      }
     } else {
       error(result.error || "Failed to add comment")
     }
@@ -169,16 +185,24 @@ export default function PostInteractions({
       if (prev === null) return prev
       return prev.filter((c) => c?.id !== commentId)
     })
+    if (onCommentDeleted) {
+      onCommentDeleted(commentId)
+    }
   }
 
-  const handleShare = async () => {
-    const link = getShareLink(post.profiles?.username)
-    const result = await copyToClipboard(link)
-
-    if (result.success) {
-      success("Link copied to clipboard")
+  const handleShare = () => {
+    // Open the in-app share modal if we have a user; otherwise fall back to clipboard
+    if (currentUser) {
+      setShareModalOpen(true)
     } else {
-      error("Failed to copy link")
+      const link = getShareLink(post.profiles?.username)
+      copyToClipboard(link).then((result) => {
+        if (result.success) {
+          success("Link copied to clipboard")
+        } else {
+          error("Failed to copy link")
+        }
+      })
     }
   }
 
@@ -294,6 +318,14 @@ export default function PostInteractions({
           )}
         </div>
       )}
+
+      {/* Share post modal */}
+      <SharePostModal
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+        post={post}
+        currentUser={currentUser}
+      />
     </div>
   )
 }

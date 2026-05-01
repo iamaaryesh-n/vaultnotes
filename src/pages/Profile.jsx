@@ -1,8 +1,8 @@
-﻿import { useState, useEffect, useCallback, lazy, Suspense } from "react"
+import { useState, useEffect, useCallback, lazy, Suspense } from "react"
 import { supabase } from "../lib/supabase"
 import { useNavigate, useParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { MoreHorizontal, Pencil, Trash2, X } from "lucide-react"
 import Modal from "../components/Modal"
 import PostInteractions from "../components/PostInteractions"
 import PostContent from "../components/PostContent"
@@ -125,6 +125,18 @@ export default function Profile() {
   const [editingPostId, setEditingPostId] = useState(null)
   const [editingPostContent, setEditingPostContent] = useState("")
   const [postContentOverrides, setPostContentOverrides] = useState({})
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false)
+
+  useEffect(() => {
+    if (isAvatarModalOpen) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = "unset"
+    }
+    return () => {
+      document.body.style.overflow = "unset"
+    }
+  }, [isAvatarModalOpen])
 
   useRouteScrollRestoration(`profile-${username || "me"}`)
   
@@ -723,7 +735,7 @@ export default function Profile() {
           .from(bucketName)
           .getPublicUrl(fileName)
 
-        return publicUrlData.publicUrl
+        return publicUrlData.publicUrl + `?t=${Date.now()}`
       }
 
       if (mediaChanges.pendingAvatarFile) {
@@ -1004,7 +1016,10 @@ export default function Profile() {
         <div className="relative z-20 border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-4 sm:px-5">
           <div className="mb-5 flex flex-col items-start gap-3.5 md:mb-6 md:flex-row md:items-end md:justify-between">
             <div className="flex items-end gap-[clamp(12px,3.8vw,20px)]">
-              <div className="relative z-10 -mt-[clamp(28px,8.5vw,42px)] shrink-0">
+              <div 
+                className="relative z-10 -mt-[clamp(28px,8.5vw,42px)] shrink-0 cursor-pointer transition-opacity hover:opacity-90"
+                onClick={() => setIsAvatarModalOpen(true)}
+              >
                 {avatarUrl ? (
                   <img
                     src={avatarUrl}
@@ -1436,6 +1451,49 @@ export default function Profile() {
           }
         }}
       />
+
+      {/* Full-screen Avatar Modal */}
+      <AnimatePresence>
+        {isAvatarModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsAvatarModalOpen(false)}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md"
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsAvatarModalOpen(false);
+              }}
+              className="absolute right-4 top-4 z-10 rounded-full bg-black/40 p-2 text-white/80 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white md:right-8 md:top-8"
+            >
+              <X className="h-6 w-6" />
+            </button>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative flex items-center justify-center max-h-[90vh] max-w-[90vw]"
+            >
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Avatar Full"
+                  className="h-auto max-h-[85vh] w-auto max-w-full rounded-full object-contain shadow-2xl"
+                />
+              ) : (
+                <div className="flex aspect-square h-[min(85vh,85vw)] w-[min(85vh,85vw)] shrink-0 items-center justify-center rounded-full bg-[var(--profile-accent-soft)] font-['Sora'] text-[clamp(100px,20vw,200px)] font-bold text-[var(--profile-accent)] shadow-2xl">
+                  {profile?.name?.charAt(0)?.toUpperCase() || "?"}
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       </div>
     </div>
   )

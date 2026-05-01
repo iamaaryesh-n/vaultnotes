@@ -6,26 +6,23 @@
 html {
   overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
-  background-color: #0a0a0a;
-  color-scheme: dark;
+  /* background-color is set by the inline theme script in index.html */
 }
 
 body {
   min-height: 100dvh;
   overscroll-behavior-y: contain;
-  background-color: #0a0a0a;
+  background-color: transparent;
 }
 
 * {
   touch-action: manipulation;
 }
 
-/* Global light background */
+/* Global defaults — actual bg is set by the theme script on <html> */
 body, html {
   min-height: 100vh;
-  background-color: #0a0a0a;
-  color: #e2e8f0;
-  transition: all 0.2s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   scroll-behavior: smooth;
 }
 
@@ -36,8 +33,7 @@ html[data-resolved-theme="light"] body {
   color-scheme: light;
 }
 
-html.dark body,
-html.dark html {
+html.dark body {
   background-color: #0a0a0a;
   color: #e2e8f0;
   color-scheme: dark;
@@ -176,7 +172,7 @@ button, a, input {
 }
 
 ::-webkit-scrollbar-track {
-  background: #000000;
+  background: var(--profile-bg, #f8fafc);
 }
 
 ::-webkit-scrollbar-thumb {

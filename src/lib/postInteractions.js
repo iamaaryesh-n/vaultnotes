@@ -76,7 +76,7 @@ export async function fetchLikeInfo(postId) {
     const { data: { user } } = await supabase.auth.getUser()
 
     // Get total likes count
-    const { count: likesCount } = await supabase
+    const { count } = await supabase
       .from("likes")
       .select("id", { count: "exact", head: true })
       .eq("post_id", postId)
@@ -94,10 +94,10 @@ export async function fetchLikeInfo(postId) {
       userLiked = !!userLike
     }
 
-    return { likesCount: likesCount || 0, userLiked }
+    return { count: count || 0, userLiked }
   } catch (err) {
     console.error("[postInteractions] Error fetching like info:", err)
-    return { likesCount: 0, userLiked: false }
+    return { count: 0, userLiked: false }
   }
 }
 

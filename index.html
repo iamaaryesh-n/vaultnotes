@@ -11,27 +11,99 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="VaultNotes" />
     <style>
-      html,
+      html {
+        min-height: 100%;
+        /* background-color and color-scheme are set by the theme script below */
+      }
       body,
       #root {
         min-height: 100%;
-        background-color: #0a0a0a;
-        color-scheme: dark;
+        background-color: transparent;
+      }
+
+      /* ── Splash screen ─────────────────────────────────────────────── */
+      #vn-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        /* bg is set inline by the theme script below */
+        transition: opacity 0.35s ease, visibility 0.35s ease;
+      }
+      #vn-splash.vn-splash--hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      @keyframes vn-logo-in {
+        from { opacity: 0; transform: scale(0.82); filter: blur(6px); }
+        to   { opacity: 1; transform: scale(1);    filter: blur(0px); }
+      }
+      @keyframes vn-text-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0);   }
+      }
+      #vn-splash-logo-wrap {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 72px;
+        height: 72px;
+        border-radius: 20px;
+        border: 1px solid rgba(244,180,0,0.28);
+        background: rgba(244,180,0,0.09);
+        box-shadow: 0 0 40px rgba(244,180,0,0.14);
+        animation: vn-logo-in 0.75s cubic-bezier(0.22,1,0.36,1) both;
+      }
+      #vn-splash-logo-wrap::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        border: 1px solid rgba(244,180,0,0.14);
+        animation: pulse 1.8s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,100% { opacity: 1; }
+        50%      { opacity: 0.3; }
+      }
+      #vn-splash-logo {
+        width: 44px;
+        height: 44px;
+        object-fit: contain;
+      }
+      #vn-splash-title {
+        font-family: 'Sora', sans-serif;
+        font-size: 15px;
+        font-weight: 700;
+        color: #f4b400;
+        letter-spacing: 0.01em;
+        animation: vn-text-in 0.6s 0.35s cubic-bezier(0.22,1,0.36,1) both;
+      }
+      #vn-splash-sub {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 12px;
+        margin-top: -12px;
+        animation: vn-text-in 0.6s 0.5s cubic-bezier(0.22,1,0.36,1) both;
       }
     </style>
     <script>
       (function () {
+        var resolvedTheme = "light";
         try {
           var themeKey = "theme";
           var legacyThemeKey = "vaultnotes-theme";
           var storedTheme = localStorage.getItem(themeKey) || localStorage.getItem(legacyThemeKey) || "system";
           var validThemes = ["light", "dark", "system"];
-          if (validThemes.indexOf(storedTheme) === -1) {
-            storedTheme = "system";
-          }
+          if (validThemes.indexOf(storedTheme) === -1) storedTheme = "system";
 
           var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-          var resolvedTheme = storedTheme === "system" ? (prefersDark ? "dark" : "light") : storedTheme;
+          resolvedTheme = storedTheme === "system" ? (prefersDark ? "dark" : "light") : storedTheme;
           var root = document.documentElement;
 
           root.classList.toggle("dark", resolvedTheme === "dark");
@@ -39,11 +111,33 @@
           root.setAttribute("data-resolved-theme", resolvedTheme);
           root.style.colorScheme = resolvedTheme;
           root.style.backgroundColor = resolvedTheme === "dark" ? "#0a0a0a" : "#f8fafc";
-        } catch (error) {
+        } catch (e) {
+          resolvedTheme = "dark";
           document.documentElement.classList.add("dark");
           document.documentElement.setAttribute("data-theme", "system");
           document.documentElement.setAttribute("data-resolved-theme", "dark");
         }
+
+        /* Build splash — bg already matches resolved theme, no flicker possible */
+        var isDark = resolvedTheme === "dark";
+        var splashBg  = isDark ? "#0a0a0a" : "#f8fafc";
+        var subColor  = isDark ? "#a09080"  : "#6b6258";
+
+        var splash = document.createElement("div");
+        splash.id = "vn-splash";
+        splash.style.background = splashBg;
+        splash.innerHTML = [
+          '<div id="vn-splash-logo-wrap">',
+          '  <img id="vn-splash-logo" src="/icons/icon-192.png" alt="VaultNotes" />',
+          '</div>',
+          '<p id="vn-splash-title">VaultNotes</p>',
+          '<p id="vn-splash-sub" style="color:' + subColor + '">Your second brain</p>'
+        ].join("");
+
+        /* Insert before <body> children so it appears instantly */
+        document.addEventListener("DOMContentLoaded", function () {
+          document.body.insertBefore(splash, document.body.firstChild);
+        });
       })();
     </script>
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
@@ -53,5 +147,28 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      /* Dismiss the splash when React signals ready, or after 1.2 s max */
+      (function () {
+        var MIN_MS = 1000;
+        var MAX_MS = 1200;
+        var start = Date.now();
+        var dismissed = false;
+        function dismiss() {
+          if (dismissed) return;
+          dismissed = true;
+          var splash = document.getElementById("vn-splash");
+          if (!splash) return;
+          var elapsed = Date.now() - start;
+          var delay = Math.max(0, MIN_MS - elapsed);
+          setTimeout(function () {
+            splash.classList.add("vn-splash--hidden");
+            setTimeout(function () { splash.remove(); }, 370);
+          }, delay);
+        }
+        window.addEventListener("splash:ready", dismiss);
+        setTimeout(dismiss, MAX_MS);
+      })();
+    </script>
   </body>
 </html>

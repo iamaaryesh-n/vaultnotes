@@ -7,6 +7,7 @@ import LoadingBar from "./components/LoadingBar"
 import ToastContainer from "./components/ToastContainer"
 import BottomNavigation from "./components/BottomNavigation"
 import CreatePostModal from "./components/CreatePostModal"
+import PostModal from "./components/PostModal"
 import Navbar from "./components/Navbar"
 import ErrorBoundary from "./components/ErrorBoundary"
 import { initializeTheme } from "./utils/theme"
@@ -76,7 +77,7 @@ function VaultsRouteFallback() {
 
 function AppLoadingFallback({ label = "Loading VaultNotes..." }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#0a0a0a] px-6 text-[#f5f0e8]">
+    <div className="profile-theme flex min-h-screen items-center justify-center bg-[var(--profile-bg)] px-6">
       <div className="text-center">
         <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[18px] border border-[rgba(244,180,0,0.24)] bg-[rgba(244,180,0,0.08)] shadow-[0_0_36px_rgba(244,180,0,0.12)]">
           <img
@@ -87,7 +88,7 @@ function AppLoadingFallback({ label = "Loading VaultNotes..." }) {
           <span className="absolute inset-0 rounded-[18px] border border-[rgba(244,180,0,0.12)] animate-pulse" />
         </div>
         <p className="font-['Sora'] text-sm font-semibold text-[#f4b400]">VaultNotes</p>
-        <p className="mt-2 font-['DM_Sans'] text-xs text-[#a09080]">{label}</p>
+        <p className="mt-2 font-['DM_Sans'] text-xs text-[var(--profile-text-muted)]">{label}</p>
       </div>
     </div>
   )
@@ -110,7 +111,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
   }, [])
 
   return (
-    <div className={`${isChatRoute ? "h-screen overflow-hidden" : "min-h-screen"} bg-gray-50 text-gray-900 dark:bg-[var(--profile-bg)] dark:text-[var(--profile-text)]`}>
+    <div className={`profile-theme ${isChatRoute ? "h-screen overflow-hidden" : "min-h-screen"} bg-[var(--profile-bg)] text-[var(--profile-text)]`}>
       {!postDetailFocusMode && <Navbar />}
       <ToastContainer />
       <LoadingBar />
@@ -124,6 +125,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
           window.dispatchEvent(new CustomEvent("explore:new-post", { detail: newPost }))
         }}
       />
+      <PostModal />
       <main
         className={
           isChatRoute
@@ -150,6 +152,14 @@ function AppContent() {
   const previousPathRef = useRef(location.pathname)
 
   useEffect(() => initializeTheme(), [])
+  // Signal the HTML splash screen to dismiss once auth has resolved
+  const splashDismissedRef = useRef(false)
+  useEffect(() => {
+    if (authLoading) return
+    if (splashDismissedRef.current) return
+    splashDismissedRef.current = true
+    window.dispatchEvent(new Event("splash:ready"))
+  }, [authLoading])
 
   useEffect(() => {
     setActiveRouteMeta({

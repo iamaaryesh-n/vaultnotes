@@ -117,6 +117,7 @@ export default function BottomNavigation() {
     const handleUnreadRefresh = (event) => {
       const detail = event?.detail || {}
 
+      // Handle totalChatUnreadChanged event (from Chat.jsx dispatcher)
       if (typeof detail.unreadDirectCount === "number") {
         setUnreadDirectCount(detail.unreadDirectCount)
       }
@@ -125,25 +126,16 @@ export default function BottomNavigation() {
         setUnreadGroupCount(detail.unreadGroupCount)
       }
 
-      if (detail.unreadCountsByConversation) {
-        const conversationIds = Object.entries(detail.unreadCountsByConversation)
-          .filter(([, count]) => count > 0)
-          .map(([conversationId]) => conversationId)
-
-        setUnreadDirectCount(conversationIds.length)
+      // Handle chatUnreadChanged event
+      if (typeof detail.totalUnreadCount === "number") {
+        setUnreadDirectCount(detail.totalUnreadCount)
         return
       }
 
-      if (typeof detail.totalUnreadConversations === "number") {
-        if (detail.totalUnreadConversations === 0) {
-          setUnreadDirectCount(0)
-        } else {
-          fetchUnreadChatCount(currentUserId)
-        }
-        return
+      // Fallback: if none of the above, fetch fresh count
+      if (!detail.unreadDirectCount && !detail.unreadGroupCount && !detail.totalUnreadCount) {
+        fetchUnreadChatCount(currentUserId)
       }
-
-      fetchUnreadChatCount(currentUserId)
     }
 
     window.addEventListener("chatUnreadChanged", handleUnreadRefresh)
