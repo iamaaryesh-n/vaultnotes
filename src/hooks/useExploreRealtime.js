@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef } from "react"
 import { supabase } from "../lib/supabase"
 import { usePostsRealtime } from "./usePostsRealtime"
 
-export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost }, authReady = true) {
+export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost, addNewPost }, authReady = true) {
   const optimisticLikeActionsRef = useRef(new Map())
+  const newPostIdsRef = useRef(new Set())
 
   useEffect(() => {
     const handleOptimisticLike = (event) => {
@@ -144,6 +145,51 @@ export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCo
     },
     [setCommentsByPost]
   )
+
+  // Subscribe to new posts
+  useEffect(() => {
+    if (!authReady || !addNewPost) return
+
+    const postsChannel = supabase
+      .channel("posts-realtime-new")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "posts"
+        },
+        async (payload) => {
+          if (!payload.new || !payload.new.id) return
+
+          // Avoid duplicate from optimistic update
+          if (newPostIdsRef.current.has(payload.new.id)) {
+            newPostIdsRef.current.delete(payload.new.id)
+            return
+          }
+
+          // Fetch full post data with profile
+          try {
+            const { data: fullPost, error } = await supabase
+              .from("posts")
+              .select("id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)")
+              .eq("id", payload.new.id)
+              .maybeSingle()
+
+            if (error || !fullPost) return
+
+            addNewPost(fullPost)
+          } catch (err) {
+            console.error("[useExploreRealtime] Error fetching new post:", err)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(postsChannel)
+    }
+  }, [authReady, addNewPost])
 
   usePostsRealtime(
     posts.map((post) => post.id),

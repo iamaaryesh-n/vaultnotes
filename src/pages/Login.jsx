@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { Eye, EyeOff } from "lucide-react"
 import { supabase } from "../lib/supabase"
 import { useNavigate } from "react-router-dom"
 import Modal from "../components/Modal"
@@ -28,6 +29,7 @@ export default function Login({ initialMode = "login" }) {
   const [usernameStatus, setUsernameStatus] = useState("idle")
   const [usernameMessage, setUsernameMessage] = useState("")
   const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "", onConfirm: null })
+  const [showPassword, setShowPassword] = useState(false)
   const [selectedTheme, setSelectedTheme] = useState("system")
   const usernameCheckTimeoutRef = useRef(null)
   const usernameRequestIdRef = useRef(0)
@@ -528,14 +530,21 @@ export default function Login({ initialMode = "login" }) {
                 <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Password *</label>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Minimum 6 characters"
                     className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 pr-12 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
-                  <button type="button" className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[16px] text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text-subtle)]">👁</button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text)]"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -577,14 +586,21 @@ export default function Login({ initialMode = "login" }) {
                 <label className="mb-[7px] block text-[12px] font-[600] tracking-[.03em] text-[var(--profile-text-subtle)]">Password *</label>
                 <div className="relative">
                   <input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Minimum 6 characters"
                     className="h-[48px] w-full rounded-[12px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-4 pr-12 font-['DM_Sans'] text-[14px] text-[var(--profile-text)] outline-none transition-all duration-200 placeholder:text-[var(--profile-text-muted)] focus:border-[#F4B400] focus:bg-[var(--profile-hover)]"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
-                  <button type="button" className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[16px] text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text-subtle)]">👁</button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-[14px] top-1/2 -translate-y-1/2 border-none bg-transparent p-0 text-[var(--profile-text-muted)] transition-colors hover:text-[var(--profile-text)]"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
 

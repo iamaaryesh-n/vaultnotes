@@ -8,7 +8,7 @@ import { encrypt, decrypt, importKey, generateKey, exportKey, validateKey, debug
 import { getSignedImageUrl, uploadImageToPrivateStorage, isSignedUrlValid, deletePrivateImage } from "../lib/privateImageStorage"
 import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 import { dispatchPushNotification } from "../lib/pushNotifications"
-import { Copy, Forward, Info, MessageCircle, MoreHorizontal, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown, UserPlus, Users } from "lucide-react"
+import { Copy, Forward, Info, MessageCircle, MoreVertical, Reply, SmilePlus, Trash2, ChevronUp, ChevronDown, UserPlus, Users } from "lucide-react"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -5707,12 +5707,12 @@ export default function Chat() {
                         setOpenGroupOptionsId(null)
                         setOpenConversationOptionsId((prev) => (prev === conversation.id ? null : conversation.id))
                       }}
-                      className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-hover)] ${
+                      className={`absolute right-2 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)] ${
                         openConversationOptionsId === conversation.id ? "opacity-100" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                       }`}
                       aria-label="Conversation options"
                     >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
+                      <MoreVertical className="h-3.5 w-3.5" />
                     </button>
 
                     {openConversationOptionsId === conversation.id && (
@@ -5872,12 +5872,12 @@ export default function Chat() {
                               setOpenConversationOptionsId(null)
                               setOpenGroupOptionsId((prev) => (prev === group.id ? null : group.id))
                             }}
-                            className={`absolute right-2 top-2.5 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-hover)] ${
+                            className={`absolute right-2 top-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)] ${
                               openGroupOptionsId === group.id ? "opacity-100" : "opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                             }`}
                             aria-label="Group options"
                           >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
+                            <MoreVertical className="h-3.5 w-3.5" />
                           </button>
 
                           {openGroupOptionsId === group.id && (
@@ -6239,11 +6239,11 @@ export default function Chat() {
                                 setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
                                 setActiveReactionPickerMessageId(null)
                               }}
-                              className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
+                              className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)]"
                               title="More options"
                               aria-label="Open message options"
                             >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
+                              <MoreVertical className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
@@ -6972,11 +6972,11 @@ export default function Chat() {
                                     setActiveGroupMessageMenuId((prev) => (prev === message.id ? null : message.id))
                                     setActiveGroupEmojiPickerMessageId(null)
                                   }}
-                                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
+                                  className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)]"
                                   title="More options"
                                   aria-label="Open message options"
                                 >
-                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                  <MoreVertical className="h-3.5 w-3.5" />
                                 </button>
                               )}
                             </div>

@@ -5,21 +5,21 @@ import { PostListSkeleton } from "./PostSkeleton"
 import PostInteractions from "./PostInteractions"
 import PostContent from "./PostContent"
 import { getFeedImageUrl, getAvatarImageUrl } from "../utils/imageOptimization"
- 
+
 function formatPostTime(value) {
   if (!value) return ""
   const date = new Date(value)
   const now = new Date()
   const seconds = Math.floor((now - date) / 1000)
- 
+
   if (seconds < 60) return "now"
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
- 
+
   return date.toLocaleDateString()
 }
- 
+
 export default function PostFeed({
   activeTab,
   contextUser,
@@ -34,30 +34,31 @@ export default function PostFeed({
   page,
   queueNextPageLoad,
   onToggleFollow,
-  onOpenPost
+  onOpenPost,
+  authReady
 }) {
   const navigate = useNavigate()
   const loadMoreRef = useRef(null)
- 
+
   const filteredPosts = useMemo(() => {
     let filtered = [...posts]
- 
+
     filtered = filtered.filter((post) => {
       if (post.visibility === "public") {
         return true
       }
- 
+
       if (post.visibility === "private") {
         if (post.user_id === contextUser?.id) {
           return true
         }
- 
+
         return followedUsers.includes(post.user_id)
       }
- 
+
       return post.visibility === "public"
     })
- 
+
     switch (activeTab) {
       case "following":
         filtered = filtered.filter((post) => followedUsers.includes(post.user_id))
@@ -76,13 +77,13 @@ export default function PostFeed({
       default:
         break
     }
- 
+
     return filtered
   }, [activeTab, commentsByPost, contextUser?.id, followedUsers, likesByPost, posts])
- 
+
   useEffect(() => {
     if (!loadMoreRef.current) return
- 
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -93,29 +94,29 @@ export default function PostFeed({
       },
       { threshold: 0.1, rootMargin: "300px" }
     )
- 
+
     observer.observe(loadMoreRef.current)
- 
+
     return () => {
       observer.disconnect()
     }
   }, [hasMore, loadingMore, page, filteredPosts.length, queueNextPageLoad])
- 
+
   useEffect(() => {
     const handleScroll = () => {
       const isNearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 300
- 
+
       if (isNearBottom && hasMore && !loadingMore) {
         queueNextPageLoad()
       }
     }
- 
+
     window.addEventListener("scroll", handleScroll)
     return () => {
       window.removeEventListener("scroll", handleScroll)
     }
   }, [hasMore, loadingMore, queueNextPageLoad])
- 
+
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8">
@@ -123,7 +124,7 @@ export default function PostFeed({
       </div>
     )
   }
- 
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-4">
       {error && (
@@ -135,7 +136,7 @@ export default function PostFeed({
           <p className="font-medium">{error}</p>
         </motion.div>
       )}
- 
+
       {filteredPosts.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -196,26 +197,26 @@ export default function PostFeed({
                         </div>
                       )}
                     </button>
- 
+
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-[6px]">
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (post.profiles?.username) {
-                            navigate(`/profile/${post.profiles.username}`)
-                          }
-                        }}
-                        className="text-left font-['Sora'] text-[14px] font-bold text-[var(--profile-text)] transition-colors hover:text-[#F4B400]"
-                      >
-                        {post.profiles?.name || post.profiles?.username || "Unknown"}
-                      </button>
-                      <span className="text-[12px] text-[var(--profile-text-muted)]">@{post.profiles?.username || "unknown"}</span>
-                      <span className="h-[3px] w-[3px] rounded-full bg-[var(--profile-text-muted)]" />
-                      <span className="text-[12px] text-[var(--profile-text-muted)]">{formatPostTime(post.created_at)}</span>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            if (post.profiles?.username) {
+                              navigate(`/profile/${post.profiles.username}`)
+                            }
+                          }}
+                          className="text-left font-['Sora'] text-[14px] font-bold text-[var(--profile-text)] transition-colors hover:text-[#F4B400]"
+                        >
+                          {post.profiles?.name || post.profiles?.username || "Unknown"}
+                        </button>
+                        <span className="text-[12px] text-[var(--profile-text-muted)]">@{post.profiles?.username || "unknown"}</span>
+                        <span className="h-[3px] w-[3px] rounded-full bg-[var(--profile-text-muted)]" />
+                        <span className="text-[12px] text-[var(--profile-text-muted)]">{formatPostTime(post.created_at)}</span>
                       </div>
                     </div>
- 
+
                     {contextUser?.id && post.user_id !== contextUser.id && (
                       <button
                         onClick={(event) => {
@@ -235,7 +236,7 @@ export default function PostFeed({
                 </div>
 
                 <div className="mt-3 mb-3 h-px w-full bg-[var(--profile-border)] opacity-60" />
- 
+
                 {post.content && (
                   <PostContent
                     content={post.content}
@@ -243,7 +244,7 @@ export default function PostFeed({
                     className="w-full cursor-pointer text-left text-[15px] leading-7 text-[var(--profile-text)]"
                   />
                 )}
- 
+
                 {post.image_url && (
                   <div
                     onClick={() => onOpenPost(post)}
@@ -258,20 +259,22 @@ export default function PostFeed({
                     />
                   </div>
                 )}
- 
+
                 <div className="mt-[12px]">
                   <PostInteractions
                     post={post}
                     initialComments={commentsByPost[post.id] || []}
                     initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
+                    commentCount={(commentsByPost[post.id] || []).length}
+                    authReady={authReady}
                   />
                 </div>
               </motion.article>
             ))}
           </AnimatePresence>
- 
+
           <div ref={loadMoreRef} className="h-20 w-full" />
- 
+
           {loadingMore && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center py-4">
               <div className="flex gap-1">
@@ -286,4 +289,3 @@ export default function PostFeed({
     </div>
   )
 }
- 

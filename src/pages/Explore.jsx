@@ -5,10 +5,11 @@ import { supabase } from "../lib/supabase"
 import { useAuth } from "../hooks/useAuth"
 import { usePrefetchWorkspaces } from "../hooks/usePrefetchWorkspaces"
 import { followUser, unfollowUser } from "../lib/followsLib"
-import { fetchComments } from "../lib/postInteractions"
+import { fetchComments, fetchCommentCountsForPosts, fetchLikeCountsForPosts } from "../lib/postInteractions"
 import PostInteractions from "../components/PostInteractions"
 import PostFeed from "../components/PostFeed"
 import PostContent from "../components/PostContent"
+import CommentItem from "../components/CommentItem"
 import PublicWorkspaceShelf from "../components/PublicWorkspaceShelf"
 import { getAvatarImageUrl } from "../utils/imageOptimization"
 import { useExploreFeed } from "../hooks/useExploreFeed"
@@ -34,6 +35,7 @@ export default function Explore() {
 
   const {
     posts,
+    setPosts,
     commentsByPost,
     likesByPost,
     loading,
@@ -44,12 +46,69 @@ export default function Explore() {
     currentUserId,
     queueNextPageLoad,
     setCommentsByPost,
-    setLikesByPost
+    setLikesByPost,
+    addNewPost
   } = useExploreFeed(contextUser, authReady)
 
-  useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost }, authReady)
+  useExploreRealtime({ posts, currentUserId, setLikesByPost, setCommentsByPost, addNewPost }, authReady)
 
   usePrefetchWorkspaces()
+
+  // Track optimistic posts to avoid duplicates from realtime
+  const newPostIdsRef = useRef(new Set())
+
+  // Listen for new post creation and add optimistically
+  useEffect(() => {
+    const handleNewPost = async (event) => {
+      const newPost = event?.detail
+      if (!newPost || !newPost.id) return
+
+      newPostIdsRef.current.add(newPost.id)
+      
+      // Fetch full post with profile data
+      try {
+        const { data: fullPost } = await supabase
+          .from("posts")
+          .select("id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)")
+          .eq("id", newPost.id)
+          .maybeSingle()
+
+        if (fullPost) {
+          if (addNewPost) {
+            addNewPost(fullPost)
+          }
+
+          // Fetch initial comment and like counts
+          const [commentCounts, likeData] = await Promise.all([
+            fetchCommentCountsForPosts([newPost.id]),
+            fetchLikeCountsForPosts([newPost.id], currentUserId)
+          ])
+
+          // Update counts
+          if (commentCounts[newPost.id] !== undefined) {
+            setCommentsByPost((prev) => ({
+              ...prev,
+              [newPost.id]: new Array(commentCounts[newPost.id]).fill(null)
+            }))
+          }
+          if (likeData[newPost.id]) {
+            setLikesByPost((prev) => ({
+              ...prev,
+              [newPost.id]: likeData[newPost.id]
+            }))
+          }
+        }
+      } catch (err) {
+        console.error("[Explore] Error fetching new post data:", err)
+        if (addNewPost) {
+          addNewPost(newPost)
+        }
+      }
+    }
+
+    window.addEventListener("explore:new-post", handleNewPost)
+    return () => window.removeEventListener("explore:new-post", handleNewPost)
+  }, [addNewPost, currentUserId, setCommentsByPost, setLikesByPost])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -126,6 +185,9 @@ export default function Explore() {
     setSelectedPost(post)
     setModalOpen(true)
     setShowModalComments(false)
+    // Push a synthetic history entry so the mobile back button pops this
+    // entry instead of navigating to the previous route.
+    window.history.pushState({ explorePostModal: true }, "")
   }
 
   const closePostModal = () => {
@@ -133,6 +195,11 @@ export default function Explore() {
     setSelectedPost(null)
     setShowModalComments(false)
     setModalCommentsLoading(false)
+    // Clean up the synthetic history entry when the user closes via X button
+    // so the history stack stays accurate.
+    if (window.history.state?.explorePostModal) {
+      window.history.back()
+    }
   }
 
   useEffect(() => {
@@ -153,20 +220,30 @@ export default function Explore() {
     }
   }, [modalOpen])
 
+  // Intercept hardware/browser back button while the modal is open.
+  // popstate fires after history.back() pops our synthetic entry — we
+  // close the modal in-place so the Explore feed stays visible.
   useEffect(() => {
-    if (!modalOpen || !selectedPost?.id) return
+    if (!modalOpen) return
 
-    const existingComments = commentsByPost[selectedPost.id] || []
-    const hasPlaceholders = existingComments.some((comment) => !comment)
-    const shouldFetchFullComments = existingComments.length === 0 || hasPlaceholders
-
-    if (!shouldFetchFullComments) {
-      return
+    const handlePopState = () => {
+      setModalOpen(false)
+      setSelectedPost(null)
+      setShowModalComments(false)
+      setModalCommentsLoading(false)
     }
+
+    window.addEventListener("popstate", handlePopState)
+    return () => window.removeEventListener("popstate", handlePopState)
+  }, [modalOpen])
+
+  useEffect(() => {
+    if (!selectedPost?.id || !authReady) return
 
     let canceled = false
 
     const loadFullComments = async () => {
+      console.log("Fetching comments for:", selectedPost.id)
       setModalCommentsLoading(true)
       try {
         const fullComments = await fetchComments(selectedPost.id)
@@ -188,7 +265,7 @@ export default function Explore() {
     return () => {
       canceled = true
     }
-  }, [modalOpen, selectedPost?.id, showModalComments, commentsByPost, setCommentsByPost])
+  }, [selectedPost?.id, authReady, setCommentsByPost])
 
   const handleToggleFollow = useCallback(
     async (userId) => {
@@ -292,6 +369,7 @@ export default function Explore() {
             queueNextPageLoad={queueNextPageLoad}
             onToggleFollow={handleToggleFollow}
             onOpenPost={openPostModal}
+            authReady={authReady}
           />
         </div>
       ) : (
@@ -315,10 +393,10 @@ export default function Explore() {
               exit={isMobileViewport ? { opacity: 0, y: 48 } : { opacity: 0, scale: 0.95, y: 20 }}
               transition={isMobileViewport ? { duration: 0.24, ease: "easeOut" } : { type: "spring", stiffness: 300, damping: 30 }}
               onClick={(event) => event.stopPropagation()}
-              className="fixed inset-0 z-[130] h-[100dvh] w-[100vw] overflow-y-auto border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)] md:m-auto md:h-auto md:max-h-[90vh] md:w-[90vw] md:max-w-3xl md:rounded-[20px]"
+              className="fixed inset-0 z-[130] flex h-[100dvh] w-[100vw] flex-col overflow-hidden border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)] md:m-auto md:h-auto md:max-h-[90vh] md:w-[90vw] md:max-w-3xl md:rounded-[20px]"
             >
-              <div className="flex w-full flex-col">
-                <div className="flex-shrink-0 border-b border-[var(--overlay-border)] px-6 py-4">
+              {/* Sticky header — never scrolls */}
+              <div className="flex-shrink-0 border-b border-[var(--overlay-border)] px-6 py-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <button
@@ -388,9 +466,11 @@ export default function Explore() {
                         </svg>
                       </button>
                     </div>
-                  </div>
                 </div>
+              </div>
 
+              {/* Scrollable content area — only this region scrolls */}
+              <div className="flex-1 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
                 {selectedPost?.image_url && (
                   <img
                     src={selectedPost.image_url}
@@ -430,59 +510,37 @@ export default function Explore() {
                       <p className="mb-3 text-xs text-[var(--overlay-text-subtle)]">Loading comments...</p>
                     )}
 
-                    <div className="space-y-3">
-                      {(commentsByPost[selectedPost?.id] || []).length === 0 ? (
+                    <div className="space-y-2">
+                      {(commentsByPost[selectedPost?.id] || []).filter(Boolean).length === 0 ? (
                         <p className="py-4 text-center text-xs text-[var(--overlay-text-muted)]">No comments yet. Be the first!</p>
                       ) : (
-                           (commentsByPost[selectedPost?.id] || []).map((comment, index) => (
-                             comment ? (
-                          <div key={comment.id} className="rounded-[10px] bg-[var(--overlay-elev)] p-3 transition-colors hover:bg-[var(--overlay-hover)]">
-                            <div className="flex items-start gap-2">
-                              <button
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  if (comment.profiles?.username) {
-                                    closePostModal()
-                                    navigate(`/profile/${comment.profiles.username}`)
-                                  }
-                                }}
-                              >
-                                {comment.profiles?.avatar_url ? (
-                                  <img
-                                    src={comment.profiles.avatar_url}
-                                    alt={comment.profiles?.username}
-                                    className="h-8 w-8 rounded-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] text-xs font-bold text-[var(--chat-accent)]">
-                                    {comment.profiles?.username?.charAt(0)?.toUpperCase() || "?"}
-                                  </div>
-                                )}
-                              </button>
-                              <div className="min-w-0 flex-1">
-                                <button
-                                  onClick={(event) => {
-                                    event.stopPropagation()
-                                    if (comment.profiles?.username) {
-                                      closePostModal()
-                                      navigate(`/profile/${comment.profiles.username}`)
-                                    }
-                                  }}
-                                  className="text-xs font-semibold text-[var(--overlay-text)] hover:text-[#F4B400]"
-                                >
-                                  {comment.profiles?.username || "Unknown"}
-                                </button>
-                                <p className="mt-1 break-words text-xs leading-relaxed text-[var(--overlay-text-subtle)]">{comment.content}</p>
-                                <p className="mt-1 text-[10px] text-[var(--overlay-text-muted)]">{formatPostTime(comment.created_at)}</p>
-                              </div>
+                        (commentsByPost[selectedPost?.id] || []).map((comment, index) =>
+                          comment ? (
+                            <CommentItem
+                              key={comment.id}
+                              comment={comment}
+                              currentUserId={contextUser?.id || null}
+                              postOwnerId={selectedPost?.user_id}
+                              onDelete={(commentId) => {
+                                setCommentsByPost((prev) => ({
+                                  ...prev,
+                                  [selectedPost.id]: (prev[selectedPost.id] || []).filter(
+                                    (c) => c?.id !== commentId
+                                  ),
+                                }))
+                              }}
+                              onNavigate={(username) => {
+                                closePostModal()
+                                navigate(`/profile/${username}`)
+                              }}
+                              theme="overlay"
+                            />
+                          ) : (
+                            <div key={`placeholder-${index}`} className="py-2 text-xs text-[var(--overlay-text-muted)]">
+                              Loading comment...
                             </div>
-                          </div>
-                             ) : (
-                               <div key={`comment-placeholder-${index}`} className="py-2 text-xs text-[var(--overlay-text-muted)]">
-                                 Loading comment...
-                               </div>
-                             )
-                        ))
+                          )
+                        )
                       )}
                     </div>
                   </div>

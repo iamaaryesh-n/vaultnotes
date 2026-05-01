@@ -27,14 +27,18 @@ export function useExploreFeed(user, authReady) {
   const loadedPagesRef = useRef(new Set([0]))
   const hasMoreRef = useRef(true)
   const loadingMoreRef = useRef(false)
+  // Always-fresh ref so fetchPostsBatch never closes over a stale userId
+  const userIdRef = useRef(user?.id || null)
 
   useEffect(() => {
     hasMoreRef.current = hasMore
   }, [hasMore])
 
   useEffect(() => {
-    if (!authReady) return;
-    setCurrentUserId(user?.id || null)
+    if (!authReady) return
+    const uid = user?.id || null
+    userIdRef.current = uid
+    setCurrentUserId(uid)
   }, [user, authReady])
 
   const fetchPostsBatch = useCallback(
@@ -66,7 +70,7 @@ export function useExploreFeed(user, authReady) {
           const postIds = fetchedPosts.map((post) => post.id)
           const [commentCounts, likeData] = await Promise.all([
             fetchCommentCountsForPosts(postIds),
-            fetchLikeCountsForPosts(postIds, currentUserId)
+            fetchLikeCountsForPosts(postIds, userIdRef.current)
           ])
 
           const comments = {}
@@ -84,7 +88,7 @@ export function useExploreFeed(user, authReady) {
         return []
       }
     },
-    [currentUserId, setCachedPosts]
+    [setCachedPosts]
   )
 
   const loadMorePosts = useCallback(
@@ -161,8 +165,33 @@ export function useExploreFeed(user, authReady) {
     loadInitialPosts()
   }, [fetchPostsBatch, authReady])
 
+  // Re-fetch userLiked state when user logs in after posts are already loaded.
+  // This backfills the red heart for posts the user liked in a previous session.
+  useEffect(() => {
+    if (!currentUserId) return
+
+    setPosts((prevPosts) => {
+      if (prevPosts.length === 0) return prevPosts
+      const postIds = prevPosts.map((p) => p.id)
+      fetchLikeCountsForPosts(postIds, currentUserId).then((freshLikeData) => {
+        setLikesByPost((prev) => ({ ...prev, ...freshLikeData }))
+      })
+      return prevPosts
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUserId])
+
+  const addNewPost = useCallback((newPost) => {
+    setPosts((prev) => {
+      const postExists = prev.some((p) => p.id === newPost.id)
+      if (postExists) return prev
+      return [newPost, ...prev]
+    })
+  }, [])
+
   return {
     posts,
+    setPosts,
     commentsByPost,
     likesByPost,
     loading,
@@ -174,6 +203,7 @@ export function useExploreFeed(user, authReady) {
     queueNextPageLoad,
     loadMorePosts,
     setCommentsByPost,
-    setLikesByPost
+    setLikesByPost,
+    addNewPost
   }
 }

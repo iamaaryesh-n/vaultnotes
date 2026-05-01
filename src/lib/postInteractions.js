@@ -363,7 +363,8 @@ export async function addComment(postId, content, postOwnerId = null) {
 }
 
 /**
- * Delete a comment
+ * Delete a comment (by comment author or post owner).
+ * Authorization is enforced server-side via RLS — no client filter needed.
  */
 export async function deleteComment(commentId) {
   try {
@@ -377,7 +378,6 @@ export async function deleteComment(commentId) {
       .from("comments")
       .delete()
       .eq("id", commentId)
-      .eq("user_id", user.id)
 
     if (error) throw error
 

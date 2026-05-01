@@ -432,7 +432,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, user }
       const { data, error } = await supabase
         .from('posts')
         .insert([{ user_id: user.id, content: contentForInsert, visibility, image_url: uploadedImageUrl || null }])
-        .select()
+        .select('id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)')
  
       if (error) {
         setModalConfig({

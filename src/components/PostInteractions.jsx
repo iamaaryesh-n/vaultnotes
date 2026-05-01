@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react"
-import { MoreHorizontal, Trash2 } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import CommentItem from "./CommentItem"
 import { useToast } from "../hooks/useToast"
 import { supabase } from "../lib/supabase"
 import {
   addComment,
-  deleteComment,
+  fetchComments,
   getShareLink,
   copyToClipboard,
   toggleLike
@@ -15,7 +15,9 @@ export default function PostInteractions({
   initialComments = [], 
   initialLikes = { count: 0, userLiked: false },
   onCommentClick,
-  showInlineComments = true
+  showInlineComments = true,
+  authReady = true,
+  commentCount
 }) {
   const { success, error } = useToast()
 
@@ -24,12 +26,15 @@ export default function PostInteractions({
   const [addingComment, setAddingComment] = useState(false)
   const [likingInProgress, setLikingInProgress] = useState(false)
   const [showComments, setShowComments] = useState(false)
-  const [deletingCommentId, setDeletingCommentId] = useState(null)
-  const [activeCommentMenuId, setActiveCommentMenuId] = useState(null)
   const [optimisticLikeState, setOptimisticLikeState] = useState({
     count: Math.max(0, initialLikes.count || 0),
     userLiked: !!initialLikes.userLiked
   })
+
+  // Per-post local comments state for inline feed
+  const [commentsData, setCommentsData] = useState(null) // null = not yet fetched
+  const [commentsLoading, setCommentsLoading] = useState(false)
+  const hasFetchedRef = useRef(false)
 
   // Get current user ID on mount
   useEffect(() => {
@@ -49,27 +54,47 @@ export default function PostInteractions({
     })
   }, [initialLikes.count, initialLikes.userLiked, post?.id])
 
+  // (outside-click handling is now inside CommentItem)
+
+  // Fetch full comments once when inline section is first opened
   useEffect(() => {
-    const handleCommentMenuOutside = (event) => {
-      const menuNode = event.target?.closest?.("[data-comment-menu='true']")
-      const triggerNode = event.target?.closest?.("[data-comment-menu-trigger='true']")
+    if (!showComments || !showInlineComments) return
+    if (!post?.id || !authReady) return
+    if (hasFetchedRef.current) return
 
-      if (menuNode || triggerNode) {
-        return
+    hasFetchedRef.current = true
+    let canceled = false
+
+    const loadComments = async () => {
+      console.log("Fetching comments for:", post.id)
+      setCommentsLoading(true)
+      try {
+        const data = await fetchComments(post.id)
+        if (!canceled) {
+          setCommentsData(data || [])
+        }
+      } finally {
+        if (!canceled) setCommentsLoading(false)
       }
-
-      setActiveCommentMenuId(null)
     }
 
-    if (activeCommentMenuId) {
-      document.addEventListener("mousedown", handleCommentMenuOutside)
-      return () => document.removeEventListener("mousedown", handleCommentMenuOutside)
-    }
-  }, [activeCommentMenuId])
+    loadComments()
+    return () => { canceled = true }
+  }, [showComments, showInlineComments, post?.id, authReady])
 
   const likesCount = Math.max(0, optimisticLikeState.count || 0)
   const userLiked = !!optimisticLikeState.userLiked
-  const comments = initialComments
+  // Use fetched comments if available, otherwise fall back to initialComments
+  // (filtering out null placeholders from the count-only feed data)
+  const comments = commentsData !== null
+    ? commentsData
+    : initialComments.filter(Boolean)
+
+  // Display count: use live data length when fetched, else pre-fetched commentCount,
+  // else initialComments length (filters nulls so only real comments count)
+  const displayCount = commentsData !== null
+    ? commentsData.length
+    : (commentCount !== undefined ? commentCount : initialComments.filter(Boolean).length)
 
   const handleLikeClick = async () => {
     if (likingInProgress || !currentUserId) {
@@ -126,6 +151,11 @@ export default function PostInteractions({
     if (result.success) {
       setCommentInput("")
       success("Comment sent")
+      // Prepend new comment to local state so it shows immediately
+      setCommentsData((prev) => {
+        const base = prev !== null ? prev : initialComments.filter(Boolean)
+        return [result.comment, ...base]
+      })
     } else {
       error(result.error || "Failed to add comment")
     }
@@ -133,18 +163,12 @@ export default function PostInteractions({
     setAddingComment(false)
   }
 
-  const handleDeleteComment = async (commentId) => {
-    setDeletingCommentId(commentId)
-    setActiveCommentMenuId(null)
-    const result = await deleteComment(commentId)
-
-    if (result.success) {
-      success("Comment deleted")
-    } else {
-      error(result.error || "Failed to delete comment")
-    }
-
-    setDeletingCommentId(null)
+  const handleDeleteComment = (commentId) => {
+    // Called by CommentItem after successful server delete
+    setCommentsData((prev) => {
+      if (prev === null) return prev
+      return prev.filter((c) => c?.id !== commentId)
+    })
   }
 
   const handleShare = async () => {
@@ -202,7 +226,7 @@ export default function PostInteractions({
         >
           <span className="text-[16px] transition-transform duration-200 group-hover:scale-110">💬</span>
           <span className="text-xs font-semibold text-[var(--profile-text-muted)]">
-            {comments.length > 0 && comments.length}
+            {displayCount > 0 && displayCount}
           </span>
         </button>
 
@@ -247,73 +271,23 @@ export default function PostInteractions({
           </div>
 
           {/* Comments List */}
-          {comments.length === 0 ? (
+          {commentsLoading ? (
+            <div className="py-4 text-center text-sm text-[var(--profile-text-muted)]">Loading comments...</div>
+          ) : comments.length === 0 ? (
             <div className="py-4 text-center text-sm text-[var(--profile-text-muted)]">No comments yet. Be the first!</div>
           ) : (
-            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-              {comments.map((comment, index) => {
-                if (!comment) {
-                  return (
-                    <div key={`comment-placeholder-${index}`} className="py-2 text-xs text-[var(--profile-text-muted)]">
-                      Loading comment...
-                    </div>
-                  )
-                }
-
+            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              {comments.map((comment) => {
+                if (!comment) return null
                 return (
-                  <div key={comment.id} className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-3 transition-colors hover:bg-[var(--profile-hover)]">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <button className="truncate text-left text-sm font-semibold text-[#F4B400] transition-colors hover:text-[#C49000]">
-                          @{comment.profiles?.username || "unknown"}
-                        </button>
-                        <p className="mt-1 break-words text-sm text-[var(--profile-text)]">{comment.content}</p>
-                        <p className="mt-1.5 text-xs text-[var(--profile-text-muted)]">
-                          {new Date(comment.created_at).toLocaleString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit"
-                          })}
-                        </p>
-                      </div>
-                      {/* Comment menu - only show for own comments */}
-                      {currentUserId === comment.user_id && (
-                        <div className="relative flex-shrink-0">
-                          <button
-                            type="button"
-                            data-comment-menu-trigger="true"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              setActiveCommentMenuId((prev) => (prev === comment.id ? null : comment.id))
-                            }}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] text-[var(--profile-text-subtle)] transition-colors hover:border-[#F4B400] hover:text-[var(--profile-text)]"
-                            aria-label="Open comment options"
-                            title="More options"
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </button>
-
-                          {activeCommentMenuId === comment.id && (
-                            <div
-                              data-comment-menu="true"
-                              className="absolute right-0 top-8 z-20 min-w-[140px] rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] p-1.5 shadow-2xl"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteComment(comment.id)}
-                                disabled={deletingCommentId === comment.id}
-                                className="flex w-full items-center gap-2 rounded-[8px] px-2.5 py-2 text-left text-[12px] font-semibold text-[#EF4444] transition-colors hover:bg-[rgba(239,68,68,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                {deletingCommentId === comment.id ? "Deleting..." : "Delete"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <CommentItem
+                    key={comment.id}
+                    comment={comment}
+                    currentUserId={currentUserId}
+                    postOwnerId={post?.user_id}
+                    onDelete={handleDeleteComment}
+                    theme="feed"
+                  />
                 )
               })}
             </div>

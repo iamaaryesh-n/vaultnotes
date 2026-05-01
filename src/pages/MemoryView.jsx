@@ -411,6 +411,15 @@ export default function MemoryView() {
               float: none;
               margin: 0 auto 12px;
             }
+            @media (max-width: 640px) {
+              .prose-memory img[data-align="left"],
+              .prose-memory img[data-align="right"] {
+                display: block;
+                float: none;
+                margin: 0 auto 12px;
+                max-width: 100%;
+              }
+            }
             .prose-memory::after {
               content: "";
               display: block;

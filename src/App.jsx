@@ -119,8 +119,9 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
         isOpen={createPostOpen}
         onClose={() => setCreatePostOpen(false)}
         user={user}
-        onPostCreated={() => {
-          window.dispatchEvent(new CustomEvent("postCreated"))
+        onPostCreated={(newPost) => {
+          window.dispatchEvent(new CustomEvent("postCreated", { detail: newPost }))
+          window.dispatchEvent(new CustomEvent("explore:new-post", { detail: newPost }))
         }}
       />
       <main

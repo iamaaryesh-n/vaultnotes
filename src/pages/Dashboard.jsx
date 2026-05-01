@@ -46,11 +46,15 @@ export default function Dashboard({ session }) {
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
   const [workspaceName, setWorkspaceName] = useState("")
   const [workspaceIsPublic, setWorkspaceIsPublic] = useState(false)
+  const [showRenameWorkspaceModal, setShowRenameWorkspaceModal] = useState(false)
+  const [renameWorkspaceId, setRenameWorkspaceId] = useState(null)
+  const [renameWorkspaceName, setRenameWorkspaceName] = useState("")
   const [workspaceDeleteTarget, setWorkspaceDeleteTarget] = useState(null)
   const [editVisibilityId, setEditVisibilityId] = useState(null)
   const [currentVisibilityState, setCurrentVisibilityState] = useState(false)
   const [editVisibilityValue, setEditVisibilityValue] = useState(false)
   const [updatingVisibility, setUpdatingVisibility] = useState(false)
+  const [renamingWorkspace, setRenamingWorkspace] = useState(false)
   const [authReadyForWorkspaceCreate, setAuthReadyForWorkspaceCreate] = useState(false)
   const [authReadyUserId, setAuthReadyUserId] = useState(null)
   const [headerVisible, setHeaderVisible] = useState(true)
@@ -695,6 +699,62 @@ export default function Dashboard({ session }) {
     setWorkspaceDeleteTarget(workspaceId)
   }, [])
 
+  const openRenameWorkspace = useCallback((workspaceId, currentName) => {
+    console.log("[Dashboard] Opening rename modal for workspace:", workspaceId)
+    setRenameWorkspaceId(workspaceId)
+    setRenameWorkspaceName(currentName || "")
+    setShowRenameWorkspaceModal(true)
+  }, [])
+
+  const handleRenameWorkspaceConfirm = useCallback(async () => {
+    if (!renameWorkspaceId) return
+
+    const nextName = renameWorkspaceName.trim()
+    if (!nextName) {
+      showError("Vault name cannot be empty")
+      return
+    }
+
+    setRenamingWorkspace(true)
+    try {
+      const { data: updatedData, error } = await supabase
+        .from("workspaces")
+        .update({ name: nextName })
+        .eq("id", renameWorkspaceId)
+        .select("id, name, created_at, created_by, is_public")
+        .maybeSingle()
+
+      if (error) {
+        console.error("[Dashboard] Error renaming vault:", error)
+        showError("Failed to rename vault")
+        return
+      }
+
+      const renamedWorkspace = updatedData || { id: renameWorkspaceId, name: nextName }
+
+      setWorkspaces((prev) => {
+        const nextWorkspaces = prev.map((workspace) =>
+          workspace.id === renameWorkspaceId ? { ...workspace, name: nextName } : workspace
+        )
+        setWorkspaceListStore(nextWorkspaces)
+        setCachedWorkspaces(nextWorkspaces, userRoles, ownerCounts)
+        return nextWorkspaces
+      })
+
+      success(`Vault renamed to "${nextName}"`)
+      window.dispatchEvent(new CustomEvent("workspaceMembershipChanged", { detail: { workspaceId: renameWorkspaceId } }))
+      setShowRenameWorkspaceModal(false)
+      setRenameWorkspaceId(null)
+      setRenameWorkspaceName("")
+      console.log("[Dashboard] Vault renamed successfully:", renamedWorkspace)
+    } catch (err) {
+      console.error("[Dashboard] Unexpected error renaming vault:", err)
+      showError("Something went wrong")
+    } finally {
+      setRenamingWorkspace(false)
+    }
+  }, [ownerCounts, renameWorkspaceId, renameWorkspaceName, setCachedWorkspaces, setWorkspaceListStore, showError, success, userRoles])
+
   const leaveWorkspaceAction = useCallback((workspaceId) => {
     return runWorkspaceAction(workspaceId, "leave")
   }, [runWorkspaceAction])
@@ -704,6 +764,14 @@ export default function Dashboard({ session }) {
     setEditVisibilityId(workspaceId)
     setCurrentVisibilityState(currentIsPublic) // Store current state for display
     setEditVisibilityValue(currentIsPublic) // Initialize desired state to current state
+  }, [])
+
+  const closeWorkspaceMenu = useCallback((event) => {
+    event.stopPropagation()
+    const detailsElement = event.currentTarget.closest("details")
+    if (detailsElement) {
+      detailsElement.removeAttribute("open")
+    }
   }, [])
 
   const handleUpdateVisibility = useCallback(async () => {
@@ -903,11 +971,6 @@ export default function Dashboard({ session }) {
                 const role = userRoles[workspace.id]
                 const isShared = role && role !== "owner"
                 const visType = workspace.is_public ? "public" : isShared ? "shared" : "private"
-                const accentClass = visType === "private"
-                  ? "bg-gradient-to-r from-[#8B5CF6] via-[rgba(139,92,246,0.3)] to-transparent"
-                  : visType === "shared"
-                    ? "bg-gradient-to-r from-[#22C55E] via-[rgba(34,197,94,0.3)] to-transparent"
-                    : "bg-gradient-to-r from-[#F4B400] via-[rgba(244,180,0,0.3)] to-transparent"
                 const badgeClass = visType === "private"
                   ? "border border-[var(--visibility-private-border)] bg-[var(--visibility-private-bg)] text-[var(--visibility-private-text)]"
                   : visType === "shared"
@@ -917,7 +980,6 @@ export default function Dashboard({ session }) {
                 const isOwner = role === "owner"
                 return (
                   <>
-                    <div className={`h-[2px] w-full ${accentClass}`} />
                     <div className="px-5 pb-4 pt-4">
                       <div className="flex items-start justify-between gap-[10px]">
                         <div className="min-w-0 flex-1">
@@ -943,11 +1005,19 @@ export default function Dashboard({ session }) {
                               <svg className="h-[14px] w-[14px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></svg>
                             </summary>
                             <div className="absolute right-0 top-full z-[320] mt-2 w-[185px] overflow-hidden rounded-[14px] border border-[var(--profile-border)] bg-[var(--profile-surface)] shadow-[0_12px_40px_rgba(0,0,0,0.85)]">
-                              <button className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]">Rename</button>
+                              <button
+                                onClick={(e) => {
+                                  closeWorkspaceMenu(e)
+                                  openRenameWorkspace(workspace.id, workspace.name)
+                                }}
+                                className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]"
+                              >
+                                Rename
+                              </button>
                               {isOwner && (
                                 <button
                                   onClick={(e) => {
-                                    e.stopPropagation()
+                                    closeWorkspaceMenu(e)
                                     openEditVisibility(workspace.id, workspace.is_public)
                                   }}
                                   className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]"
@@ -959,7 +1029,7 @@ export default function Dashboard({ session }) {
                               {isOwner ? (
                                 <button
                                   onClick={(e) => {
-                                    e.stopPropagation()
+                                    closeWorkspaceMenu(e)
                                     deleteWorkspace(workspace.id)
                                   }}
                                   className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[#EF4444] hover:bg-[var(--profile-elev)]"
@@ -969,7 +1039,7 @@ export default function Dashboard({ session }) {
                               ) : (
                                 <button
                                   onClick={(e) => {
-                                    e.stopPropagation()
+                                    closeWorkspaceMenu(e)
                                     leaveWorkspaceAction(workspace.id)
                                   }}
                                   className="flex w-full items-center gap-[10px] px-[14px] py-[10px] text-left text-[13px] text-[var(--profile-text)] hover:bg-[var(--profile-elev)]"
@@ -1045,6 +1115,25 @@ export default function Dashboard({ session }) {
         onCancel={() => {
           console.log("[Dashboard] Workspace delete cancelled by user")
           setWorkspaceDeleteTarget(null)
+        }}
+      />
+
+      <Modal
+        open={showRenameWorkspaceModal}
+        title="Rename Vault"
+        message="Choose a new name for this vault."
+        inputValue={renameWorkspaceName}
+        onInputChange={setRenameWorkspaceName}
+        inputPlaceholder="Enter vault name"
+        confirmText="Rename"
+        confirmVariant="primary"
+        confirmDisabled={!renameWorkspaceName.trim() || renamingWorkspace}
+        isLoading={renamingWorkspace}
+        onConfirm={handleRenameWorkspaceConfirm}
+        onCancel={() => {
+          setShowRenameWorkspaceModal(false)
+          setRenameWorkspaceId(null)
+          setRenameWorkspaceName("")
         }}
       />
 

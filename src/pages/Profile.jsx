@@ -22,6 +22,7 @@ const FollowersModal = lazy(() =>
 const FollowingModal = lazy(() =>
   import("../components/FollowingModal").then((module) => ({ default: module.FollowingModal }))
 )
+const RichPostEditor = lazy(() => import("../components/RichPostEditor"))
 
 function SkeletonBlock({ className = "" }) {
   return <div className={`profile-skeleton-shimmer ${className}`} />
@@ -1214,13 +1215,20 @@ export default function Profile() {
 
                     {editingPostId === post.id ? (
                       <div className="mb-3 rounded-[10px] border border-[var(--profile-border-strong)] bg-[var(--profile-elev)] p-3">
-                        <textarea
-                          value={editingPostContent}
-                          onChange={(event) => setEditingPostContent(event.target.value)}
-                          placeholder="Edit your post..."
-                          rows={4}
-                          className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-[var(--profile-text)] outline-none placeholder:text-[var(--profile-text-muted)]"
-                        />
+                        <Suspense
+                          fallback={
+                            <div className="min-h-[150px] rounded-[12px] border border-[var(--overlay-border)] bg-[var(--overlay-elev)] px-4 py-3 text-sm text-[var(--overlay-text-muted)]">
+                              Loading editor...
+                            </div>
+                          }
+                        >
+                          <RichPostEditor
+                            key={post.id}
+                            value={editingPostContent}
+                            onChange={({ html }) => setEditingPostContent(html)}
+                            placeholder="Edit your post..."
+                          />
+                        </Suspense>
                         <div className="mt-3 flex items-center justify-end gap-2">
                           <button
                             type="button"
