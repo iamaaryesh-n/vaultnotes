@@ -4,161 +4,94 @@ import { supabase } from "../lib/supabase"
 import PostContent from "./PostContent"
 
 // Module-level cache to share data across all PostPreview instances
-const postCache = {}
-const pendingFetches = {}
+const postCache = new Map()
+const pendingFetches = new Map()
 
 /**
  * PostPreview — renders a shared post inside a chat bubble.
- * Fetches post data by post_id. Displays author, content snippet, and optional image.
- * Clicking navigates to the author's profile.
+ * Auto-loads post data on mount with a skeleton UI to prevent layout shifts.
  */
-export default function PostPreview({ postId, isMine = false }) {
+export default function PostPreview({ post_id, isMine = false }) {
   const navigate = useNavigate()
-  const [post, setPost] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
-  const [likesCount, setLikesCount] = useState(0)
+  const [post, setPost] = useState(() => postCache.get(post_id) || null)
+  const [loading, setLoading] = useState(!postCache.has(post_id))
+  const [error, setError] = useState(false)
 
   useEffect(() => {
-    if (!postId) {
-      setLoading(false)
-      setNotFound(true)
-      return
-    }
+    if (!post_id || postCache.has(post_id)) return
 
-    let canceled = false
+    let isMounted = true
+
     const fetchPost = async () => {
-      // 1. Check if already cached
-      if (postCache[postId]) {
-        if (postCache[postId] === "NOT_FOUND") {
-          setNotFound(true)
-        } else {
-          setPost(postCache[postId])
-        }
-        setLoading(false)
-        return
-      }
-
-      // 2. Check if a fetch is already in progress for this post
-      if (pendingFetches[postId]) {
+      // Check if a fetch is already in progress for this post
+      if (pendingFetches.has(post_id)) {
         try {
-          const { data, error } = await pendingFetches[postId]
-          if (canceled) return
-          if (error || !data) {
-            setNotFound(true)
-          } else {
+          const data = await pendingFetches.get(post_id)
+          if (isMounted) {
             setPost(data)
+            setLoading(false)
           }
         } catch {
-          if (!canceled) setNotFound(true)
-        } finally {
-          if (!canceled) setLoading(false)
+          if (isMounted) {
+            setError(true)
+            setLoading(false)
+          }
         }
         return
       }
 
-      // 3. Fetch from Supabase
       try {
-        setLoading(true)
-        
         const fetchPromise = supabase
           .from("posts")
           .select("id, content, image_url, created_at, user_id, profiles:user_id(name, username, avatar_url)")
-          .eq("id", postId)
+          .eq("id", post_id)
           .maybeSingle()
+          .then(res => {
+            if (res.error || !res.data) throw new Error("Not found")
+            return res.data
+          })
 
-        pendingFetches[postId] = fetchPromise
-        
-        const { data, error } = await fetchPromise
+        pendingFetches.set(post_id, fetchPromise)
+        const data = await fetchPromise
 
-        if (canceled) return
-
-        if (error || !data) {
-          postCache[postId] = "NOT_FOUND"
-          setNotFound(true)
-        } else {
-          postCache[postId] = data
+        if (isMounted) {
+          postCache.set(post_id, data)
           setPost(data)
+          setLoading(false)
         }
-      } catch {
-        if (!canceled) setNotFound(true)
+      } catch (err) {
+        if (isMounted) {
+          setError(true)
+          setLoading(false)
+        }
       } finally {
-        delete pendingFetches[postId]
-        if (!canceled) setLoading(false)
+        pendingFetches.delete(post_id)
       }
     }
 
     fetchPost()
-    return () => { canceled = true }
-  }, [postId])
-
-  // Fetch likes count for the post
-  useEffect(() => {
-    if (!postId) return
-
-    const fetchLikesCount = async () => {
-      try {
-        const { count } = await supabase
-          .from("likes")
-          .select("*", { count: "exact", head: true })
-          .eq("post_id", postId)
-
-        setLikesCount(count || 0)
-      } catch (err) {
-        console.error("[PostPreview] Error fetching likes count:", err)
-        setLikesCount(0)
-      }
+    return () => {
+      isMounted = false
     }
+  }, [post_id])
 
-    fetchLikesCount()
-  }, [postId])
-
-  const profile = post?.profiles
-    ? (Array.isArray(post.profiles) ? post.profiles[0] : post.profiles)
-    : null
-
-  const displayName = profile?.name || profile?.username || "Unknown"
-  const username = profile?.username || "unknown"
-  const avatarUrl = profile?.avatar_url || null
-  const initial = displayName.charAt(0).toUpperCase()
-
-  const handleClick = () => {
-    if (postId) {
-      window.dispatchEvent(new CustomEvent("openGlobalPostModal", { detail: { postId } }))
+  const handleOpenPost = (e) => {
+    e.stopPropagation()
+    if (post_id) {
+      window.dispatchEvent(new CustomEvent("openGlobalPostModal", { detail: { postId: post_id } }))
     }
   }
 
   const handleProfileClick = (e) => {
     e.stopPropagation()
-    if (username !== "unknown") {
+    const username = post?.profiles?.username || (Array.isArray(post?.profiles) ? post.profiles[0]?.username : null)
+    if (username) {
       navigate(`/profile/${username}`)
     }
   }
 
-  // Skeleton state
-  if (loading) {
-    return (
-      <div className={`w-fit max-w-[280px] overflow-hidden rounded-2xl border ${
-        isMine
-          ? "border-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.1)]"
-          : "border-[var(--chat-border)] bg-[var(--chat-surface)]"
-      }`}>
-        <div className={`border-b px-3 py-2.5 ${isMine ? "border-[rgba(255,255,255,0.12)]" : "border-[var(--chat-border)]"}`}>
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 shrink-0 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
-            <div className="h-3 w-24 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
-          </div>
-        </div>
-        <div className="space-y-1.5 px-3 py-2.5">
-          <div className="h-3 w-full animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
-          <div className="h-3 w-4/5 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
-        </div>
-      </div>
-    )
-  }
-
-  // Deleted / not found post
-  if (notFound || !post) {
+  // Error / Not found state
+  if (error && !loading) {
     return (
       <div className={`w-fit max-w-[280px] rounded-2xl border px-3 py-2.5 text-[12px] italic ${
         isMine
@@ -170,22 +103,30 @@ export default function PostPreview({ postId, isMine = false }) {
     )
   }
 
+  const profile = post?.profiles ? (Array.isArray(post.profiles) ? post.profiles[0] : post.profiles) : null
+  const displayName = profile?.name || profile?.username || "Unknown"
+  const username = profile?.username || "unknown"
+  const avatarUrl = profile?.avatar_url || null
+  const initial = displayName.charAt(0).toUpperCase()
+
   return (
     <div
-      onClick={handleClick}
-      className={`group w-fit max-w-[280px] cursor-pointer overflow-hidden rounded-2xl border transition-all ${
+      onClick={handleOpenPost}
+      className={`group w-fit min-w-[220px] max-w-[280px] cursor-pointer overflow-hidden rounded-2xl border transition-all ${
         isMine
           ? "border-[rgba(255,255,255,0.18)] bg-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.15)]"
           : "border-[var(--chat-border)] bg-[var(--chat-surface)] hover:border-[var(--chat-border-strong)] hover:bg-[var(--chat-elev)]"
       }`}
     >
-      {/* Header row: avatar + name */}
+      {/* Header: Profile Info */}
       <div 
         onClick={handleProfileClick}
-        className={`flex items-center gap-2 border-b px-3 py-2 hover:bg-[var(--chat-hover)] transition-colors ${
+        className={`flex items-center gap-2 border-b px-3 py-2 transition-colors ${
         isMine ? "border-[rgba(255,255,255,0.12)]" : "border-[var(--chat-border)]"
       }`}>
-        {avatarUrl ? (
+        {loading ? (
+          <div className="h-6 w-6 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
+        ) : avatarUrl ? (
           <img
             src={avatarUrl}
             alt={displayName}
@@ -201,32 +142,42 @@ export default function PostPreview({ postId, isMine = false }) {
             {initial}
           </div>
         )}
-        <span className={`truncate font-['DM_Sans'] text-[12px] font-semibold ${
-          isMine ? "text-[rgba(255,255,255,0.9)]" : "text-[var(--chat-text)]"
-        }`}>
-          {displayName}
-        </span>
-        <span className={`ml-auto shrink-0 text-[10px] ${
-          isMine ? "text-[rgba(255,255,255,0.5)]" : "text-[var(--chat-text-muted)]"
-        }`}>
-          @{username}
-        </span>
+        
+        <div className="flex min-w-0 flex-1 flex-col">
+          {loading ? (
+            <div className="h-2.5 w-20 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
+          ) : (
+            <span className={`truncate font-['DM_Sans'] text-[12px] font-semibold ${
+              isMine ? "text-[rgba(255,255,255,0.9)]" : "text-[var(--chat-text)]"
+            }`}>
+              {displayName}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Post content */}
-      {post.content && (
-        <div className="px-3 py-2">
+      {/* Body: Content */}
+      <div className="px-3 py-2.5">
+        {loading ? (
+          <div className="space-y-1.5">
+            <div className="h-2.5 w-full animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
+            <div className="h-2.5 w-5/6 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
+            <div className="h-2.5 w-4/6 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
+          </div>
+        ) : post?.content && (
           <PostContent
             content={post.content}
             className={`line-clamp-4 font-['DM_Sans'] text-[13px] leading-[1.55] ${
               isMine ? "text-[rgba(255,255,255,0.88)]" : "text-[var(--chat-text)]"
             }`}
           />
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Post image thumbnail */}
-      {post.image_url && (
+      {/* Image Thumbnail */}
+      {loading ? (
+        <div className="h-[120px] w-full animate-pulse bg-[var(--chat-border-strong)]/30" />
+      ) : post?.image_url && (
         <div className="relative overflow-hidden" style={{ maxHeight: 140 }}>
           <img
             src={post.image_url}
@@ -235,28 +186,17 @@ export default function PostPreview({ postId, isMine = false }) {
             loading="lazy"
             style={{ maxHeight: 140 }}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
         </div>
       )}
 
-      {/* Footer: likes + tap hint */}
-      <div className={`flex items-center justify-between px-3 py-1.5 ${
+      {/* Footer */}
+      <div className={`flex items-center justify-end px-3 py-1.5 ${
         isMine ? "border-t border-[rgba(255,255,255,0.12)]" : "border-t border-[var(--chat-border)]"
       }`}>
-        <div className={`flex items-center gap-1 text-[10px] font-medium ${
-          isMine ? "text-[rgba(255,255,255,0.5)]" : "text-[var(--chat-text-muted)]"
-        }`}>
-          {likesCount > 0 && (
-            <>
-              <span>❤️</span>
-              <span>{likesCount}</span>
-            </>
-          )}
-        </div>
         <div className={`text-[10px] font-medium ${
           isMine ? "text-[rgba(255,255,255,0.4)]" : "text-[var(--chat-text-muted)]"
         }`}>
-          Tap to view ↗
+          {loading ? "..." : "Tap to view ↗"}
         </div>
       </div>
     </div>

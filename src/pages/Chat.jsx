@@ -46,10 +46,14 @@ export default function Chat() {
   const setCurrentChatIdCache = useChatStore((state) => state.setCurrentChatId)
   const [searchParams] = useSearchParams()
   const [conversations, setConversations] = useState(cachedConversations || [])
-  const [activeConversationId, setActiveConversationId] = useState(cachedCurrentChatId || null)
+  const [activeConversationId, setActiveConversationId] = useState(null)
   const [messages, setMessages] = useState([])
+  const [oldestTimestamp, setOldestTimestamp] = useState(null)
+  const [hasMoreMessages, setHasMoreMessages] = useState(true)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [profilesById, setProfilesById] = useState({})
   const [hasDraft, setHasDraft] = useState(false)
+  const [inputValue, setInputValue] = useState("")
   const [loadingConversations, setLoadingConversations] = useState((cachedConversations || []).length === 0)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
@@ -161,6 +165,15 @@ export default function Chat() {
   const isTypingRef = useRef(false)
   const lastTypingBroadcastAtRef = useRef(0)
   const updateMessageSeenStatusRef = useRef(null)
+  const getConversationKeyRef = useRef(null)
+  const getMessageTypeRef = useRef(null)
+  const appendMessageToCacheRef = useRef(null)
+  const clearUnreadForConversationRef = useRef(null)
+  const handleReactionInsertRef = useRef(null)
+  const updateReactionInStateRef = useRef(null)
+  const handleReactionDeleteRef = useRef(null)
+  const sortConversationsByPriorityRef = useRef(null)
+  const contextUserIdRef = useRef(null)
   const conversationCryptoKeysRef = useRef({})
   const signedImageUrlCacheRef = useRef({}) // Cache: storagePath -> { url, expiresAt }
   const groupMessagesChannelRef = useRef(null)
@@ -911,54 +924,45 @@ export default function Chat() {
 
   const clearUnreadForConversation = useCallback((conversationId) => {
     if (!conversationId) return
-
+    let nextCounts = {}
     setUnreadCountsByConversation((prev) => {
-      if (!prev[conversationId]) {
-        return prev
-      }
-
+      if (!prev[conversationId]) return prev
       const next = { ...prev }
       delete next[conversationId]
-      dispatchUnreadBadgeUpdate(next)
+      nextCounts = next
       return next
     })
+    setTimeout(() => dispatchUnreadBadgeUpdate(nextCounts), 0)
   }, [dispatchUnreadBadgeUpdate])
 
   const incrementUnreadForConversation = useCallback((conversationId) => {
     if (!conversationId) return
-
+    let nextCounts = {}
     setUnreadCountsByConversation((prev) => {
-      const next = {
-        ...prev,
-        [conversationId]: (prev[conversationId] || 0) + 1
-      }
-
-      dispatchUnreadBadgeUpdate(next)
+      const next = { ...prev, [conversationId]: (prev[conversationId] || 0) + 1 }
+      nextCounts = next
       return next
     })
+    setTimeout(() => dispatchUnreadBadgeUpdate(nextCounts), 0)
   }, [dispatchUnreadBadgeUpdate])
 
   const decrementUnreadForConversation = useCallback((conversationId) => {
     if (!conversationId) return
-
+    let nextCounts = {}
     setUnreadCountsByConversation((prev) => {
       const current = prev[conversationId] || 0
-      if (current <= 0) {
-        return prev
-      }
-
+      if (current <= 0) return prev
       const next = { ...prev }
       const updated = current - 1
-
       if (updated <= 0) {
         delete next[conversationId]
       } else {
         next[conversationId] = updated
       }
-
-      dispatchUnreadBadgeUpdate(next)
+      nextCounts = next
       return next
     })
+    setTimeout(() => dispatchUnreadBadgeUpdate(nextCounts), 0)
   }, [dispatchUnreadBadgeUpdate])
 
   const navigateToConversation = useCallback((conversationId, options = {}) => {
@@ -1218,6 +1222,18 @@ export default function Chat() {
     updateMessageSeenStatusRef.current = updateMessageSeenStatus
   }, [updateMessageSeenStatus])
 
+  useEffect(() => {
+    getConversationKeyRef.current = getConversationKey
+    getMessageTypeRef.current = getMessageType
+    appendMessageToCacheRef.current = appendMessageToCache
+    clearUnreadForConversationRef.current = clearUnreadForConversation
+    handleReactionInsertRef.current = handleReactionInsert
+    updateReactionInStateRef.current = updateReactionInState
+    handleReactionDeleteRef.current = handleReactionDelete
+    sortConversationsByPriorityRef.current = sortConversationsByPriority
+    contextUserIdRef.current = contextUser?.id
+  })
+
   const addReactionToState = useCallback((newReaction) => {
     const { message_id, emoji, user_id } = newReaction
 
@@ -1225,12 +1241,6 @@ export default function Chat() {
       console.warn("[Chat] Invalid reaction data for INSERT:", newReaction)
       return
     }
-
-    console.log("[Chat] addReactionToState - Adding to messages:", {
-      message_id,
-      emoji,
-      user_id
-    })
 
     setMessages((prevMessages) =>
       prevMessages.map((msg) => {
@@ -1245,8 +1255,6 @@ export default function Chat() {
           console.log("[Chat] Reaction already exists, skipping duplicate")
           return msg
         }
-
-        console.log("[Chat] Reaction added to message state:", message_id, emoji)
 
         return {
           ...msg,
@@ -1264,13 +1272,6 @@ export default function Chat() {
       return
     }
 
-    console.log("[Chat] removeReactionFromState - Removing from messages:", {
-      message_id,
-      emoji,
-      user_id,
-      id
-    })
-
     setMessages((prevMessages) =>
       prevMessages.map((msg) => {
         if (msg.id !== message_id) return msg
@@ -1283,8 +1284,6 @@ export default function Chat() {
         }
       })
     )
-
-    console.log("[Chat] Reaction removed from message state:", message_id)
   }, [])
 
   const handleReactionInsert = useCallback((newData) => {
@@ -1292,8 +1291,6 @@ export default function Chat() {
       console.warn("[Chat] Invalid insert data, missing message_id:", newData)
       return
     }
-
-    console.log("[Chat] INSERT RECEIVED for current chat:", newData)
     addReactionToState(newData)
   }, [addReactionToState])
 
@@ -1302,8 +1299,6 @@ export default function Chat() {
       console.warn("[Chat] Invalid delete data, missing message_id:", oldData)
       return
     }
-
-    console.log("[Chat] DELETE RECEIVED:", oldData)
     removeReactionFromState(oldData)
   }, [])
 
@@ -1312,8 +1307,6 @@ export default function Chat() {
       console.warn("[Chat] Invalid reaction data for UPDATE:", updatedReaction)
       return
     }
-
-    console.log("[Chat] updateReactionInState UPDATE:", updatedReaction)
 
     setMessages((prevMessages) =>
       prevMessages.map((msg) => {
@@ -1383,15 +1376,20 @@ export default function Chat() {
     if (!conversationId) return
 
     const cachedMessages = useChatStore.getState().messagesByConversationId[conversationId] || []
-    if (!force && cachedMessages.length > 0 && !shouldFetchMessages(conversationId)) {
+    
+    // Immediately set cached messages for fast switching
+    if (cachedMessages.length > 0) {
       setMessages(cachedMessages)
+      setOldestTimestamp(cachedMessages[0]?.created_at || null)
+    }
+
+    // Skip network fetch if cache is fresh
+    if (!force && cachedMessages.length > 0 && !shouldFetchMessages(conversationId)) {
       return
     }
 
     try {
-      console.log("[Chat] conversationId:", conversationId)
-      console.log("[Chat] fetchMessages called for conversation:", conversationId)
-      if (!silent) {
+      if (!silent && cachedMessages.length === 0) {
         setLoadingMessages(true)
       }
       setError("")
@@ -1400,7 +1398,8 @@ export default function Chat() {
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
+        .limit(30)
 
       if (fetchError) {
         console.error("[Chat] Failed to load messages:", fetchError)
@@ -1408,38 +1407,33 @@ export default function Chat() {
         return
       }
 
-      // Get encryption key for this conversation - fetch fresh from DB
-      const cryptoKey = await getConversationKeyFresh(conversationId)
-      if (!cryptoKey) {
-        console.warn(`[Chat] Could not get encryption key for conversation ${conversationId}`)
-      }
+      // Reverse to get chronological order
+      const sortedData = (data || []).reverse()
 
-      // Decrypt messages
+      // Get encryption key for this conversation
+      const cryptoKey = await getConversationKeyFresh(conversationId)
+
+      // Decrypt messages and store in decrypted_text
       const decryptedMessages = await Promise.all(
-        (data || []).map(async (message) => {
-          const decrypted = { ...message, type: getMessageType(message), reactions: [] }
-          
+        sortedData.map(async (message) => {
+          const decrypted = {
+            ...message,
+            type: getMessageType(message),
+            reactions: [],
+          }
           try {
-            // Decrypt content if encrypted_content and iv fields exist
             if (message.encrypted_content && message.iv && cryptoKey) {
               const decryptedContent = await decrypt(message.encrypted_content, message.iv, cryptoKey)
               decrypted.content = decryptedContent
-              decrypted.encrypted_content = message.encrypted_content
-              decrypted.iv = message.iv
-            }
-          } catch (decryptError) {
-            // Old message corrupted - fallback to plaintext or old message indicator
-            console.warn(`[Chat] Could not decrypt old message ${message.id}:`, decryptError.message)
-            // Use plaintext content if available, otherwise indicate message is unavailable
-            if (message.content) {
-              decrypted.content = message.content
-              console.log(`[Chat] Displaying plaintext fallback for message ${message.id}`)
+              decrypted.decrypted_text = decryptedContent
             } else {
-              decrypted.content = "[Older encrypted message unavailable]"
-              console.log(`[Chat] Message ${message.id} has no plaintext fallback - was encrypted with invalid key`)
+              decrypted.content = message.content || ""
+              decrypted.decrypted_text = message.content || ""
             }
+          } catch {
+            decrypted.content = message.content || "[Unable to decrypt]"
+            decrypted.decrypted_text = decrypted.content
           }
-          
           return decrypted
         })
       )
@@ -1447,14 +1441,18 @@ export default function Chat() {
       const participantIds = decryptedMessages.flatMap((message) => [message.sender_id, message.receiver_id])
       await fetchProfilesByIds(participantIds)
       
-      // First set messages without reactions (to show them immediately)
-      setMessages(decryptedMessages)
+      setMessages((prev) => {
+        const map = new Map()
+        ;[...prev, ...decryptedMessages].forEach((m) => {
+          if (m.id) map.set(m.id, m)
+        })
+        return Array.from(map.values())
+      })
       setMessagesCache(conversationId, decryptedMessages)
+      setOldestTimestamp(decryptedMessages[0]?.created_at || null)
+      setHasMoreMessages(decryptedMessages.length === 30)
       
-      // Clear unread badge only when messages are actually loaded and visible
       clearUnreadForConversation(conversationId)
-      
-      // Then fetch and attach reactions
       await fetchReactionsForMessages(decryptedMessages)
     } catch (err) {
       console.error("[Chat] Messages exception:", err)
@@ -1464,12 +1462,99 @@ export default function Chat() {
         setLoadingMessages(false)
       }
     }
-  }, [fetchProfilesByIds, fetchReactionsForMessages, getMessageType, setMessagesCache, shouldFetchMessages, clearUnreadForConversation])
+  }, [fetchProfilesByIds, fetchReactionsForMessages, getMessageType, setMessagesCache, shouldFetchMessages, clearUnreadForConversation, getConversationKeyFresh])
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!activeConversationId || !oldestTimestamp || !hasMoreMessages || loadingOlder) return
+
+    try {
+      setLoadingOlder(true)
+      
+      const { data, error: fetchError } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", activeConversationId)
+        .lt("created_at", oldestTimestamp)
+        .order("created_at", { ascending: false })
+        .limit(30)
+
+      if (fetchError) {
+        console.error("[Chat] Failed to load older messages:", fetchError)
+        return
+      }
+
+      if (!data || data.length === 0) {
+        setHasMoreMessages(false)
+        return
+      }
+
+      const cryptoKey = await getConversationKey(activeConversationId)
+      const sortedData = data.reverse()
+
+      const decryptedMessages = await Promise.all(
+        sortedData.map(async (message) => {
+          const decrypted = {
+            ...message,
+            type: getMessageType(message),
+            reactions: [],
+          }
+          try {
+            if (message.encrypted_content && message.iv && cryptoKey) {
+              const decryptedContent = await decrypt(message.encrypted_content, message.iv, cryptoKey)
+              decrypted.content = decryptedContent
+              decrypted.decrypted_text = decryptedContent
+            } else {
+              decrypted.content = message.content || ""
+              decrypted.decrypted_text = message.content || ""
+            }
+          } catch {
+            decrypted.content = message.content || "[Unable to decrypt]"
+            decrypted.decrypted_text = decrypted.content
+          }
+          return decrypted
+        })
+      )
+
+      const participantIds = decryptedMessages.flatMap((m) => [m.sender_id, m.receiver_id])
+      await fetchProfilesByIds(participantIds)
+
+      setMessages((prev) => {
+        const map = new Map()
+        ;[...decryptedMessages, ...prev].forEach((m) => {
+          if (m.id) map.set(m.id, m)
+        })
+        return Array.from(map.values())
+      })
+      setOldestTimestamp(decryptedMessages[0]?.created_at)
+      setHasMoreMessages(data.length === 30)
+      
+      await fetchReactionsForMessages(decryptedMessages)
+    } catch (err) {
+      console.error("[Chat] Error loading older messages:", err)
+    } finally {
+      setLoadingOlder(false)
+    }
+  }, [activeConversationId, oldestTimestamp, hasMoreMessages, loadingOlder, getConversationKey, getMessageType, fetchProfilesByIds, fetchReactionsForMessages])
+
+  useEffect(() => {
+    const container = directMessagesContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      // If we are at the top, load more
+      if (container.scrollTop < 50 && hasMoreMessages && !loadingOlder && !loadingMessages) {
+        loadOlderMessages()
+      }
+    }
+
+    container.addEventListener("scroll", handleScroll)
+    return () => container.removeEventListener("scroll", handleScroll)
+  }, [hasMoreMessages, loadingOlder, loadingMessages, loadOlderMessages])
 
   const fetchConversations = useCallback(async (userId, { force = false, silent = false } = {}) => {
     if (!userId) return
 
-    if (!force && cachedConversations.length > 0 && !shouldFetchConversations()) {
+    if (!force && useChatStore.getState().conversations.length > 0 && !shouldFetchConversations()) {
       setLoadingConversations(false)
       return
     }
@@ -1565,9 +1650,10 @@ export default function Chat() {
       if (conversationIds.length > 0) {
         const { data: messageRows, error: messageError } = await supabase
           .from("messages")
-          .select("*")
+          .select("id, conversation_id, sender_id, receiver_id, content, encrypted_content, type, is_read, created_at, post_id, storage_path")
           .in("conversation_id", conversationIds)
           .order("created_at", { ascending: false })
+          .limit(conversationIds.length * 5)
 
         if (messageError) {
           console.warn("[Chat] Failed to load latest conversation messages:", messageError)
@@ -1600,59 +1686,6 @@ export default function Chat() {
         return acc
       }, {})
 
-      const hydrated = rawConversations.map((conversation) => {
-        const partnerId = conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
-        const latestMessage = latestMessageByConversationId[conversation.id]
-
-        // Determine display content - show actual message preview if available
-        let displayContent = ""
-        
-        if (!latestMessage) {
-          displayContent = "No messages yet"
-        } else if (latestMessage?.type === "image") {
-          displayContent = "📷 Photo"
-        } else if (latestMessage?.type === "file") {
-          displayContent = "📎 File"
-        } else if (latestMessage?.type === "post") {
-          displayContent = "📝 Post"
-        } else if (latestMessage?.content?.trim()) {
-          // Use plaintext content if available
-          let content = latestMessage.content.trim()
-          
-          // Add "You: " prefix if sender is current user
-          if (latestMessage.sender_id === userId) {
-            content = `You: ${content}`
-          }
-          
-          // Truncate to reasonable length for preview
-          if (content.length > 50) {
-            content = content.substring(0, 47) + "..."
-          }
-          
-          displayContent = content
-        } else if (latestMessage?.encrypted_content) {
-          // For encrypted messages without plaintext, show nothing
-          displayContent = ""
-        } else if (latestMessage?.type === "post") {
-          displayContent = "📝 Shared a post"
-        }
-
-        return {
-          ...conversation,
-          last_message_content: displayContent,
-          last_message_type: getMessageType(latestMessage),
-          last_message_sender_id: latestMessage?.sender_id || null,
-          last_message_is_read: latestMessage?.is_read || false,
-          last_message_at: latestMessage?.created_at || null,
-          partner: profileMap[partnerId] || {
-            id: partnerId,
-            username: "unknown",
-            name: "Unknown user",
-            avatar_url: null
-          }
-        }
-      })
-
       // Sort by latest message timestamp (most recent first)
       const sortedByTime = rawConversations.sort((a, b) => {
         const timeA = latestMessageByConversationId[a.id]?.created_at || a.created_at || 0
@@ -1660,7 +1693,7 @@ export default function Chat() {
         return new Date(timeB) - new Date(timeA)
       })
 
-      // Re-apply hydration after sorting
+      // Hydrate conversations after sorting
       const hydratedAndSorted = sortedByTime.map((conversation) => {
         const partnerId = conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
         const latestMessage = latestMessageByConversationId[conversation.id]
@@ -1675,23 +1708,18 @@ export default function Chat() {
           displayContent = "📎 File"
         } else if (latestMessage?.type === "post") {
           displayContent = "📝 Post"
+        } else if (latestMessage?.encrypted_content) {
+          // Message is encrypted — show generic preview, actual content decrypted in chat
+          displayContent = latestMessage.sender_id === userId ? "You: sent a message" : "New message"
         } else if (latestMessage?.content?.trim()) {
           let content = latestMessage.content.trim()
-          
           if (latestMessage.sender_id === userId) {
             content = `You: ${content}`
           }
-          
           if (content.length > 50) {
             content = content.substring(0, 47) + "..."
           }
-          
           displayContent = content
-        } else if (latestMessage?.encrypted_content) {
-          // For encrypted messages without plaintext, show nothing
-          displayContent = ""
-        } else if (latestMessage?.type === "post") {
-          displayContent = "📝 Shared a post"
         }
 
         return {
@@ -1731,7 +1759,7 @@ export default function Chat() {
         setLoadingConversations(false)
       }
     }
-  }, [cachedConversations.length, dispatchUnreadBadgeUpdate, fetchProfilesByIds, getMessageType, setConversationsCache, setUnreadCountsCache, shouldFetchConversations, sortConversationsByPriority])
+  }, [dispatchUnreadBadgeUpdate, fetchProfilesByIds, getMessageType, setConversationsCache, setUnreadCountsCache, shouldFetchConversations, sortConversationsByPriority])
 
   useEffect(() => {
     setConversations((prev) => sortConversationsByPriority(prev, unreadCountsByConversation, typingByConversation))
@@ -1754,12 +1782,12 @@ export default function Chat() {
       return
     }
 
-    fetchConversations(contextUser.id, { silent: cachedConversations.length > 0 })
-  }, [authReady, contextUser?.id, fetchConversations, cachedConversations.length])
+    fetchConversations(contextUser.id, { force: true, silent: cachedConversations.length > 0 })
+  }, [authReady, contextUser?.id, fetchConversations])
 
   useEffect(() => {
-    setCurrentChatIdCache(activeConversationId)
-  }, [activeConversationId, setCurrentChatIdCache])
+    // Do not persist activeConversationId — causes unwanted auto-open on return
+  }, [])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -1810,7 +1838,7 @@ export default function Chat() {
       supabase.removeChannel(channel)
       persistLastSeenNow()
     }
-  }, [contextUser?.id, persistLastSeenNow, syncOnlineUsersFromPresence])
+  }, [contextUser?.id])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -1985,27 +2013,16 @@ export default function Chat() {
   }, [conversations, navigate, requestedConversationId, routeConversationId])
 
   useEffect(() => {
-    if (activeConversationId) {
-      console.log("[Chat] messages fetch effect triggered for conversation:", activeConversationId)
-      const cachedMessages = useChatStore.getState().messagesByConversationId[activeConversationId] || []
-      if (cachedMessages.length > 0) {
-        setMessages(cachedMessages)
-      }
-      // Clear stale keys from memory cache for this conversation
-      delete conversationCryptoKeysRef.current[activeConversationId]
-      // Clear cached image signed URLs when switching conversations
-      signedImageUrlCacheRef.current = {}
-      // Fetch fresh key from DB (overwrites any stale cache)
-      getOrCreateConversationKey(activeConversationId)
-        .then(() => {
-          fetchMessages(activeConversationId, { silent: cachedMessages.length > 0 })
-        })
-        .catch((err) => {
-          console.error("[Chat] Error loading conversation key:", err)
-          fetchMessages(activeConversationId, { silent: cachedMessages.length > 0 })
-        })
+    if (!activeConversationId) return
+    const cachedMessages = useChatStore.getState().messagesByConversationId[activeConversationId] || []
+    if (cachedMessages.length > 0) {
+      setMessages(cachedMessages)
+      setOldestTimestamp(cachedMessages[0]?.created_at || null)
     }
-  }, [activeConversationId, fetchMessages, getOrCreateConversationKey])
+    signedImageUrlCacheRef.current = {}
+    // fetchMessages calls getConversationKeyFresh internally — no need to pre-fetch key
+    fetchMessages(activeConversationId, { silent: cachedMessages.length > 0 })
+  }, [activeConversationId, fetchMessages])
 
   useEffect(() => {
     closeConversationSearch()
@@ -2014,11 +2031,8 @@ export default function Chat() {
   useEffect(() => {
     if (!activeConversationId) return
 
-    console.log("[Chat] Setting up reactions realtime subscription")
-
     // Clean up any existing channel first
     if (reactionsChannelRef.current) {
-      console.log("[Chat] Cleaning up existing reactions channel before creating new one")
       supabase.removeChannel(reactionsChannelRef.current)
       reactionsChannelRef.current = null
     }
@@ -2033,8 +2047,6 @@ export default function Chat() {
           table: "message_reactions"
         },
         (payload) => {
-          console.log("[Chat] REACTION EVENT:", payload)
-
           const { eventType, new: newData, old: oldData } = payload
 
           if (eventType === "INSERT") {
@@ -2042,19 +2054,15 @@ export default function Chat() {
           } else if (eventType === "DELETE") {
             handleReactionDelete(oldData)
           } else if (eventType === "UPDATE") {
-            console.log("[Chat] UPDATE received:", newData)
             updateReactionInState(newData)
           }
         }
       )
-      .subscribe((status) => {
-        console.log("[Chat] Reactions channel status:", status)
-      })
+      .subscribe()
 
     reactionsChannelRef.current = reactionsChannel
 
     return () => {
-      console.log("[Chat] Cleaning up reactions realtime channel")
       supabase.removeChannel(reactionsChannel)
       if (reactionsChannelRef.current === reactionsChannel) {
         reactionsChannelRef.current = null
@@ -2072,8 +2080,6 @@ export default function Chat() {
       activeConversationChannelRef.current = null
     }
 
-    console.log("[Chat] Creating active conversation realtime channel:", activeConversationId)
-    console.log("SUBSCRIBED:", activeConversationId)
 
     const channel = supabase
       .channel(`messages-${activeConversationId}`)
@@ -2085,7 +2091,7 @@ export default function Chat() {
             return
           }
 
-          if (!contextUser?.id || payload.user_id === contextUser.id) {
+          if (!contextUserIdRef.current || payload.user_id === contextUserIdRef.current) {
             return
           }
 
@@ -2103,17 +2109,17 @@ export default function Chat() {
           const { action, reaction } = payload
 
           if (action === "INSERT") {
-            handleReactionInsert(reaction)
+            handleReactionInsertRef.current(reaction)
             return
           }
 
           if (action === "UPDATE") {
-            updateReactionInState(reaction)
+            updateReactionInStateRef.current(reaction)
             return
           }
 
           if (action === "DELETE") {
-            handleReactionDelete(reaction)
+            handleReactionDeleteRef.current(reaction)
           }
         }
       )
@@ -2129,34 +2135,18 @@ export default function Chat() {
           const nextMessage = payload.new
           if (!nextMessage?.id) return
 
-          console.log("[Chat][Realtime] MESSAGE_RECEIVED", {
-            conversationId: activeConversationId,
-            messageId: nextMessage.id
-          })
-
-          console.log("[Chat] Active conversation INSERT event:", {
-            messageId: nextMessage.id,
-            sender: nextMessage.sender_id,
-            receiver: nextMessage.receiver_id,
-            hasEncryption: !!nextMessage.encrypted_content,
-            conversation: activeConversationId
-          })
-
           let decryptedContent = nextMessage.content
           
           // Decrypt encrypted content if present
           if (nextMessage.encrypted_content && nextMessage.iv) {
             try {
-              const cryptoKey = await getConversationKeyFresh(activeConversationId)
+              const cryptoKey = await getConversationKeyRef.current(activeConversationId)
               if (cryptoKey) {
                 decryptedContent = await decrypt(nextMessage.encrypted_content, nextMessage.iv, cryptoKey)
               } else {
-                console.warn("[Chat] Could not decrypt incoming message - no key available")
                 decryptedContent = nextMessage.content || "[Encrypted message]"
               }
             } catch (decryptError) {
-              console.warn("[Chat] Could not decrypt incoming message:", decryptError.message)
-              // Fallback to plaintext or placeholder
               decryptedContent = nextMessage.content || "[Message content unavailable]"
             }
           }
@@ -2164,59 +2154,85 @@ export default function Chat() {
           const normalizedNextMessage = {
             ...nextMessage,
             content: decryptedContent,
-            type: getMessageType(nextMessage)
+            decrypted_text: decryptedContent,
+            type: getMessageTypeRef.current(nextMessage),
+            reactions: [],
           }
 
           setMessages((prev) => {
+            // Skip if already in list (exact id match)
             if (prev.some((item) => item.id === normalizedNextMessage.id)) {
               return prev
             }
-            appendMessageToCache(activeConversationId, normalizedNextMessage)
-            
+
+            // Find if there's a matching temp message to replace
+            const tempIndex = prev.findIndex(
+              (item) =>
+                typeof item.id === "string" &&
+                item.id.startsWith("temp-") &&
+                item.sender_id === normalizedNextMessage.sender_id &&
+                item.conversation_id === normalizedNextMessage.conversation_id
+            )
+
+            let nextMessages
+            if (tempIndex !== -1) {
+              // Replace the temp message with the real one
+              nextMessages = prev.map((item, index) =>
+                index === tempIndex
+                  ? { ...normalizedNextMessage, reactions: item.reactions || [] }
+                  : item
+              )
+            } else {
+              // Append the new message
+              nextMessages = [...prev, normalizedNextMessage]
+            }
+
             // Format message for preview following same logic as hydration
             let displayContent = ""
-            
-            if (getMessageType(nextMessage) === "image") {
+            if (getMessageTypeRef.current(nextMessage) === "image") {
               displayContent = "📷 Photo"
-            } else if (getMessageType(nextMessage) === "file") {
+            } else if (getMessageTypeRef.current(nextMessage) === "file") {
               displayContent = "📎 File"
-            } else if (getMessageType(nextMessage) === "post") {
+            } else if (getMessageTypeRef.current(nextMessage) === "post") {
               displayContent = "📝 Shared a post"
             } else if (decryptedContent?.trim()) {
               let content = decryptedContent.trim()
-              
-              // Add "You: " prefix if current user sent it
-              if (nextMessage.sender_id === contextUser?.id) {
+              if (nextMessage.sender_id === contextUserIdRef.current) {
                 content = `You: ${content}`
               }
-              
-              // Truncate long previews
               if (content.length > 50) {
                 content = content.substring(0, 47) + "..."
               }
-              
               displayContent = content
             }
-            
-            // Update conversations in same setState batch
-            setConversations((prev) => {
-              const updated = prev.map((conversation) =>
+
+            // Update cache with the final deduplicated list
+            appendMessageToCacheRef.current(activeConversationId, normalizedNextMessage)
+
+            // Update conversation preview
+            setConversations((convPrev) => {
+              const updated = convPrev.map((conversation) =>
                 conversation.id === activeConversationId
                   ? {
                       ...conversation,
                       last_message_content: displayContent,
-                      last_message_type: getMessageType(nextMessage),
+                      last_message_type: getMessageTypeRef.current(nextMessage),
                       last_message_sender_id: nextMessage.sender_id,
-                      last_message_is_read: normalizedNextMessage.receiver_id === contextUser?.id ? true : (nextMessage.is_read || false),
+                      last_message_is_read: normalizedNextMessage.receiver_id === contextUserIdRef.current
+                        ? true
+                        : (nextMessage.is_read || false),
                       last_message_at: nextMessage.created_at || conversation.last_message_at
                     }
                   : conversation
               )
-              return sortConversationsByPriority(updated)
+              return sortConversationsByPriorityRef.current(updated)
             })
-            
+
             // Mark as read if received by current user
-            if (normalizedNextMessage.receiver_id === contextUser?.id && normalizedNextMessage.sender_id !== contextUser?.id) {
+            if (
+              normalizedNextMessage.receiver_id === contextUserIdRef.current &&
+              normalizedNextMessage.sender_id !== contextUserIdRef.current
+            ) {
               supabase
                 .from("messages")
                 .update({ is_read: true })
@@ -2227,11 +2243,11 @@ export default function Chat() {
                     console.error("[Chat] Failed to mark incoming message as read:", markError)
                     return
                   }
-                  clearUnreadForConversation(activeConversationId)
+                  clearUnreadForConversationRef.current(activeConversationId)
                 })
             }
-            
-            return [...prev, normalizedNextMessage]
+
+            return nextMessages
           })
         }
       )
@@ -2249,23 +2265,13 @@ export default function Chat() {
           const updatedMessage = payload.new
           if (!updatedMessage?.id) return
 
-          console.log("[Chat] Message UPDATE event received - FULL PAYLOAD:", {
-            payloadNew: updatedMessage,
-            payloadOld: payload.old,
-            deliveryStatus: updatedMessage.delivery_status,
-            seen_at: updatedMessage.seen_at,
-            is_read: updatedMessage.is_read,
-            is_deleted: updatedMessage.is_deleted,
-            edited_at: updatedMessage.edited_at,
-            messageId: updatedMessage.id
-          })
 
           let decryptedContent = updatedMessage.content
           
           // Decrypt encrypted content if present
           if (updatedMessage.encrypted_content && updatedMessage.iv) {
             try {
-              const cryptoKey = await getConversationKeyFresh(activeConversationId)
+              const cryptoKey = await getConversationKeyRef.current(activeConversationId)
               if (cryptoKey) {
                 decryptedContent = await decrypt(updatedMessage.encrypted_content, updatedMessage.iv, cryptoKey)
               } else {
@@ -2291,12 +2297,6 @@ export default function Chat() {
             )
           )
 
-          console.log("[Chat] Message state updated:", {
-            messageId: updatedMessage.id,
-            wasEdited: Boolean(updatedMessage.edited_at),
-            wasDeleted: updatedMessage.is_deleted,
-            wasSeen: Boolean(updatedMessage.seen_at)
-          })
 
           // Update conversation preview if this is the last message
           setConversations((prev) => {
@@ -2310,21 +2310,19 @@ export default function Chat() {
               // Format message following same logic as hydration
               let displayContent = ""
               
-              if (getMessageType(updatedMessage) === "image") {
+              if (getMessageTypeRef.current(updatedMessage) === "image") {
                 displayContent = "📷 Photo"
-              } else if (getMessageType(updatedMessage) === "file") {
+              } else if (getMessageTypeRef.current(updatedMessage) === "file") {
                 displayContent = "📎 File"
-              } else if (getMessageType(updatedMessage) === "post") {
+              } else if (getMessageTypeRef.current(updatedMessage) === "post") {
                 displayContent = "📝 Shared a post"
               } else if (decryptedContent?.trim()) {
                 let content = decryptedContent.trim()
                 
-                // Add "You: " prefix if current user sent it
-                if (updatedMessage.sender_id === contextUser?.id) {
+                if (updatedMessage.sender_id === contextUserIdRef.current) {
                   content = `You: ${content}`
                 }
                 
-                // Truncate long previews
                 if (content.length > 50) {
                   content = content.substring(0, 47) + "..."
                 }
@@ -2335,37 +2333,30 @@ export default function Chat() {
               return {
                 ...conversation,
                 last_message_content: displayContent,
-                last_message_type: getMessageType(updatedMessage),
-                last_message_is_read: updatedMessage.is_read || false
+                last_message_type: getMessageTypeRef.current(updatedMessage),
+                last_message_sender_id: updatedMessage.sender_id,
+                last_message_at: updatedMessage.created_at
               }
             })
 
-            return sortConversationsByPriority(updated)
+            return sortConversationsByPriorityRef.current(updated)
           })
         }
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           activeConversationChannelRef.current = channel
-          console.log("[Chat][Realtime] SUBSCRIBED", { conversationId: activeConversationId })
         }
-
-        if (status === "CLOSED") {
-          console.log("[Chat][Realtime] CHANNEL_CLOSED", { conversationId: activeConversationId })
-        }
-        console.log("[Chat] Realtime status:", status)
       })
 
     return () => {
-      console.log("[Chat][Realtime] CHANNEL_CLOSED", { conversationId: activeConversationId })
-      console.log("[Chat] Cleaning active conversation realtime channel:", activeConversationId)
       if (isTypingRef.current) {
         channel.send({
           type: "broadcast",
           event: "typing",
           payload: {
             conversation_id: activeConversationId,
-            user_id: contextUser?.id,
+            user_id: contextUserIdRef.current,
             is_typing: false
           }
         })
@@ -2380,7 +2371,8 @@ export default function Chat() {
       isTypingRef.current = false
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, setConversationTypingState, getConversationKeyFresh, decrypt, getMessageType, appendMessageToCache, contextUser?.id, clearUnreadForConversation, handleReactionInsert, updateReactionInState, handleReactionDelete, clearTypingTimers])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationId])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -2419,7 +2411,8 @@ export default function Chat() {
       })
       typingListenerChannelsRef.current = []
     }
-  }, [activeConversationId, conversations, contextUser?.id, setConversationTypingState])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationId, contextUser?.id, setConversationTypingState, conversations.map(c => c.id).join(',')])
 
   useEffect(() => {
     return () => {
@@ -2441,25 +2434,14 @@ export default function Chat() {
           table: "messages"
         },
         (payload) => {
-          console.log("Message updated:", payload)
-
           if (payload.new?.is_read === true) {
             updateMessageSeenStatusRef.current?.(payload.new.id)
           }
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log("[Chat][Realtime] SUBSCRIBED", { channel: "messages-update" })
-        }
-        if (status === "CLOSED") {
-          console.log("[Chat][Realtime] CHANNEL_CLOSED", { channel: "messages-update" })
-        }
-        console.log("[Chat] Message update subscription status:", status)
-      })
+      .subscribe()
 
     return () => {
-      console.log("[Chat][Realtime] CHANNEL_CLOSED", { channel: "messages-update" })
       supabase.removeChannel(channel)
     }
   }, [])
@@ -2588,8 +2570,6 @@ export default function Chat() {
 
   const markConversationMessagesAsRead = useCallback(async (conversationId, userId) => {
     if (!conversationId || !userId) return
-
-    console.log("[Chat] markConversationMessagesAsRead called:", { conversationId, userId })
 
     const now = new Date().toISOString()
 
@@ -2727,13 +2707,6 @@ export default function Chat() {
             return
           }
 
-          console.log("[Chat] Receiver listener INSERT event:", {
-            messageId: nextMessage.id,
-            sender: nextMessage.sender_id,
-            receiver: nextMessage.receiver_id,
-            conversation: nextMessage.conversation_id,
-            hasEncryption: !!nextMessage.encrypted_content
-          })
 
           // Mark message as delivered to sender
           if (nextMessage.receiver_id === contextUser?.id) {
@@ -2745,7 +2718,7 @@ export default function Chat() {
           
           if (nextMessage.encrypted_content && nextMessage.iv) {
             try {
-              const cryptoKey = await getConversationKeyFresh(nextMessage.conversation_id)
+              const cryptoKey = await getConversationKey(nextMessage.conversation_id)
               if (cryptoKey) {
                 decryptedContent = await decrypt(nextMessage.encrypted_content, nextMessage.iv, cryptoKey)
               } else {
@@ -2758,31 +2731,33 @@ export default function Chat() {
             }
           }
 
-          setConversations((prev) => {
-            // Format message for preview following same logic as hydration
-            let displayContent = ""
+          // Format message for preview following same logic as hydration
+          let displayContent = ""
+          
+          if (getMessageType(nextMessage) === "image") {
+            displayContent = "📷 Photo"
+          } else if (getMessageType(nextMessage) === "file") {
+            displayContent = "📎 File"
+          } else if (getMessageType(nextMessage) === "post") {
+            displayContent = "📝 Shared a post"
+          } else if (decryptedContent?.trim() && decryptedContent !== "[Message]") {
+            let content = decryptedContent.trim()
             
-            if (getMessageType(nextMessage) === "image") {
-              displayContent = "📷 Photo"
-            } else if (getMessageType(nextMessage) === "file") {
-              displayContent = "📎 File"
-            } else if (getMessageType(nextMessage) === "post") {
-              displayContent = "📝 Shared a post"
-            } else if (decryptedContent?.trim() && decryptedContent !== "[Message]") {
-              let content = decryptedContent.trim()
-              
-              // Add "You: " prefix if current user sent it
-              if (nextMessage.sender_id === contextUser?.id) {
-                content = `You: ${content}`
-              }
-              
-              // Truncate long previews
-              if (content.length > 50) {
-                content = content.substring(0, 47) + "..."
-              }
-              
-              displayContent = content
+            // Add "You: " prefix if current user sent it
+            if (nextMessage.sender_id === contextUser?.id) {
+              content = `You: ${content}`
             }
+            
+            // Truncate long previews
+            if (content.length > 50) {
+              content = content.substring(0, 47) + "..."
+            }
+            
+            displayContent = content
+          }
+
+          setConversations((prev) => {
+            const exists = prev.some((conv) => conv.id === nextMessage.conversation_id)
             
             const updated = prev.map((conversation) =>
               conversation.id === nextMessage.conversation_id
@@ -2794,6 +2769,13 @@ export default function Chat() {
                   }
                 : conversation
             )
+
+            if (!exists) {
+              // New conversation — trigger a background refresh after setState
+              setTimeout(() => {
+                fetchConversations(contextUser.id, { force: true, silent: true })
+              }, 1500)
+            }
 
             return sortConversationsByPriority(updated)
           })
@@ -2807,13 +2789,64 @@ export default function Chat() {
         }
       )
       .subscribe((status) => {
-        console.log("[Chat] Unread sync status:", status)
       })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey])
+  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey, fetchConversations])
+
+  useEffect(() => {
+    if (!contextUser?.id) return
+
+    const channel = supabase
+      .channel(`chat-sent-sync-${contextUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `sender_id=eq.${contextUser.id}`
+        },
+        async (payload) => {
+          const nextMessage = payload.new
+          if (!nextMessage?.id || nextMessage.sender_id !== contextUser.id) {
+            return
+          }
+
+          // Only handle if not active (active channel handles that)
+          if (nextMessage.conversation_id === activeConversationId) return
+
+          setConversations((prev) => {
+            const updated = prev.map((conversation) =>
+              conversation.id === nextMessage.conversation_id
+                ? {
+                    ...conversation,
+                    last_message_content: getMessageType(nextMessage) === "post"
+                      ? "📝 Shared a post"
+                      : getMessageType(nextMessage) === "image"
+                      ? "📷 Photo"
+                      : nextMessage.content
+                      ? `You: ${nextMessage.content.substring(0, 47)}${nextMessage.content.length > 47 ? "..." : ""}`
+                      : "You: sent a message",
+                    last_message_type: getMessageType(nextMessage),
+                    last_message_sender_id: nextMessage.sender_id,
+                    last_message_at: nextMessage.created_at || conversation.last_message_at,
+                    last_message_is_read: false,
+                  }
+                : conversation
+            )
+            return sortConversationsByPriority(updated)
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [contextUser?.id, activeConversationId, getMessageType, sortConversationsByPriority])
 
   const handleImageButtonClick = () => {
     if (!activeConversation || uploadingImage) {
@@ -3842,14 +3875,11 @@ export default function Chat() {
   ])
 
   useEffect(() => {
-    if (!activeConversationId || !contextUser?.id) {
-      console.log("[Chat] skipping markAsRead - missing:", { activeConversationId, userId: contextUser?.id })
-      return
-    }
-
-    console.log("[Chat] useEffect calling markConversationMessagesAsRead:", { activeConversationId, userId: contextUser?.id })
+    if (!activeConversationId || !contextUser?.id) return
+    const unread = unreadCountsByConversation[activeConversationId] || 0
+    if (unread <= 0) return
     markConversationMessagesAsRead(activeConversationId, contextUser.id)
-  }, [activeConversationId, contextUser?.id, markConversationMessagesAsRead])
+  }, [activeConversationId, contextUser?.id])
 
   // Also mark messages as read when window gains focus
   useEffect(() => {
@@ -4080,7 +4110,13 @@ export default function Chat() {
         })
       )
 
-      setGroupMessages(decryptedMessages)
+      setGroupMessages((prev) => {
+        const map = new Map()
+        ;[...prev, ...decryptedMessages].forEach((m) => {
+          if (m.id) map.set(m.id, m)
+        })
+        return Array.from(map.values())
+      })
       return decryptedMessages
     } catch (err) {
       console.error("[GroupChat] Exception fetching messages:", err)
@@ -4290,6 +4326,174 @@ export default function Chat() {
     }
   }, [activeGroupId, fetchGroupMembers, showSuccess, showToastError])
 
+
+  useEffect(() => {
+    if (!activeGroupId || chatMode !== 'groups') return
+
+    const group = groups.find((g) => g.id === activeGroupId)
+    if (!group) return
+
+    // Unsubscribe from old channel if exists
+    if (groupMessagesChannelRef.current) {
+      supabase.removeChannel(groupMessagesChannelRef.current)
+    }
+    if (groupReactionsChannelRef.current) {
+      supabase.removeChannel(groupReactionsChannelRef.current)
+    }
+
+    // Subscribe to new group messages
+    const channel = supabase
+      .channel(`group-messages-${group.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_messages",
+          filter: `group_id=eq.${group.id}`
+        },
+        async (payload) => {
+          const newMessage = payload.new
+          
+          // Skip own messages — already added via optimistic update in handleSendGroupMessage
+          if (newMessage.sender_id === contextUser?.id) return
+          
+          let content = newMessage.content
+
+          if (newMessage.is_encrypted && newMessage.encrypted_content && newMessage.iv && group.encryption_key) {
+            try {
+              const cryptoKey = await importKey(group.encryption_key)
+              content = await decrypt(newMessage.encrypted_content, newMessage.iv, cryptoKey)
+            } catch (err) {
+              console.error("[GroupChat] Error decrypting new message:", err)
+              content = "[Unable to decrypt]"
+            }
+          }
+
+          // Fetch sender profile
+          const { data: senderProfile } = await supabase
+            .from("profiles")
+            .select("id, username, name, avatar_url")
+            .eq("id", newMessage.sender_id)
+            .single()
+
+          // Format message for preview
+          let displayContent = ""
+          if (content && typeof content === "string" && content.trim()) {
+            let previewText = content.trim()
+            // Add sender name prefix
+            if (senderProfile?.name) {
+              previewText = `${senderProfile.name}: ${previewText}`
+            }
+            // Truncate long previews
+            if (previewText.length > 50) {
+              previewText = previewText.substring(0, 47) + "..."
+            }
+            displayContent = previewText
+          } else if (newMessage.file_url) {
+            displayContent = "📎 File"
+          } else if (newMessage.image_url) {
+            displayContent = "📷 Photo"
+          } else {
+            displayContent = "[Message content unavailable]"
+          }
+
+          setGroupMessages((prev) => [
+            ...prev,
+            {
+              ...newMessage,
+              content,
+              senderProfile: senderProfile
+            }
+          ])
+
+          // Update group list preview
+          setGroups((prev) =>
+            prev
+              .map((g) =>
+                g.id === group.id
+                  ? {
+                      ...g,
+                      last_message: displayContent,
+                      last_message_at: newMessage.created_at
+                    }
+                  : g
+              )
+              .sort((a, b) => {
+                const aTime = a.last_message_at || a.created_at
+                const bTime = b.last_message_at || b.created_at
+                return new Date(bTime).getTime() - new Date(aTime).getTime()
+              })
+          )
+
+          setTimeout(() => {
+            groupBottomRef.current?.scrollIntoView({ behavior: "smooth" })
+          }, 0)
+        }
+      )
+      .subscribe()
+
+    // Subscribe to message reactions in real-time
+    const reactionsChannel = supabase
+      .channel(`group-reactions-${group.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "group_message_reactions"
+        },
+        async (payload) => {
+          const { data: curMessages } = await supabase
+            .from('group_messages')
+            .select('id')
+            .eq('group_id', group.id)
+          
+          if (curMessages && curMessages.length > 0) {
+            const messageIds = curMessages.map(m => m.id)
+            await fetchGroupMessageReactions(messageIds)
+          }
+        }
+      )
+      .subscribe()
+
+    groupMessagesChannelRef.current = channel
+    groupReactionsChannelRef.current = reactionsChannel
+
+    // Subscribe to message reads (seen by) in real-time
+    const readsChannel = supabase
+      .channel(`group-reads-${group.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_message_reads"
+        },
+        async (payload) => {
+          console.log("[Chat] group_message_reads INSERT received:", payload)
+          const ids = groupMessages.map((m) => m.id)
+
+          if (ids.length) {
+            console.log("[Chat] Fetching message reads for", ids.length, "messages")
+            await fetchGroupMessageReads(ids)
+          }
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+      supabase.removeChannel(reactionsChannel)
+      supabase.removeChannel(readsChannel)
+      if (groupMessagesChannelRef.current === channel) {
+        groupMessagesChannelRef.current = null
+      }
+      if (groupReactionsChannelRef.current === reactionsChannel) {
+        groupReactionsChannelRef.current = null
+      }
+    }
+  }, [activeGroupId])
+
   const handleSelectGroup = useCallback(
     async (group) => {
       setActiveGroupId(group.id)
@@ -4316,155 +4520,6 @@ export default function Chat() {
       }
 
       await fetchGroupMembers(group.id)
-
-      // Unsubscribe from old channel if exists
-      if (groupMessagesChannelRef.current) {
-        supabase.removeChannel(groupMessagesChannelRef.current)
-      }
-      if (groupReactionsChannelRef.current) {
-        supabase.removeChannel(groupReactionsChannelRef.current)
-      }
-
-      // Subscribe to new group messages
-      const channel = supabase
-        .channel(`group-messages-${group.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "group_messages",
-            filter: `group_id=eq.${group.id}`
-          },
-          async (payload) => {
-            const newMessage = payload.new
-            
-            // Skip own messages — already added via optimistic update in handleSendGroupMessage
-            if (newMessage.sender_id === contextUser?.id) return
-            
-            let content = newMessage.content
-
-            if (newMessage.is_encrypted && newMessage.encrypted_content && newMessage.iv && group.encryption_key) {
-              try {
-                const cryptoKey = await importKey(group.encryption_key)
-                content = await decrypt(newMessage.encrypted_content, newMessage.iv, cryptoKey)
-              } catch (err) {
-                console.error("[GroupChat] Error decrypting new message:", err)
-                content = "[Unable to decrypt]"
-              }
-            }
-
-            // Fetch sender profile
-            const { data: senderProfile } = await supabase
-              .from("profiles")
-              .select("id, username, name, avatar_url")
-              .eq("id", newMessage.sender_id)
-              .single()
-
-            // Format message for preview
-            let displayContent = ""
-            if (content && typeof content === "string" && content.trim()) {
-              let previewText = content.trim()
-              // Add sender name prefix
-              if (senderProfile?.name) {
-                previewText = `${senderProfile.name}: ${previewText}`
-              }
-              // Truncate long previews
-              if (previewText.length > 50) {
-                previewText = previewText.substring(0, 47) + "..."
-              }
-              displayContent = previewText
-            } else if (newMessage.file_url) {
-              displayContent = "📎 File"
-            } else if (newMessage.image_url) {
-              displayContent = "📷 Photo"
-            } else {
-              displayContent = "[Message content unavailable]"
-            }
-
-            setGroupMessages((prev) => [
-              ...prev,
-              {
-                ...newMessage,
-                content,
-                senderProfile: senderProfile
-              }
-            ])
-
-            // Update group list preview
-            setGroups((prev) =>
-              prev
-                .map((g) =>
-                  g.id === group.id
-                    ? {
-                        ...g,
-                        last_message: displayContent,
-                        last_message_at: newMessage.created_at
-                      }
-                    : g
-                )
-                .sort((a, b) => {
-                  const aTime = a.last_message_at || a.created_at
-                  const bTime = b.last_message_at || b.created_at
-                  return new Date(bTime).getTime() - new Date(aTime).getTime()
-                })
-            )
-
-            setTimeout(() => {
-              groupBottomRef.current?.scrollIntoView({ behavior: "smooth" })
-            }, 0)
-          }
-        )
-        .subscribe()
-
-      // Subscribe to message reactions in real-time
-      const reactionsChannel = supabase
-        .channel(`group-reactions-${group.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "group_message_reactions"
-          },
-          async (payload) => {
-            const { data: curMessages } = await supabase
-              .from('group_messages')
-              .select('id')
-              .eq('group_id', group.id)
-            
-            if (curMessages && curMessages.length > 0) {
-              const messageIds = curMessages.map(m => m.id)
-              await fetchGroupMessageReactions(messageIds)
-            }
-          }
-        )
-        .subscribe()
-
-      groupMessagesChannelRef.current = channel
-      groupReactionsChannelRef.current = reactionsChannel
-
-      // Subscribe to message reads (seen by) in real-time
-      const readsChannel = supabase
-        .channel(`group-reads-${group.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "group_message_reads"
-          },
-          async (payload) => {
-            console.log("[Chat] group_message_reads INSERT received:", payload)
-            const ids = groupMessages.map((m) => m.id)
-
-            if (ids.length) {
-              console.log("[Chat] Fetching message reads for", ids.length, "messages")
-              await fetchGroupMessageReads(ids)
-            }
-          }
-        )
-        .subscribe()
     },
     [fetchGroupMessages, fetchGroupMembers, fetchGroupMessageReads]
   )
@@ -5330,7 +5385,7 @@ export default function Chat() {
         groupUnreadChannelRef.current = null
       }
     }
-  }, [activeGroupId, chatMode, contextUser?.id, fetchUnreadGroupCounts, groups])
+  }, [activeGroupId, chatMode, contextUser?.id])
 
   // Debounce member search
   useEffect(() => {
@@ -5572,6 +5627,423 @@ export default function Chat() {
     typingLabel = `${getFirst(typingProfiles[0])} and ${getFirst(typingProfiles[1])} are typing...`
   else if (typingProfiles.length >= 3)
     typingLabel = 'Several people are typing...'
+
+  const renderedDirectMessages = useMemo(() => {
+    return messages.map((message) => {
+      const mine = message.sender_id === contextUser?.id
+      const messageTickState = getPrivateMessageTickState(message)
+      
+      const senderProfile = profilesById[message.sender_id]
+      const imageUrl = loadedImageUrls[message.id] || null
+      const isImageMessage = Boolean(imageUrl) || getMessageType(message) === "image"
+      const isPostMessage = getMessageType(message) === "post"
+      const isDeletedMessage = message.is_deleted === true
+      const isForwardedMessage = message.is_forwarded === true
+      const reactionSummary = getReactionSummary(message.id)
+      const isReactionPickerOpen = activeReactionPickerMessageId === message.id
+      const isMessageMenuOpen = activeMessageMenuId === message.id
+      const canReplyMessage = !isDeletedMessage && !isPostMessage
+      const canReactMessage = !isDeletedMessage
+      const canForwardMessage = !isDeletedMessage && !isPostMessage
+      const canCopyMessage = !isDeletedMessage && !isPostMessage && Boolean(message.decrypted_text || message.content || imageUrl)
+      const canEditMessage = mine && !isDeletedMessage && !isImageMessage && !isPostMessage
+      const canUnsendMessage = mine && !isDeletedMessage
+      const canDeleteMessage = mine && !isDeletedMessage
+      const canShowActionTrigger = canReplyMessage || canReactMessage || canForwardMessage || canCopyMessage || canEditMessage || canUnsendMessage || canDeleteMessage
+      const isMatchedMessage = matchedMessageIdSet.has(message.id)
+      const isActiveMatchedMessage = activeMatchedMessageId === message.id
+      const repliedMessage = message.reply_to_id ? directMessagesById.get(message.reply_to_id) : null
+
+      return (
+        <div key={message.id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
+          {!mine && (
+            senderProfile?.avatar_url ? (
+              <img
+                src={senderProfile.avatar_url}
+                alt={getDisplayName(senderProfile)}
+                className="mr-2 h-8 w-8 shrink-0 self-end rounded-full object-cover"
+              />
+            ) : (
+              <div className="mr-2 flex h-8 w-8 shrink-0 self-end items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-xs font-semibold text-[var(--chat-accent)]">
+                {getDisplayName(senderProfile).charAt(0).toUpperCase()}
+              </div>
+            )
+          )}
+          <div className={`max-w-[84%] sm:max-w-[75%] md:max-w-[58%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
+            {isForwardedMessage && (
+              <p className="mb-1 font-['DM_Sans'] text-[10px] font-medium uppercase tracking-wide text-[var(--chat-text-muted)]">
+                Forwarded
+              </p>
+            )}
+
+            {message.reply_to_id && (
+              <div className="mb-1.5 rounded-[4px] border-l-[3px] border-[var(--chat-accent)] bg-[rgba(244,180,0,0.10)] px-2 py-1 font-['DM_Sans'] text-xs italic text-[var(--chat-text-subtle)]">
+                {!repliedMessage ? (
+                  <span className="italic text-[var(--chat-text-muted)]">Original message unavailable</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const element = document.getElementById(`message-${repliedMessage.id}`)
+                      element?.scrollIntoView({ behavior: "smooth", block: "center" })
+                    }}
+                    className="w-full text-left transition hover:text-[var(--chat-text)]"
+                  >
+                    <p className="font-['Sora'] font-semibold text-[var(--chat-text)]">{getDisplayName(profilesById[repliedMessage.sender_id])}</p>
+                    <p className="line-clamp-1 font-['DM_Sans'] italic text-[var(--chat-text-subtle)]">{repliedMessage.decrypted_text || repliedMessage.content || "[Image]"}</p>
+                  </button>
+                )}
+              </div>
+            )}
+            <div
+              id={`message-${message.id}`}
+              data-direct-message-interactive="true"
+              className={`relative w-fit cursor-pointer ${
+                isMatchedMessage
+                  ? isActiveMatchedMessage
+                    ? "ring-2 ring-[var(--chat-accent)]/70 ring-offset-2 ring-offset-[var(--chat-bg)]"
+                    : "ring-1 ring-[var(--chat-accent)]/50 ring-offset-1 ring-offset-[var(--chat-bg)]"
+                  : ""
+              }`}
+              onClick={() => {
+                if (isMobileView) {
+                  setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                  setActiveReactionPickerMessageId(null)
+                  return
+                }
+
+                setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                setActiveMessageMenuId(null)
+              }}
+              onTouchStart={(event) => {
+                startDirectMessageLongPress(message.id)
+                handleDirectMessageSwipeStart(event, message)
+              }}
+              onTouchMove={(event) => {
+                handleDirectMessageSwipeMove(event, message)
+              }}
+              onTouchEnd={() => {
+                cancelDirectMessageLongPress()
+                handleDirectMessageSwipeEnd()
+              }}
+              onTouchCancel={() => {
+                cancelDirectMessageLongPress()
+                handleDirectMessageSwipeEnd()
+              }}
+              style={{ willChange: "transform" }}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                if (isMobileView) {
+                  setActiveMessageMenuId(message.id)
+                  setActiveReactionPickerMessageId(null)
+                }
+              }}
+            >
+              <div
+                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 hidden md:flex items-center gap-1 ${mine ? "right-full mr-2" : "left-full ml-2"} ${isReactionPickerOpen || isMessageMenuOpen ? "opacity-100" : "opacity-0 md:group-hover:opacity-100"} transition-opacity duration-150`}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                    setActiveMessageMenuId(null)
+                  }}
+                  disabled={isDeletedMessage}
+                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
+                  title="React"
+                  aria-label="React to message"
+                >
+                  <SmilePlus className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleReply(message)
+                  }}
+                  disabled={isDeletedMessage}
+                  className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
+                  title="Reply"
+                  aria-label="Reply to message"
+                >
+                  <Reply className="h-3.5 w-3.5" />
+                </button>
+                {canShowActionTrigger && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                      setActiveReactionPickerMessageId(null)
+                    }}
+                    className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)]"
+                    title="More options"
+                    aria-label="Open message options"
+                  >
+                    <MoreVertical className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {isMessageMenuOpen && canShowActionTrigger && (
+                <div
+                  data-direct-message-interactive="true"
+                  className={`absolute z-40 top-full mt-2 ${mine ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)]/95 p-1.5 text-[var(--chat-text)] shadow-2xl backdrop-blur transition-all duration-150`}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleReply(message)
+                      setActiveMessageMenuId(null)
+                    }}
+                    disabled={!canReplyMessage}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Reply className="h-3.5 w-3.5" />
+                    Reply
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopyMessage(message)}
+                    disabled={!canCopyMessage}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {isImageMessage && !message.content ? "Copy image link" : "Copy"}
+                  </button>
+
+                  {canEditMessage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleStartEditingMessage(message)
+                        setActiveMessageMenuId(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)]"
+                    >
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      Edit
+                    </button>
+                  )}
+
+                  {canForwardMessage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openForwardModal(message)
+                        setActiveMessageMenuId(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)]"
+                    >
+                      <Forward className="h-3.5 w-3.5" />
+                      Forward
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+                      setActiveMessageMenuId(null)
+                    }}
+                    disabled={!canReactMessage}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <SmilePlus className="h-3.5 w-3.5" />
+                    React
+                  </button>
+
+                  {canUnsendMessage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleUnsendMessage(message)
+                        setActiveMessageMenuId(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Unsend
+                    </button>
+                  )}
+
+                  {canDeleteMessage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDeleteMessage(message)
+                        setActiveMessageMenuId(null)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {isReactionPickerOpen && (
+                <div data-direct-message-interactive="true" className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2 py-1 shadow-md`}>
+                  {REACTION_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleReactionSelect(message.id, emoji)
+                      }}
+                      className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-hover)]"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {isDeletedMessage ? (
+                <div className="w-fit rounded-2xl bg-[var(--chat-elev)] px-2.5 py-1.5 font-['DM_Sans'] text-[13px] italic text-[var(--chat-text-subtle)]">
+                  This message was unsent
+                </div>
+              ) : isPostMessage ? (
+                <PostPreview post_id={message.post_id} isMine={mine} />
+              ) : isImageMessage ? (
+                <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)]">
+                  <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setImagePreviewUrl(imageUrl)
+                      }}
+                      className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white"
+                    >
+                      View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
+                        setActiveReactionPickerMessageId(null)
+                      }}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs text-white transition hover:bg-black/70"
+                      title="More actions"
+                    >
+                      ⋯
+                    </button>
+                  </div>
+                  <img
+                    src={imageUrl}
+                    alt="Shared media"
+                    className="max-h-72 w-full max-w-[260px] object-cover"
+                    loading="lazy"
+                  />
+                  {message.decrypted_text || message.content ? (
+                    <p className="border-t border-[var(--chat-border)] px-2.5 py-2 font-['DM_Sans'] text-[13px] text-[var(--chat-text)]">
+                      {renderHighlightedMessageText(message.decrypted_text || message.content, message.id)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div
+                  className={`w-fit max-w-sm md:max-w-xs px-[13px] py-[9px] font-['DM_Sans'] text-[13px] leading-[1.55] ${
+                    mine ? "rounded-[16px_16px_4px_16px] bg-[var(--chat-accent)] text-[var(--chat-surface)]" : "rounded-[16px_16px_16px_4px] bg-[var(--chat-hover)] text-[var(--chat-text)]"
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap break-words">
+                    {renderHighlightedMessageText(message.decrypted_text || message.content, message.id)}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {!isDeletedMessage && reactionSummary.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {reactionSummary.map((item) => (
+                  <button
+                    key={`${message.id}-${item.emoji}`}
+                    type="button"
+                    onClick={() => setReactionModalMessageId(message.id)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${
+                      item.reactedByCurrentUser
+                        ? "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text)]"
+                        : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
+                    }`}
+                  >
+                    <span>{item.emoji}</span>
+                    <span>{item.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <p className="mt-1 flex items-center gap-1 font-['DM_Sans'] text-[10px] text-[var(--chat-text-muted)]">
+              <span>
+                {formatTime(message.created_at)}
+                {message.edited_at && " (edited)"}
+              </span>
+              {mine && !isDeletedMessage && messageTickState && (
+                <span
+                  className={`inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] ${
+                    messageTickState === "read" ? "text-[var(--chat-tick-read)]" : "text-[var(--chat-tick)]"
+                  }`}
+                  title={
+                    messageTickState === "read"
+                      ? "Read"
+                      : messageTickState === "delivered"
+                        ? "Delivered"
+                        : "Sent"
+                  }
+                  aria-label={
+                    messageTickState === "read"
+                      ? "Read"
+                      : messageTickState === "delivered"
+                        ? "Delivered"
+                        : "Sent"
+                  }
+                >
+                  {messageTickState === "sent" ? "\u2713" : "\u2713\u2713"}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+      )
+    })
+  }, [
+    messages,
+    contextUser?.id,
+    profilesById,
+    loadedImageUrls,
+    activeReactionPickerMessageId,
+    activeMessageMenuId,
+    matchedMessageIdSet,
+    activeMatchedMessageId,
+    directMessagesById,
+    isMobileView,
+    getPrivateMessageTickState,
+    getReactionSummary,
+    renderHighlightedMessageText,
+    handleReactionSelect,
+    handleReply,
+    handleCopyMessage,
+    handleStartEditingMessage,
+    openForwardModal,
+    handleUnsendMessage,
+    handleDeleteMessage,
+    setReactionModalMessageId,
+    formatTime,
+    getDisplayName,
+    getMessageType,
+    setImagePreviewUrl
+  ])
 
 
   return (
@@ -6191,394 +6663,7 @@ export default function Chat() {
             ) : messages.length === 0 ? (
               <p className="font-['DM_Sans'] text-sm text-[var(--chat-text-subtle)]">No messages yet. Send the first one.</p>
             ) : (
-              messages.map((message) => {
-                const mine = message.sender_id === contextUser?.id
-                const messageTickState = getPrivateMessageTickState(message)
-                
-                const senderProfile = profilesById[message.sender_id]
-                const imageUrl = loadedImageUrls[message.id] || null
-                const isImageMessage = Boolean(imageUrl) || getMessageType(message) === "image"
-                const isPostMessage = getMessageType(message) === "post"
-                const isDeletedMessage = message.is_deleted === true
-                const isForwardedMessage = message.is_forwarded === true
-                const reactionSummary = getReactionSummary(message.id)
-                const isReactionPickerOpen = activeReactionPickerMessageId === message.id
-                const isMessageMenuOpen = activeMessageMenuId === message.id
-                const canReplyMessage = !isDeletedMessage && !isPostMessage
-                const canReactMessage = !isDeletedMessage
-                const canForwardMessage = !isDeletedMessage && !isPostMessage
-                const canCopyMessage = !isDeletedMessage && !isPostMessage && Boolean(message.content || imageUrl)
-                const canEditMessage = mine && !isDeletedMessage && !isImageMessage && !isPostMessage
-                const canUnsendMessage = mine && !isDeletedMessage
-                const canDeleteMessage = mine && !isDeletedMessage
-                const canShowActionTrigger = canReplyMessage || canReactMessage || canForwardMessage || canCopyMessage || canEditMessage || canUnsendMessage || canDeleteMessage
-                const isMatchedMessage = matchedMessageIdSet.has(message.id)
-                const isActiveMatchedMessage = activeMatchedMessageId === message.id
-                const repliedMessage = message.reply_to_id ? directMessagesById.get(message.reply_to_id) : null
-
-                return (
-                  <div key={message.id} className={`group flex ${mine ? "justify-end" : "justify-start"}`}>
-                    {!mine && (
-                      senderProfile?.avatar_url ? (
-                        <img
-                          src={senderProfile.avatar_url}
-                          alt={getDisplayName(senderProfile)}
-                          className="mr-2 h-8 w-8 shrink-0 self-end rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="mr-2 flex h-8 w-8 shrink-0 self-end items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-xs font-semibold text-[var(--chat-accent)]">
-                          {getDisplayName(senderProfile).charAt(0).toUpperCase()}
-                        </div>
-                      )
-                    )}
-                    <div className={`max-w-[84%] sm:max-w-[75%] md:max-w-[58%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
-                      {isForwardedMessage && (
-                        <p className="mb-1 font-['DM_Sans'] text-[10px] font-medium uppercase tracking-wide text-[var(--chat-text-muted)]">
-                          Forwarded
-                        </p>
-                      )}
-
-                      {message.reply_to_id && (
-                        <div className="mb-1.5 rounded-[4px] border-l-[3px] border-[var(--chat-accent)] bg-[rgba(244,180,0,0.10)] px-2 py-1 font-['DM_Sans'] text-xs italic text-[var(--chat-text-subtle)]">
-                          {!repliedMessage ? (
-                            <span className="italic text-[var(--chat-text-muted)]">Original message unavailable</span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const element = document.getElementById(`message-${repliedMessage.id}`)
-                                element?.scrollIntoView({ behavior: "smooth", block: "center" })
-                              }}
-                              className="w-full text-left transition hover:text-[var(--chat-text)]"
-                            >
-                              <p className="font-['Sora'] font-semibold text-[var(--chat-text)]">{getDisplayName(profilesById[repliedMessage.sender_id])}</p>
-                              <p className="line-clamp-1 font-['DM_Sans'] italic text-[var(--chat-text-subtle)]">{repliedMessage.content || "[Image]"}</p>
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <div
-                        id={`message-${message.id}`}
-                        data-direct-message-interactive="true"
-                        className={`relative w-fit cursor-pointer ${
-                          isMatchedMessage
-                            ? isActiveMatchedMessage
-                              ? "ring-2 ring-[var(--chat-accent)]/70 ring-offset-2 ring-offset-[var(--chat-bg)]"
-                              : "ring-1 ring-[var(--chat-accent)]/50 ring-offset-1 ring-offset-[var(--chat-bg)]"
-                            : ""
-                        }`}
-                        onClick={() => {
-                          if (isMobileView) {
-                            setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
-                            setActiveReactionPickerMessageId(null)
-                            return
-                          }
-
-                          setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                          setActiveMessageMenuId(null)
-                        }}
-                        onTouchStart={(event) => {
-                          startDirectMessageLongPress(message.id)
-                          handleDirectMessageSwipeStart(event, message)
-                        }}
-                        onTouchMove={(event) => {
-                          handleDirectMessageSwipeMove(event, message)
-                        }}
-                        onTouchEnd={() => {
-                          cancelDirectMessageLongPress()
-                          handleDirectMessageSwipeEnd()
-                        }}
-                        onTouchCancel={() => {
-                          cancelDirectMessageLongPress()
-                          handleDirectMessageSwipeEnd()
-                        }}
-                        style={{ willChange: "transform" }}
-                        onContextMenu={(event) => {
-                          event.preventDefault()
-                          if (isMobileView) {
-                            setActiveMessageMenuId(message.id)
-                            setActiveReactionPickerMessageId(null)
-                          }
-                        }}
-                      >
-                        <div
-                          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 hidden md:flex items-center gap-1 ${mine ? "right-full mr-2" : "left-full ml-2"} ${isReactionPickerOpen || isMessageMenuOpen ? "opacity-100" : "opacity-0 md:group-hover:opacity-100"} transition-opacity duration-150`}
-                        >
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                              setActiveMessageMenuId(null)
-                            }}
-                            disabled={isDeletedMessage}
-                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
-                            title="React"
-                            aria-label="React to message"
-                          >
-                            <SmilePlus className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleReply(message)
-                            }}
-                            disabled={isDeletedMessage}
-                            className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
-                            title="Reply"
-                            aria-label="Reply to message"
-                          >
-                            <Reply className="h-3.5 w-3.5" />
-                          </button>
-                          {canShowActionTrigger && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
-                                setActiveReactionPickerMessageId(null)
-                              }}
-                              className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)]"
-                              title="More options"
-                              aria-label="Open message options"
-                            >
-                              <MoreVertical className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        {isMessageMenuOpen && canShowActionTrigger && (
-                          <div
-                            data-direct-message-interactive="true"
-                            className={`absolute z-40 top-full mt-2 ${mine ? "right-0" : "left-0"} min-w-[190px] rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)]/95 p-1.5 text-[var(--chat-text)] shadow-2xl backdrop-blur transition-all duration-150`}
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleReply(message)
-                                setActiveMessageMenuId(null)
-                              }}
-                              disabled={!canReplyMessage}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Reply className="h-3.5 w-3.5" />
-                              Reply
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleCopyMessage(message)}
-                              disabled={!canCopyMessage}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <Copy className="h-3.5 w-3.5" />
-                              {isImageMessage && !message.content ? "Copy image link" : "Copy"}
-                            </button>
-
-                            {canEditMessage && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleStartEditingMessage(message)
-                                  setActiveMessageMenuId(null)
-                                }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)]"
-                              >
-                                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                </svg>
-                                Edit
-                              </button>
-                            )}
-
-                            {canForwardMessage && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  openForwardModal(message)
-                                  setActiveMessageMenuId(null)
-                                }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)]"
-                              >
-                                <Forward className="h-3.5 w-3.5" />
-                                Forward
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                                setActiveMessageMenuId(null)
-                              }}
-                              disabled={!canReactMessage}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-xs transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <SmilePlus className="h-3.5 w-3.5" />
-                              React
-                            </button>
-
-                            {canUnsendMessage && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleUnsendMessage(message)
-                                  setActiveMessageMenuId(null)
-                                }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Unsend
-                              </button>
-                            )}
-
-                            {canDeleteMessage && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleDeleteMessage(message)
-                                  setActiveMessageMenuId(null)
-                                }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-300 transition hover:bg-red-900/40"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {isReactionPickerOpen && (
-                          <div data-direct-message-interactive="true" className={`absolute z-20 ${mine ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2 py-1 shadow-md`}>
-                            {REACTION_EMOJIS.map((emoji) => (
-                              <button
-                                key={emoji}
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  handleReactionSelect(message.id, emoji)
-                                }}
-                                className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-hover)]"
-                              >
-                                {emoji}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        {isDeletedMessage ? (
-                          <div className="w-fit rounded-2xl bg-[var(--chat-elev)] px-2.5 py-1.5 font-['DM_Sans'] text-[13px] italic text-[var(--chat-text-subtle)]">
-                            This message was unsent
-                          </div>
-                        ) : isPostMessage ? (
-                          <PostPreview postId={message.post_id} isMine={mine} />
-                        ) : isImageMessage ? (
-                          <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)]">
-                            <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setImagePreviewUrl(imageUrl)
-                                }}
-                                className="rounded-full bg-black/45 px-2 py-1 text-[10px] text-white"
-                              >
-                                View
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setActiveMessageMenuId((prev) => (prev === message.id ? null : message.id))
-                                  setActiveReactionPickerMessageId(null)
-                                }}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs text-white transition hover:bg-black/70"
-                                title="More actions"
-                              >
-                                ⋯
-                              </button>
-                            </div>
-                            <img
-                              src={imageUrl}
-                              alt="Shared media"
-                              className="max-h-72 w-full max-w-[260px] object-cover"
-                              loading="lazy"
-                            />
-                            {message.content && (
-                              <p className="border-t border-[var(--chat-border)] px-2.5 py-2 font-['DM_Sans'] text-[13px] text-[var(--chat-text)]">
-                                {renderHighlightedMessageText(message.content, message.id)}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <div
-                            className={`w-fit max-w-sm md:max-w-xs px-[13px] py-[9px] font-['DM_Sans'] text-[13px] leading-[1.55] ${
-                              mine ? "rounded-[16px_16px_4px_16px] bg-[var(--chat-accent)] text-[var(--chat-surface)]" : "rounded-[16px_16px_16px_4px] bg-[var(--chat-hover)] text-[var(--chat-text)]"
-                            }`}
-                          >
-                            <p className="whitespace-pre-wrap break-words">
-                              {renderHighlightedMessageText(message.content, message.id)}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {!isDeletedMessage && reactionSummary.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {reactionSummary.map((item) => (
-                            <button
-                              key={`${message.id}-${item.emoji}`}
-                              type="button"
-                              onClick={() => setReactionModalMessageId(message.id)}
-                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${
-                                item.reactedByCurrentUser
-                                  ? "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text)]"
-                                  : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
-                              }`}
-                            >
-                              <span>{item.emoji}</span>
-                              <span>{item.count}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      <p className="mt-1 flex items-center gap-1 font-['DM_Sans'] text-[10px] text-[var(--chat-text-muted)]">
-                        <span>
-                          {formatTime(message.created_at)}
-                          {message.edited_at && " (edited)"}
-                        </span>
-                        {mine && !isDeletedMessage && messageTickState && (
-                          <span
-                            className={`inline-flex items-center text-[12px] font-semibold tracking-[-0.08em] ${
-                              messageTickState === "read" ? "text-[var(--chat-tick-read)]" : "text-[var(--chat-tick)]"
-                            }`}
-                            title={
-                              messageTickState === "read"
-                                ? "Read"
-                                : messageTickState === "delivered"
-                                  ? "Delivered"
-                                  : "Sent"
-                            }
-                            aria-label={
-                              messageTickState === "read"
-                                ? "Read"
-                                : messageTickState === "delivered"
-                                  ? "Delivered"
-                                  : "Sent"
-                            }
-                          >
-                            {messageTickState === "sent" ? "\u2713" : "\u2713\u2713"}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                )
-              })
+              renderedDirectMessages
             )}
             <div ref={bottomRef} />
           </div>
@@ -6638,7 +6723,7 @@ export default function Chat() {
               <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)] px-2.5 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="font-['DM_Sans'] text-[11px] font-semibold text-[var(--chat-accent)]">Editing message</p>
-                  <p className="truncate font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">{editingMessage.content || "[Message]"}</p>
+                  <p className="truncate font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">{editingMessage.decrypted_text || editingMessage.content || "[Message]"}</p>
                 </div>
                 <button
                   type="button"
@@ -6662,7 +6747,7 @@ export default function Chat() {
               <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--chat-border-strong)] bg-[var(--chat-elev)] px-2.5 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="font-['DM_Sans'] text-[11px] font-semibold text-[var(--chat-text-subtle)]">Replying to {getDisplayName(profilesById[replyToMessage.sender_id])}</p>
-                  <p className="truncate font-['DM_Sans'] text-xs text-[var(--chat-text)]">{replyToMessage.content || "[Image]"}</p>
+                  <p className="truncate font-['DM_Sans'] text-xs text-[var(--chat-text)]">{replyToMessage.decrypted_text || replyToMessage.content || "[Image]"}</p>
                 </div>
                 <button
                   type="button"
@@ -7002,7 +7087,7 @@ export default function Chat() {
                                   <p className="font-semibold text-[var(--chat-text)]">
                                     {repliedTo.senderProfile?.name || repliedTo.senderProfile?.username || "Unknown"}
                                   </p>
-                                  <p className="line-clamp-1 italic text-[var(--chat-text-subtle)]">{repliedTo.content || "[Image]"}</p>
+                                  <p className="line-clamp-1 italic text-[var(--chat-text-subtle)]">{repliedTo.decrypted_text || repliedTo.content || "[Image]"}</p>
                                 </>
                               ) : (
                                 <>
@@ -7195,7 +7280,7 @@ export default function Chat() {
                                 This message was deleted
                               </div>
                             ) : isPost ? (
-                              <PostPreview postId={message.post_id} isMine={isOwn} />
+                              <PostPreview post_id={message.post_id} isMine={isOwn} />
                             ) : isImage && message.storage_path ? (
                               <div className="relative w-full max-w-full cursor-pointer overflow-hidden rounded-2xl bg-[var(--chat-elev)] shadow-sm">
                                 <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
@@ -7230,7 +7315,7 @@ export default function Chat() {
                                     : "bg-[var(--chat-elev)] text-[var(--chat-text)]"
                                 }`}
                               >
-                                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+                                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.decrypted_text || message.content}</p>
                               </div>
                             )}
                           </div>
@@ -7350,7 +7435,7 @@ export default function Chat() {
                 <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] font-semibold text-[var(--chat-accent)]">Editing message</p>
-                    <p className="truncate text-xs text-[var(--chat-accent)]/80">{editingGroupMessage.content || "[Message]"}</p>
+                    <p className="truncate text-xs text-[var(--chat-accent)]/80">{editingGroupMessage.decrypted_text || editingGroupMessage.content || "[Message]"}</p>
                   </div>
                   <button
                     type="button"

@@ -296,7 +296,7 @@ export default function BottomNavigation() {
 
           {/* Chat */}
           <button
-            onClick={() => handleNavigation("/chat")}
+            onClick={() => handleNavigation("/chat?tab=direct")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/chat") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
             }`}
