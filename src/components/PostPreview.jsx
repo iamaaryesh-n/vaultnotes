@@ -95,7 +95,7 @@ export default function PostPreview({ post_id, isMine = false }) {
     return (
       <div className={`w-fit max-w-[280px] rounded-2xl border px-3 py-2.5 text-[12px] italic ${
         isMine
-          ? "border-[rgba(255,255,255,0.12)] text-[rgba(255,255,255,0.5)]"
+          ? "border-[var(--chat-accent)]/20 text-[var(--chat-text-muted)] bg-[var(--chat-accent-soft)]/30"
           : "border-[var(--chat-border)] text-[var(--chat-text-muted)]"
       }`}>
         Post no longer available
@@ -112,17 +112,17 @@ export default function PostPreview({ post_id, isMine = false }) {
   return (
     <div
       onClick={handleOpenPost}
-      className={`group w-fit min-w-[220px] max-w-[280px] cursor-pointer overflow-hidden rounded-2xl border transition-all ${
+      className={`group w-fit min-w-[220px] max-w-[280px] cursor-pointer overflow-hidden rounded-[14px] border shadow-[0_2px_8px_rgba(0,0,0,0.05)] transition-all duration-200 hover:scale-[1.01] ${
         isMine
-          ? "border-[rgba(255,255,255,0.18)] bg-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.15)]"
-          : "border-[var(--chat-border)] bg-[var(--chat-surface)] hover:border-[var(--chat-border-strong)] hover:bg-[var(--chat-elev)]"
+          ? "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.08)] bg-[var(--chat-accent-soft)]/60 hover:bg-[var(--chat-accent-soft)]/90"
+          : "border-[rgba(0,0,0,0.08)] dark:border-[rgba(255,255,255,0.08)] bg-[var(--chat-surface)] hover:bg-[var(--chat-elev)]"
       }`}
     >
       {/* Header: Profile Info */}
       <div 
         onClick={handleProfileClick}
         className={`flex items-center gap-2 border-b px-3 py-2 transition-colors ${
-        isMine ? "border-[rgba(255,255,255,0.12)]" : "border-[var(--chat-border)]"
+        isMine ? "border-[var(--chat-accent)]/10" : "border-[var(--chat-border)]"
       }`}>
         {loading ? (
           <div className="h-6 w-6 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
@@ -136,7 +136,7 @@ export default function PostPreview({ post_id, isMine = false }) {
         ) : (
           <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-['Sora'] text-[10px] font-bold ${
             isMine
-              ? "bg-[rgba(255,255,255,0.2)] text-white"
+              ? "bg-[var(--chat-accent)] text-[var(--chat-on-accent)]"
               : "bg-[var(--chat-accent-soft)] text-[var(--chat-accent)]"
           }`}>
             {initial}
@@ -148,7 +148,7 @@ export default function PostPreview({ post_id, isMine = false }) {
             <div className="h-2.5 w-20 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
           ) : (
             <span className={`truncate font-['DM_Sans'] text-[12px] font-semibold ${
-              isMine ? "text-[rgba(255,255,255,0.9)]" : "text-[var(--chat-text)]"
+              isMine ? "text-[var(--chat-text)]" : "text-[var(--chat-text)]"
             }`}>
               {displayName}
             </span>
@@ -168,7 +168,7 @@ export default function PostPreview({ post_id, isMine = false }) {
           <PostContent
             content={post.content}
             className={`line-clamp-4 font-['DM_Sans'] text-[13px] leading-[1.55] ${
-              isMine ? "text-[rgba(255,255,255,0.88)]" : "text-[var(--chat-text)]"
+              isMine ? "text-[var(--chat-text)]" : "text-[var(--chat-text)]"
             }`}
           />
         )}
@@ -190,13 +190,17 @@ export default function PostPreview({ post_id, isMine = false }) {
       )}
 
       {/* Footer */}
-      <div className={`flex items-center justify-end px-3 py-1.5 ${
-        isMine ? "border-t border-[rgba(255,255,255,0.12)]" : "border-t border-[var(--chat-border)]"
+      <div className={`flex items-center justify-end px-3 py-2 border-t transition-colors ${
+        isMine ? "border-[rgba(0,0,0,0.06)] dark:border-[rgba(255,255,255,0.06)] bg-[var(--chat-accent)]/5" : "border-[var(--chat-border)] bg-[var(--chat-elev)]/30"
       }`}>
-        <div className={`text-[10px] font-medium ${
-          isMine ? "text-[rgba(255,255,255,0.4)]" : "text-[var(--chat-text-muted)]"
+        <div className={`text-[10px] font-bold tracking-tight uppercase ${
+          isMine ? "text-[var(--chat-on-accent)]/70 group-hover:text-[var(--chat-on-accent)]" : "text-[var(--chat-text-muted)] group-hover:text-[var(--chat-text)]"
         }`}>
-          {loading ? "..." : "Tap to view ↗"}
+          {loading ? "..." : (
+            <span className="flex items-center gap-1.5">
+              Tap to view post <span className="text-[12px] opacity-70">↗</span>
+            </span>
+          )}
         </div>
       </div>
     </div>

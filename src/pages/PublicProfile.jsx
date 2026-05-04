@@ -25,6 +25,10 @@ export default function PublicProfile() {
   const [followingCount, setFollowingCount] = useState(0)
   const [isFollowLoading, setIsFollowLoading] = useState(false)
   const [isChatLoading, setIsChatLoading] = useState(false)
+  const [activeTab, setActiveTab] = useState("posts")
+  const [vaultsCount, setVaultsCount] = useState(0)
+  const [workspaces, setWorkspaces] = useState([])
+  const [workspacesLoading, setWorkspacesLoading] = useState(false)
   const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "", onConfirm: null })
   
   // Smart fetch posts with caching
@@ -138,9 +142,11 @@ export default function PublicProfile() {
         if (currentUser) {
           await fetchFollowStatus(profileData.id)
           await fetchFollowersCounts(profileData.id)
+          await fetchWorkspaces(profileData.id)
         } else {
           // Just fetch counts if user is not logged in
           await fetchFollowersCounts(profileData.id)
+          await fetchWorkspaces(profileData.id)
         }
       }
     } catch (err) {
@@ -204,9 +210,42 @@ export default function PublicProfile() {
         setFollowingCount(followingCount || 0)
       }
 
-      console.log("[PublicProfile] Followers:", followersCount, "Following:", followingCount)
+      // Fetch public vaults count
+      const { count: vaults, error: vaultsError } = await supabase
+        .from("workspaces")
+        .select("*", { count: "exact", head: true })
+        .eq("created_by", profileId)
+        .eq("is_public", true)
+
+      if (!vaultsError) {
+        setVaultsCount(vaults || 0)
+      }
+
+      console.log("[PublicProfile] Stats:", { followers: followersCount, following: followingCount, vaults })
     } catch (err) {
       console.error("[PublicProfile] Exception fetching counts:", err)
+    }
+  }
+
+  const fetchWorkspaces = async (profileId) => {
+    try {
+      setWorkspacesLoading(true)
+      const { data, error } = await supabase
+        .from("workspaces")
+        .select("*")
+        .eq("created_by", profileId)
+        .eq("is_public", true)
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        console.error("[PublicProfile] Error fetching workspaces:", error)
+        return
+      }
+      setWorkspaces(data || [])
+    } catch (err) {
+      console.error("[PublicProfile] Exception fetching workspaces:", err)
+    } finally {
+      setWorkspacesLoading(false)
     }
   }
 
@@ -561,6 +600,12 @@ export default function PublicProfile() {
                 {followingCount === 1 ? "Following" : "Following"}
               </p>
             </div>
+            <div className="text-center">
+              <p className="text-xl font-bold text-gray-900 dark:text-white">{vaultsCount}</p>
+              <p className="text-sm text-slate-500">
+                {vaultsCount === 1 ? "Vault" : "Vaults"}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -606,72 +651,139 @@ export default function PublicProfile() {
         </div>
       </div>
 
-      {/* ============ SECTION 2: POSTS LIST ============ */}
-      <div className="card p-8">
-        <div className="mb-6">
-          <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Posts</h3>
-        </div>
+      {/* ============ SECTION 2: TABS ============ */}
+      <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-800">
+        <button
+          onClick={() => setActiveTab("posts")}
+          className={`pb-3 text-sm font-semibold transition-colors relative ${
+            activeTab === "posts" ? "text-yellow-600" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Posts
+          {activeTab === "posts" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow-500" />}
+        </button>
+        <button
+          onClick={() => setActiveTab("vaults")}
+          className={`pb-3 text-sm font-semibold transition-colors relative ${
+            activeTab === "vaults" ? "text-yellow-600" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Vaults
+          {activeTab === "vaults" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-yellow-500" />}
+        </button>
+      </div>
 
-        {postsLoading ? (
-          <PostListSkeleton count={3} />
-        ) : posts.length === 0 ? (
-          <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
-            No posts yet
+      {/* ============ SECTION 3: TAB CONTENT ============ */}
+      {activeTab === "posts" ? (
+        <div className="card p-8">
+          <div className="mb-6">
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Posts</h3>
           </div>
-        ) : visiblePosts.length === 0 ? (
-          <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
-            No visible posts
+
+          {postsLoading ? (
+            <PostListSkeleton count={3} />
+          ) : posts.length === 0 ? (
+            <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
+              No posts yet
+            </div>
+          ) : visiblePosts.length === 0 ? (
+            <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
+              No visible posts
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {visiblePosts.map((post) => (
+                <article
+                  key={post.id}
+                  className="border border-slate-200 rounded-xl p-5 bg-white dark:bg-slate-900 hover:shadow-md transition-shadow duration-200"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex flex-col gap-1">
+                      <button
+                        onClick={() => {
+                          if (post.profiles?.username) {
+                            navigate(`/profile/${post.profiles.username}`)
+                          }
+                        }}
+                        className="text-xs text-blue-500 hover:text-blue-700 hover:underline cursor-pointer font-medium text-left"
+                      >
+                        @{post.profiles?.username || "unknown"}
+                      </button>
+                      <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <span>{formatPostTime(post.created_at)}</span>
+                        <span>·</span>
+                        <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
+                      </p>
+                    </div>
+                  </div>
+
+                  {post.content && (
+                    <PostContent content={post.content} className="mb-3 text-gray-800 leading-relaxed dark:text-white" />
+                  )}
+
+                  {post.image_url && (
+                    <img
+                      src={post.image_url}
+                      alt="Post"
+                      className="w-full rounded-lg border border-slate-200 object-cover max-h-96"
+                    />
+                  )}
+
+                  {/* Post Interactions */}
+                  <PostInteractions
+                    post={post}
+                    initialComments={commentsByPost[post.id] || []}
+                    initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
+                  />
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="card p-8">
+          <div className="mb-6">
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Vaults</h3>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {visiblePosts.map((post) => (
-              <article
-                key={post.id}
-                className="border border-slate-200 rounded-xl p-5 bg-white dark:bg-slate-900 hover:shadow-md transition-shadow duration-200"
-              >
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex flex-col gap-1">
-                    <button
-                      onClick={() => {
-                        if (post.profiles?.username) {
-                          navigate(`/profile/${post.profiles.username}`)
-                        }
-                      }}
-                      className="text-xs text-blue-500 hover:text-blue-700 hover:underline cursor-pointer font-medium text-left"
-                    >
-                      @{post.profiles?.username || "unknown"}
-                    </button>
-                    <p className="text-xs text-slate-500 flex items-center gap-2">
-                      <span>{formatPostTime(post.created_at)}</span>
-                      <span>·</span>
-                      <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
-                    </p>
+
+          {workspacesLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-pulse">
+              {[1, 2].map(i => (
+                <div key={i} className="h-32 bg-slate-100 rounded-xl" />
+              ))}
+            </div>
+          ) : workspaces.length === 0 ? (
+            <div className="text-center py-10 border border-dashed border-slate-300 rounded-xl bg-slate-50 text-slate-500">
+              No public vaults found
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {workspaces.map((ws) => (
+                <div
+                  key={ws.id}
+                  onClick={() => navigate(`/workspace-preview/${ws.id}`)}
+                  className="group relative cursor-pointer overflow-hidden rounded-xl border border-slate-200 bg-white p-5 transition-all hover:border-yellow-400 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-bold text-gray-900 dark:text-white group-hover:text-yellow-600 transition-colors">
+                      {ws.name}
+                    </h4>
+                    <div className="rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-bold text-yellow-700 uppercase">
+                      Public
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 line-clamp-2">
+                    {ws.description || "No description provided."}
+                  </p>
+                  <div className="mt-4 flex items-center text-[10px] text-slate-400 font-medium">
+                    <span>Created {new Date(ws.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
-
-                {post.content && (
-                  <PostContent content={post.content} className="mb-3 text-gray-800 leading-relaxed dark:text-white" />
-                )}
-
-                {post.image_url && (
-                  <img
-                    src={post.image_url}
-                    alt="Post"
-                    className="w-full rounded-lg border border-slate-200 object-cover max-h-96"
-                  />
-                )}
-
-                {/* Post Interactions */}
-                <PostInteractions
-                  post={post}
-                  initialComments={commentsByPost[post.id] || []}
-                  initialLikes={likesByPost[post.id] || { count: 0, userLiked: false }}
-                />
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modal for messages */}
       <Modal

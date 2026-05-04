@@ -10,6 +10,9 @@ import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2 } from "l
 import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { useNavigationStore } from "../stores/navigationStore"
 import { useChatStore } from "../stores/chatStore"
+import { usePostCacheStore } from "../stores/postCacheStore"
+import PostPreview from "../components/PostPreview"
+import { DropdownMenu } from "../components/DropdownMenu"
 
 dayjs.extend(relativeTime)
 dayjs.extend(utc)
@@ -51,7 +54,8 @@ export default function GroupChat() {
   const [membersDropdownOpen, setMembersDropdownOpen] = useState(false)
 
   const [messageReadsById, setMessageReadsById] = useState({})
-  const [openMessageOptionsId, setOpenMessageOptionsId] = useState(null)
+  const [activeMenuId, setActiveMenuId] = useState(null)
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
   const [messageInfoMessageId, setMessageInfoMessageId] = useState(null)
   const [replyTarget, setReplyTarget] = useState(null)
 
@@ -72,8 +76,19 @@ export default function GroupChat() {
   const messageIdsRef = useRef(new Set())
   const isPrependingOlderRef = useRef(false)
   const isRestoringMessageScrollRef = useRef(true)
+  const menuRef = useRef(null)
 
   useRouteScrollRestoration("group-chat-page")
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setActiveMenuId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   const applyMessages = useCallback((nextValue) => {
     setMessages((prev) => {
@@ -391,11 +406,34 @@ export default function GroupChat() {
     [contextUser?.id]
   )
 
+  const enrichMessagesWithPosts = async (messages) => {
+    const updated = await Promise.all(
+      messages.map(async (msg) => {
+        if (!msg.post_id) return msg;
+
+        try {
+          const { data } = await supabase
+            .from("posts")
+            .select("id, content, image_url")
+            .eq("id", msg.post_id)
+            .maybeSingle();
+
+          return { ...msg, post: data };
+        } catch (err) {
+          console.warn("[GroupChat] Failed to enrich post for message:", msg.id, err);
+          return msg;
+        }
+      })
+    );
+
+    return updated;
+  };
+
   const hydrateMessages = useCallback(
     async (rows) => {
       const nextRows = rows || []
 
-      return Promise.all(
+      const hydrated = await Promise.all(
         nextRows.map(async (message) => {
           let content = message.content || ""
 
@@ -415,6 +453,8 @@ export default function GroupChat() {
           }
         })
       )
+
+      return enrichMessagesWithPosts(hydrated)
     },
     [getMemberProfileById, groupKey]
   )
@@ -460,6 +500,8 @@ export default function GroupChat() {
           iv,
           is_encrypted,
           created_at,
+          type,
+          post_id,
           profiles(id, username, name, avatar_url)
         `)
         .eq("group_id", activeGroupId)
@@ -517,6 +559,8 @@ export default function GroupChat() {
           iv,
           is_encrypted,
           created_at,
+          type,
+          post_id,
           profiles(id, username, name, avatar_url)
         `)
         .eq("group_id", activeGroupId)
@@ -1131,12 +1175,37 @@ export default function GroupChat() {
   }, [membersDropdownOpen])
 
   useEffect(() => {
-    setOpenMessageOptionsId(null)
+    setActiveMenuId(null)
   }, [activeGroupId])
+
+  const postCache = usePostCacheStore((state) => state.posts)
+
+  const getPostPreview = (post) => {
+    if (!post) return "Post";
+    if (post.content && post.content.trim().length > 0) {
+      return post.content.slice(0, 40) + (post.content.length > 40 ? "..." : "");
+    }
+    if (post.image || post.image_url) {
+      return "📷 Image post";
+    }
+    return "Post";
+  };
 
   useEffect(() => {
     setActiveGroupIdCache(activeGroupId)
   }, [activeGroupId, setActiveGroupIdCache])
+
+  const handleOpenMenu = (e, messageId) => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    // Support both mouse and touch events
+    const x = e.clientX || (e.touches && e.touches[0].clientX) || (e.changedTouches && e.changedTouches[0].clientX) || 0;
+    const y = e.clientY || (e.touches && e.touches[0].clientY) || (e.changedTouches && e.changedTouches[0].clientY) || 0;
+
+    setMenuPosition({ x, y });
+    setActiveMenuId(messageId);
+  };
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-144px)] min-w-0 w-full max-w-[1300px] flex-col overflow-hidden px-2 pt-1 md:px-3 dark:text-slate-100">
@@ -1293,7 +1362,7 @@ export default function GroupChat() {
               <div
                 ref={messageListRef}
                 onScroll={handleMessageListScroll}
-                onClick={() => setOpenMessageOptionsId(null)}
+                onClick={() => setActiveMenuId(null)}
                 className="message-list min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
               >
                 {loadingOlderMessages && (
@@ -1351,17 +1420,18 @@ export default function GroupChat() {
                                   isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
                                 }`}
                               >
-                                <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+                                {message.type === "post" ? (
+                                  <PostPreview post_id={message.post_id} isMine={isOwn} />
+                                ) : (
+                                  <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+                                )}
                               </div>
 
                               <button
                                 type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  setOpenMessageOptionsId((prev) => (prev === message.id ? null : message.id))
-                                }}
+                                onClick={(e) => handleOpenMenu(e, message.id)}
                                 className={`absolute right-0 -top-8 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 ${
-                                  openMessageOptionsId === message.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                                  activeMenuId === message.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                                 }`}
                                 title="More options"
                                 aria-label="Open message options"
@@ -1369,16 +1439,17 @@ export default function GroupChat() {
                                 <MoreHorizontal className="h-3.5 w-3.5" />
                               </button>
 
-                              {openMessageOptionsId === message.id && (
-                                <div
-                                  className="absolute right-0 top-full z-40 mt-2 min-w-[190px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 text-slate-800 dark:text-slate-100 shadow-lg"
-                                  onClick={(event) => event.stopPropagation()}
+                              {activeMenuId === message.id && (
+                                <DropdownMenu
+                                  x={menuPosition.x}
+                                  y={menuPosition.y}
+                                  onClose={() => setActiveMenuId(null)}
                                 >
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setReplyTarget(message)
-                                      setOpenMessageOptionsId(null)
+                                      setActiveMenuId(null)
                                       requestAnimationFrame(() => inputRef.current?.focus())
                                     }}
                                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
@@ -1391,7 +1462,7 @@ export default function GroupChat() {
                                     type="button"
                                     onClick={() => {
                                       handleCopyMessage(message)
-                                      setOpenMessageOptionsId(null)
+                                      setActiveMenuId(null)
                                     }}
                                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
@@ -1403,7 +1474,7 @@ export default function GroupChat() {
                                     type="button"
                                     onClick={() => {
                                       handleForwardMessage(message)
-                                      setOpenMessageOptionsId(null)
+                                      setActiveMenuId(null)
                                     }}
                                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
@@ -1415,7 +1486,7 @@ export default function GroupChat() {
                                     type="button"
                                     onClick={() => {
                                       handleReactToMessage()
-                                      setOpenMessageOptionsId(null)
+                                      setActiveMenuId(null)
                                     }}
                                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
@@ -1428,7 +1499,7 @@ export default function GroupChat() {
                                       type="button"
                                       onClick={() => {
                                         handleDeleteMessage(message)
-                                        setOpenMessageOptionsId(null)
+                                        setActiveMenuId(null)
                                       }}
                                       className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
                                     >
@@ -1441,14 +1512,14 @@ export default function GroupChat() {
                                     type="button"
                                     onClick={() => {
                                       setMessageInfoMessageId(message.id)
-                                      setOpenMessageOptionsId(null)
+                                      setActiveMenuId(null)
                                     }}
                                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
                                   >
                                     <Info className="h-3.5 w-3.5" />
                                     Message info
                                   </button>
-                                </div>
+                                </DropdownMenu>
                               )}
                             </div>
 
@@ -1478,13 +1549,17 @@ export default function GroupChat() {
 
               <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
                 {replyTarget && (
-                  <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="mb-2 rounded-lg border-l-[3px] border-[#f4b400] bg-slate-50 px-3 py-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <p className="text-[11px] font-semibold text-slate-600">
                           Replying to {getDisplayName(replyTarget.profiles || getMemberProfileById(replyTarget.sender_id))}
                         </p>
-                        <p className="truncate text-xs text-slate-500 dark:text-slate-400">{replyTarget.content || "[message]"}</p>
+                        <p className="truncate text-xs text-slate-500 dark:text-slate-400 opacity-70">
+                          {replyTarget.type === "post" 
+                            ? getPostPreview(replyTarget.post || postCache[replyTarget.post_id]) 
+                            : (replyTarget.content || "[message]")}
+                        </p>
                       </div>
 
                       <button

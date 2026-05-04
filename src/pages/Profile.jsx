@@ -116,6 +116,7 @@ export default function Profile() {
   const [followersCount, setFollowersCount] = useState(0)
   const [followingCount, setFollowingCount] = useState(0)
   const [activeTab, setActiveTab] = useState("posts")
+  const [vaultsCount, setVaultsCount] = useState(0)
   const [isFollowing, setIsFollowing] = useState(false)
   const [isFollowLoading, setIsFollowLoading] = useState(false)
   const [isChatLoading, setIsChatLoading] = useState(false)
@@ -350,7 +351,18 @@ export default function Profile() {
         setFollowingCount(following || 0)
       }
 
-      console.log("[Profile] Follow counts:", { followers, following })
+      // Fetch public vaults count (only public ones)
+      const { count: vaults, error: vaultsError } = await supabase
+        .from("workspaces")
+        .select("*", { count: "exact", head: true })
+        .eq("created_by", profile.id)
+        .eq("is_public", true)
+
+      if (!vaultsError) {
+        setVaultsCount(vaults || 0)
+      }
+
+      console.log("[Profile] Stats:", { followers, following, vaults })
     } catch (err) {
       console.error("[Profile] Error fetching follow counts:", err)
     }
@@ -1090,8 +1102,7 @@ export default function Profile() {
               { label: "Posts", value: posts.length },
               { label: "Followers", value: followersCount, onClick: () => setFollowersModalOpen(true), clickable: true },
               { label: "Following", value: followingCount, onClick: () => setFollowingModalOpen(true), clickable: true },
-              { label: "Notes", value: 0 },
-              { label: "Vaults", value: 0 }
+              { label: "Vaults", value: vaultsCount }
             ].map((stat, i) => (
               <motion.button
                 key={i}

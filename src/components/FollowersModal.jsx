@@ -22,7 +22,15 @@ export function FollowersModal({ isOpen, onClose, userId, currentUserId }) {
       setLoading(true)
       const { data, error } = await supabase
         .from("follows")
-        .select("follower_id, follower:profiles!follows_follower_id_fkey(id, username, name, avatar_url)")
+        .select(`
+          follower_id,
+          follower:profiles!follower_id (
+            id,
+            username,
+            name,
+            avatar_url
+          )
+        `)
         .eq("following_id", userId)
 
       if (error) {
@@ -39,10 +47,10 @@ export function FollowersModal({ isOpen, onClose, userId, currentUserId }) {
         for (const follower of followersList) {
           const { data: followData } = await supabase
             .from("follows")
-            .select("id")
+            .select("*")
             .eq("follower_id", currentUserId)
             .eq("following_id", follower.id)
-            .single()
+            .maybeSingle()
 
           followStates[follower.id] = !!followData
         }
@@ -57,8 +65,8 @@ export function FollowersModal({ isOpen, onClose, userId, currentUserId }) {
 
   const filteredFollowers = useMemo(() => {
     return followers.filter(f =>
-      f.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.name?.toLowerCase().includes(searchQuery.toLowerCase())
+      (f.username || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
+      (f.name || "").toLowerCase().includes((searchQuery || "").toLowerCase())
     )
   }, [followers, searchQuery])
 
