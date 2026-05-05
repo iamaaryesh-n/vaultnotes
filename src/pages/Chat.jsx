@@ -2857,6 +2857,17 @@ export default function Chat() {
             displayContent = content
           }
 
+          // If this conversation was deleted by the user, restore it now
+          // (new message = conversation should reappear, like WhatsApp/Telegram)
+          const conversationPrefs = conversationPreferencesById[nextMessage.conversation_id]
+          if (conversationPrefs?.is_deleted === true) {
+            // Restore the preference in DB and local state (fire and forget)
+            upsertConversationPreference(nextMessage.conversation_id, {
+              is_deleted: false,
+              is_archived: false
+            }).catch(() => {})
+          }
+
           setConversations((prev) => {
             const exists = prev.some((conv) => conv.id === nextMessage.conversation_id)
 
@@ -2871,11 +2882,11 @@ export default function Chat() {
                 : conversation
             )
 
-            if (!exists) {
-              // New conversation — trigger a background refresh after setState
+            if (!exists || conversationPrefs?.is_deleted === true) {
+              // New or restored conversation — trigger a background refresh after setState
               setTimeout(() => {
                 fetchConversations(contextUser.id, { force: true, silent: true })
-              }, 1500)
+              }, 800)
             }
 
             return sortConversationsByPriority(updated)
@@ -2895,7 +2906,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey, fetchConversations])
+  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey, fetchConversations, upsertConversationPreference, conversationPreferencesById])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -2918,6 +2929,19 @@ export default function Chat() {
 
           // Only handle if not active (active channel handles that)
           if (nextMessage.conversation_id === activeConversationId) return
+
+          // Restore deleted conversation if user sends a new message to it
+          const sentConvPrefs = conversationPreferencesById[nextMessage.conversation_id]
+          if (sentConvPrefs?.is_deleted === true) {
+            upsertConversationPreference(nextMessage.conversation_id, {
+              is_deleted: false,
+              is_archived: false
+            }).catch(() => {})
+            // Force refresh to pull the conversation back into the list
+            setTimeout(() => {
+              fetchConversations(contextUser.id, { force: true, silent: true })
+            }, 800)
+          }
 
           setConversations((prev) => {
             const updated = prev.map((conversation) =>
@@ -2947,7 +2971,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [contextUser?.id, activeConversationId, getMessageType, sortConversationsByPriority])
+  }, [contextUser?.id, activeConversationId, getMessageType, sortConversationsByPriority, conversationPreferencesById, upsertConversationPreference, fetchConversations])
 
   const handleImageButtonClick = () => {
     if (!activeConversation || uploadingImage) {

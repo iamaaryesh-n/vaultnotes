@@ -466,7 +466,22 @@ export default function Profile() {
         conversationId = newConversation?.id
       }
 
+      // If this conversation was previously deleted by the user, restore it
+      // so it appears in the list when we navigate to it
       if (conversationId) {
+        await supabase
+          .from("conversation_preferences")
+          .upsert(
+            {
+              user_id: user.id,
+              conversation_id: conversationId,
+              is_deleted: false,
+              is_archived: false
+            },
+            { onConflict: "user_id,conversation_id" }
+          )
+        // Small delay so the preference write propagates before Chat renders
+        await new Promise(resolve => setTimeout(resolve, 150))
         navigate(`/chat?conversation=${conversationId}`)
       }
     } catch (err) {
