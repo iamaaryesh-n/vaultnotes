@@ -12,9 +12,12 @@ export default function BottomNavigation() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false)
   const [currentUserId, setCurrentUserId] = useState(null)
-  const [unreadDirectCount, setUnreadDirectCount] = useState(0)
-  const [unreadGroupCount, setUnreadGroupCount] = useState(0)
-  const unreadChatCount = unreadDirectCount + unreadGroupCount
+  const [unreadCounts, setUnreadCounts] = useState({
+    total: 0,
+    direct: 0,
+    group: 0
+  })
+  const [isUnreadLoaded, setIsUnreadLoaded] = useState(false)
   const avatarSrc = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null
 
   useEffect(() => {
@@ -58,8 +61,16 @@ export default function BottomNavigation() {
     } else {
       setCurrentUserId(null)
       setProfile(null)
+      setUnreadCounts({ total: 0, direct: 0, group: 0 })
+      setIsUnreadLoaded(false)
     }
   }, [authReady, user?.id])
+
+  useEffect(() => {
+    // Reset unread counts on initial mount to prevent stale UI
+    setUnreadCounts({ total: 0, direct: 0, group: 0 })
+    setIsUnreadLoaded(false)
+  }, [])
 
   useEffect(() => {
     setAvatarLoadFailed(false)
@@ -96,13 +107,35 @@ export default function BottomNavigation() {
 
       if (error) {
         console.error("[BottomNav] Error fetching unread chat count:", error)
+        setIsUnreadLoaded(true)
         return
       }
 
       const uniqueConversationIds = [...new Set((data || []).map((item) => item.conversation_id).filter(Boolean))]
-      setUnreadDirectCount(uniqueConversationIds.length)
+      
+      let directCount = 0
+      
+      if (uniqueConversationIds.length > 0) {
+        const { data: prefs } = await supabase
+          .from("conversation_preferences")
+          .select("conversation_id")
+          .eq("user_id", userId)
+          .in("conversation_id", uniqueConversationIds)
+          .eq("is_deleted", true)
+          
+        const deletedIds = new Set((prefs || []).map(p => p.conversation_id))
+        directCount = uniqueConversationIds.filter(id => !deletedIds.has(id)).length
+      }
+      
+      setUnreadCounts(prev => ({
+        ...prev,
+        direct: directCount,
+        total: directCount + prev.group
+      }))
+      setIsUnreadLoaded(true)
     } catch (err) {
       console.error("[BottomNav] Exception fetching unread chat count:", err)
+      setIsUnreadLoaded(true)
     }
   }
 
@@ -116,24 +149,36 @@ export default function BottomNavigation() {
 
     const handleUnreadRefresh = (event) => {
       const detail = event?.detail || {}
+      let updated = false
 
       // Handle totalChatUnreadChanged event (from Chat.jsx dispatcher)
-      if (typeof detail.unreadDirectCount === "number") {
-        setUnreadDirectCount(detail.unreadDirectCount)
+      if (typeof detail.unreadDirectCount === "number" || typeof detail.unreadGroupCount === "number") {
+        setUnreadCounts(prev => {
+          const direct = typeof detail.unreadDirectCount === "number" ? detail.unreadDirectCount : prev.direct
+          const group = typeof detail.unreadGroupCount === "number" ? detail.unreadGroupCount : prev.group
+          return {
+            total: direct + group,
+            direct,
+            group
+          }
+        })
+        setIsUnreadLoaded(true)
+        updated = true
       }
 
-      if (typeof detail.unreadGroupCount === "number") {
-        setUnreadGroupCount(detail.unreadGroupCount)
-      }
-
-      // Handle chatUnreadChanged event
-      if (typeof detail.totalUnreadCount === "number") {
-        setUnreadDirectCount(detail.totalUnreadCount)
-        return
+      // Handle chatUnreadChanged event (backward compatibility)
+      if (!updated && typeof detail.totalUnreadCount === "number") {
+        setUnreadCounts(prev => ({
+          ...prev,
+          direct: detail.totalUnreadCount,
+          total: detail.totalUnreadCount + prev.group
+        }))
+        setIsUnreadLoaded(true)
+        updated = true
       }
 
       // Fallback: if none of the above, fetch fresh count
-      if (!detail.unreadDirectCount && !detail.unreadGroupCount && !detail.totalUnreadCount) {
+      if (!updated && !detail.unreadDirectCount && !detail.unreadGroupCount && !detail.totalUnreadCount) {
         fetchUnreadChatCount(currentUserId)
       }
     }
@@ -315,9 +360,9 @@ export default function BottomNavigation() {
                   d="M8 10h8M8 14h5m6 7l-4-4H6a2 2 0 01-2-2V6a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2h-1v4z"
                 />
               </svg>
-              {unreadChatCount > 0 && (
+              {isUnreadLoaded === true && unreadCounts.total > 0 && (
                 <span className="absolute -right-2 -top-2 min-w-[18px] rounded-full bg-[#EF4444] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
-                  {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                  {unreadCounts.total > 99 ? "99+" : unreadCounts.total}
                 </span>
               )}
             </div>

@@ -85,7 +85,13 @@ export default function Chat() {
   const [matchedMessageIds, setMatchedMessageIds] = useState([])
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [presenceNow, setPresenceNow] = useState(Date.now())
-  const [unreadCountsByConversation, setUnreadCountsByConversation] = useState(cachedUnreadCountsByConversation || {})
+  const [unreadCountsByConversation, setUnreadCountsByConversation] = useState({})
+  
+  useEffect(() => {
+    // Reset unread counts on initial mount to prevent stale UI
+    setUnreadCountsByConversation({})
+    setUnreadGroupCountsByGroup({})
+  }, [])
   const [typingByConversation, setTypingByConversation] = useState({})
   const [onlineUsersById, setOnlineUsersById] = useState({})
   const [replyToMessage, setReplyToMessage] = useState(null)
