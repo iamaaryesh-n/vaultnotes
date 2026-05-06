@@ -47,7 +47,7 @@ export default function PublicProfile() {
       
       const { data, error } = await supabase
         .from("posts")
-        .select("id, user_id, content, image_url, created_at, visibility, profiles(username)")
+        .select("id, user_id, content, image_url, created_at, updated_at, is_edited, visibility, profiles(username)")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
 

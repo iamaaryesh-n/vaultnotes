@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef } from "react"
 import { supabase } from "../lib/supabase"
 
 /**
- * Realtime subscription hook for likes and comments on posts
+ * Realtime subscription hook for likes, comments, and post updates
  * 
  * Features:
  * - Subscribes to INSERT events on likes table → increment like count
  * - Subscribes to DELETE events on likes table → decrement like count
  * - Subscribes to INSERT events on comments table → add new comment instantly
+ * - Subscribes to UPDATE events on posts table → handle post edits
  * - Uses post_id filter to only get relevant updates
  * - Stable subscription: only subscribes once, never resubscribes unnecessarily
  * - Proper cleanup on unmount
@@ -15,11 +16,13 @@ import { supabase } from "../lib/supabase"
  * @param {string[]} postIds - Array of post IDs to subscribe to
  * @param {Function} onLikesChange - Callback when likes change (INSERT/DELETE events)
  * @param {Function} onCommentsChange - Callback when comments change (INSERT events)
+ * @param {Function} onPostsChange - Callback when posts change (UPDATE events)
  */
-export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, authReady = true) {
+export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, onPostsChange, authReady = true) {
   const channelsRef = useRef(null)
   const onLikesChangeRef = useRef(onLikesChange)
   const onCommentsChangeRef = useRef(onCommentsChange)
+  const onPostsChangeRef = useRef(onPostsChange)
 
   const postIdsKey = useMemo(
     () => Array.from(new Set(postIds || [])).filter(Boolean).sort().join(","),
@@ -34,6 +37,10 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, authR
   useEffect(() => {
     onCommentsChangeRef.current = onCommentsChange
   }, [onCommentsChange])
+
+  useEffect(() => {
+    onPostsChangeRef.current = onPostsChange
+  }, [onPostsChange])
 
   // Subscribe when post IDs actually change
   useEffect(() => {
@@ -113,10 +120,32 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, authR
       )
       .subscribe()
 
+    // ============================================
+    // POSTS CHANNEL - Handle UPDATE events
+    // ============================================
+    const postsChannel = supabase
+      .channel(`posts-realtime-${nextKey}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "posts",
+          filter: `id=in.(${uniquePostIds.join(",")})`
+        },
+        (payload) => {
+          if (onPostsChangeRef.current) {
+            onPostsChangeRef.current(payload)
+          }
+        }
+      )
+      .subscribe()
+
     // Store channel references for cleanup
     channelsRef.current = {
       likes: likesChannel,
-      comments: commentsChannel
+      comments: commentsChannel,
+      posts: postsChannel
     }
 
     // Cleanup on unmount
@@ -124,6 +153,7 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, authR
       if (channelsRef.current) {
         supabase.removeChannel(channelsRef.current.likes)
         supabase.removeChannel(channelsRef.current.comments)
+        supabase.removeChannel(channelsRef.current.posts)
         channelsRef.current = null
       }
     }

@@ -70,7 +70,7 @@ export default function Explore() {
       try {
         const { data: fullPost } = await supabase
           .from("posts")
-          .select("id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)")
+          .select("id, user_id, content, image_url, created_at, updated_at, is_edited, visibility, profiles(id, username, name, avatar_url)")
           .eq("id", newPost.id)
           .maybeSingle()
 

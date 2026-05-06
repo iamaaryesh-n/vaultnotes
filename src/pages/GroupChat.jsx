@@ -414,7 +414,7 @@ export default function GroupChat() {
         try {
           const { data } = await supabase
             .from("posts")
-            .select("id, content, image_url")
+            .select("id, content, image_url, updated_at, is_edited")
             .eq("id", msg.post_id)
             .maybeSingle();
 

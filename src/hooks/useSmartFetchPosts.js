@@ -223,6 +223,20 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
       } else {
         store.removeLike(postId, isOwnEvent)
       }
+    },
+    updatePost: (postId, updatedData) => {
+      // Update the post in the posts array
+      setPosts(prevPosts =>
+        prevPosts.map(post => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              ...updatedData
+            }
+          }
+          return post
+        })
+      )
     }
   }
 }

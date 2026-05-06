@@ -126,6 +126,7 @@ export default function Profile() {
   const [editingPostId, setEditingPostId] = useState(null)
   const [editingPostContent, setEditingPostContent] = useState("")
   const [postContentOverrides, setPostContentOverrides] = useState({})
+  const [savingPostId, setSavingPostId] = useState(null)
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false)
 
   useEffect(() => {
@@ -150,13 +151,14 @@ export default function Profile() {
     updateComment,
     removeComment,
     removeCommentById,
-    updateLike
+    updateLike,
+    updatePost
   } = useSmartFetchPosts(
     async () => {
       if (!profile?.id) return []
       const { data, error } = await supabase
         .from("posts")
-        .select("id, user_id, content, image_url, created_at, visibility, profiles(username)")
+        .select("id, user_id, content, image_url, created_at, updated_at, is_edited, visibility, profiles(username)")
         .eq("user_id", profile.id)
         .order("created_at", { ascending: false })
       if (error) {
@@ -888,17 +890,70 @@ export default function Profile() {
     setEditingPostContent("")
   }
 
-  const handleSaveEditingPostFrontend = () => {
-    if (!editingPostId) {
+  const handleSaveEditingPost = async () => {
+    if (!editingPostId || !editingPostContent.trim()) {
       return
     }
 
-    setPostContentOverrides((prev) => ({
-      ...prev,
-      [editingPostId]: editingPostContent
-    }))
-    setEditingPostId(null)
-    setEditingPostContent("")
+    setSavingPostId(editingPostId)
+
+    try {
+      console.log("[Profile] Saving post:", editingPostId)
+        console.log("[Profile] Content length:", editingPostContent.length, "Auth user:", authUser?.id)
+      
+      // Optimistic UI update
+      setPostContentOverrides((prev) => ({
+        ...prev,
+        [editingPostId]: editingPostContent
+      }))
+
+      // Save to database
+      const { error: updateError } = await supabase
+        .from("posts")
+        .update({
+          content: editingPostContent,
+          is_edited: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", editingPostId)
+
+      if (updateError) {
+        console.error("[Profile] Failed to save post edit:", updateError)
+        // Revert optimistic update on error
+        setPostContentOverrides((prev) => {
+          const next = { ...prev }
+          delete next[editingPostId]
+          return next
+        })
+        // Show error toast
+        setModalConfig({
+          open: true,
+          title: "Error",
+          message: "Failed to save post. " + (updateError.message || "Please try again."),
+          onConfirm: () => setModalConfig({ ...modalConfig, open: false })
+        })
+        return
+      }
+
+      console.log("[Profile] Post updated successfully")
+      setEditingPostId(null)
+      setEditingPostContent("")
+    } catch (err) {
+      console.error("[Profile] Unexpected error saving post:", err)
+      setPostContentOverrides((prev) => {
+        const next = { ...prev }
+        delete next[editingPostId]
+        return next
+      })
+      setModalConfig({
+        open: true,
+        title: "Error",
+        message: "Failed to save post. " + (err.message || "Please try again."),
+        onConfirm: () => setModalConfig({ ...modalConfig, open: false })
+      })
+    } finally {
+      setSavingPostId(null)
+    }
   }
 
   // Memoized realtime handlers - stable across renders
@@ -975,11 +1030,29 @@ export default function Profile() {
     }
   }, [updateComment, removeComment, removeCommentById])
 
+  const handlePostsRealtime = useCallback((payload) => {
+    if (payload.eventType === "UPDATE" && payload.new?.id) {
+      console.log("[Profile] Realtime post update received for post_id:", payload.new.id)
+      // Update the content display for optimistic UI
+      setPostContentOverrides((prev) => ({
+        ...prev,
+        [payload.new.id]: payload.new.content
+      }))
+      // Update the post in the posts array to reflect is_edited flag
+      updatePost(payload.new.id, {
+        content: payload.new.content,
+        is_edited: payload.new.is_edited,
+        updated_at: payload.new.updated_at
+      })
+    }
+  }, [updatePost])
+
   // Setup realtime subscriptions
   usePostsRealtime(
     posts.map((p) => p.id),
     handleLikesRealtime,
     handleCommentsRealtime,
+    handlePostsRealtime,
     authReady
   )
 
@@ -1205,6 +1278,12 @@ export default function Profile() {
                           <span>{formatPostTime(post.created_at)}</span>
                           <span>Â·</span>
                           <VisibilityBadge visibility={post.visibility || 'public'} size="xs" />
+                          {post.is_edited && (
+                            <>
+                              <span>Â·</span>
+                              <span className="italic">edited</span>
+                            </>
+                          )}
                         </p>
                       </div>
                       {isOwnProfile && (
@@ -1280,10 +1359,11 @@ export default function Profile() {
                           </button>
                           <button
                             type="button"
-                            onClick={handleSaveEditingPostFrontend}
-                            className="rounded-[8px] bg-[var(--profile-accent)] px-3 py-1.5 text-[12px] font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[var(--profile-accent-hover)]"
+                            onClick={handleSaveEditingPost}
+                            disabled={savingPostId === post.id}
+                            className="rounded-[8px] bg-[var(--profile-accent)] px-3 py-1.5 text-[12px] font-bold text-[var(--profile-on-accent)] transition-colors hover:bg-[var(--profile-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            Save (UI only)
+                            {savingPostId === post.id ? "Saving..." : "Save"}
                           </button>
                         </div>
                       </div>
