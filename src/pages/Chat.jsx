@@ -31,6 +31,7 @@ const CHAT_LIST_VIEW = {
   ARCHIVED: "archived"
 }
 
+
 export default function Chat() {
   const REACTION_EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F621}"]
 
@@ -86,7 +87,7 @@ export default function Chat() {
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [presenceNow, setPresenceNow] = useState(Date.now())
   const [unreadCountsByConversation, setUnreadCountsByConversation] = useState({})
-  
+
   useEffect(() => {
     // Reset unread counts on initial mount to prevent stale UI
     setUnreadCountsByConversation({})
@@ -737,6 +738,30 @@ export default function Chat() {
 
   const isPreferenceArchived = useCallback((preference) => preference?.is_archived === true, [])
   const isPreferenceDeleted = useCallback((preference) => preference?.is_deleted === true, [])
+  const getDeleteBoundary = useCallback((conversation, userId) => {
+    return conversation?.deleted_by?.[userId] || null
+  }, [])
+
+  const normalizeDbTimestamp = useCallback((timestamp) => {
+    if (!timestamp) return null
+    if (timestamp instanceof Date) return timestamp.toISOString()
+
+    if (typeof timestamp !== "string") return null
+
+    if (/[zZ]$/.test(timestamp) || /[+-]\d\d:\d\d$/.test(timestamp)) {
+      return timestamp
+    }
+
+    return `${timestamp}Z`
+  }, [])
+
+  const parseDbTimestamp = useCallback((timestamp) => {
+    const normalized = normalizeDbTimestamp(timestamp)
+    if (!normalized) return Number.NaN
+
+    const parsed = Date.parse(normalized)
+    return Number.isNaN(parsed) ? Number.NaN : parsed
+  }, [normalizeDbTimestamp])
 
   const fetchConversationPreferences = useCallback(async (userId, conversationIds = []) => {
     if (!userId || conversationIds.length === 0) {
@@ -1020,7 +1045,7 @@ export default function Chat() {
   const handleOpenMenu = (e, messageId) => {
     e.stopPropagation();
     e.preventDefault();
-    
+
     // Support both mouse and touch events
     const x = e.clientX || (e.touches && e.touches[0].clientX) || (e.changedTouches && e.changedTouches[0].clientX) || 0;
     const y = e.clientY || (e.touches && e.touches[0].clientY) || (e.changedTouches && e.changedTouches[0].clientY) || 0;
@@ -1489,12 +1514,28 @@ export default function Chat() {
       }
       setError("")
 
-      const { data, error: fetchError } = await supabase
+      // 1. Fetch deleteTime for current user
+      const { data: convData } = await supabase
+        .from("conversations")
+        .select("deleted_by")
+        .eq("id", conversationId)
+        .single()
+
+      const deleteTime = convData?.deleted_by?.[contextUser?.id]
+
+      // 2. Build query with deleteTime filter if applicable
+      let query = supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: false })
         .limit(30)
+
+      if (deleteTime) {
+        query = query.gt("created_at", deleteTime)
+      }
+
+      const { data, error: fetchError } = await query
 
       if (fetchError) {
         console.error("[Chat] Failed to load messages:", fetchError)
@@ -1568,13 +1609,28 @@ export default function Chat() {
     try {
       setLoadingOlder(true)
 
-      const { data, error: fetchError } = await supabase
+      // Fetch deleteTime for current user to prevent loading deleted history
+      const { data: convData } = await supabase
+        .from("conversations")
+        .select("deleted_by")
+        .eq("id", activeConversationId)
+        .single()
+
+      const deleteTime = convData?.deleted_by?.[contextUser?.id]
+
+      let query = supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", activeConversationId)
         .lt("created_at", oldestTimestamp)
         .order("created_at", { ascending: false })
         .limit(30)
+
+      if (deleteTime) {
+        query = query.gt("created_at", deleteTime)
+      }
+
+      const { data, error: fetchError } = await query
 
       if (fetchError) {
         console.error("[Chat] Failed to load older messages:", fetchError)
@@ -1666,9 +1722,10 @@ export default function Chat() {
       }
       setError("")
 
-      const { data, error: fetchError } = await supabase
+      // 1. Load ALL conversations for the current user (no delete filtering yet)
+      const { data: allConversationsData, error: fetchError } = await supabase
         .from("conversations")
-        .select("id, user1_id, user2_id, created_at")
+        .select("id, user1_id, user2_id, created_at, updated_at, deleted_by")
         .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
         .order("created_at", { ascending: false })
 
@@ -1676,104 +1733,95 @@ export default function Chat() {
         console.error("[Chat] Failed to load conversations:", fetchError)
         setError("Failed to load conversations")
         setConversations([])
+        setLoadingConversations(false)
         return
       }
 
-      const allConversations = data || []
-      const allConversationIds = allConversations.map((conversation) => conversation.id).filter(Boolean)
-      const deletedConversationIds = new Set()
-      const nonDeletedPreferenceMap = {}
+      const allConversations = allConversationsData || []
+      const rawConversations = allConversations
+      const allConversationIds = allConversations.map((c) => c.id).filter(Boolean)
 
+      // 2. Load ALL conversation preferences
       if (allConversationIds.length > 0) {
-        const [deletedPrefsResult, nonDeletedPrefsResult] = await Promise.all([
-          supabase
-            .from("conversation_preferences")
-            .select("conversation_id")
-            .eq("user_id", userId)
-            .is("group_id", null)
-            .eq("is_deleted", true)
-            .in("conversation_id", allConversationIds),
-          supabase
-            .from("conversation_preferences")
-            .select("conversation_id, is_archived, is_deleted")
-            .eq("user_id", userId)
-            .is("group_id", null)
-            .in("conversation_id", allConversationIds)
-            .or("is_deleted.is.null,is_deleted.eq.false")
-        ])
+        const { data: prefsData, error: prefsError } = await supabase
+          .from("conversation_preferences")
+          .select("conversation_id, is_archived, is_deleted")
+          .eq("user_id", userId)
+          .is("group_id", null)
+          .in("conversation_id", allConversationIds)
 
-        if (deletedPrefsResult.error) {
-          console.warn("[Chat] Failed to fetch deleted conversation preferences:", deletedPrefsResult.error)
-        } else {
-          ; (deletedPrefsResult.data || []).forEach((row) => {
-            if (row?.conversation_id) {
-              deletedConversationIds.add(row.conversation_id)
-            }
-          })
-        }
-
-        if (nonDeletedPrefsResult.error) {
-          console.warn("[Chat] Failed to fetch non-deleted conversation preferences:", nonDeletedPrefsResult.error)
-        } else {
-          ; (nonDeletedPrefsResult.data || []).forEach((row) => {
-            if (!row?.conversation_id) return
-            nonDeletedPreferenceMap[row.conversation_id] = {
+        if (!prefsError && prefsData) {
+          const prefMap = {}
+          prefsData.forEach((row) => {
+            prefMap[row.conversation_id] = {
               is_archived: row.is_archived === true,
               is_deleted: row.is_deleted === true
             }
           })
+          setConversationPreferencesById((prev) => ({ ...prev, ...prefMap }))
         }
-
-        setConversationPreferencesById((prev) => {
-          const next = { ...prev }
-
-          deletedConversationIds.forEach((conversationId) => {
-            delete next[conversationId]
-          })
-
-          Object.entries(nonDeletedPreferenceMap).forEach(([conversationId, preference]) => {
-            next[conversationId] = preference
-          })
-
-          return next
-        })
       }
 
-      // Filter deleted conversations BEFORE any hydration/state updates to avoid stale flash.
-      const rawConversations = allConversations.filter(
-        (conversation) => !deletedConversationIds.has(conversation.id)
-      )
-
-      const conversationIds = rawConversations.map((conversation) => conversation.id)
+      // 3. Fetch latest messages and unread counts for ALL conversation IDs
       let latestMessageByConversationId = {}
       let unreadMap = {}
 
-      if (conversationIds.length > 0) {
-        const { data: messageRows, error: messageError } = await supabase
+      if (allConversationIds.length > 0) {
+        // A. Fetch unread counts for all conversations in one batch
+        const { data: unreadRows } = await supabase
+          .from("messages")
+          .select("conversation_id")
+          .in("conversation_id", allConversationIds)
+          .eq("receiver_id", userId)
+          .eq("is_read", false)
+
+        if (unreadRows) {
+          unreadRows.forEach((msg) => {
+            unreadMap[msg.conversation_id] = (unreadMap[msg.conversation_id] || 0) + 1
+          })
+        }
+
+        // B. Fetch latest messages for all conversations in one batch for previews/sorting
+        const { data: messageRows } = await supabase
           .from("messages")
           .select("id, conversation_id, sender_id, receiver_id, content, encrypted_content, type, is_read, created_at, post_id, storage_path")
-          .in("conversation_id", conversationIds)
+          .in("conversation_id", allConversationIds)
           .order("created_at", { ascending: false })
-          .limit(conversationIds.length * 5)
+          .limit(allConversationIds.length * 20)
 
-        if (messageError) {
-          console.warn("[Chat] Failed to load latest conversation messages:", messageError)
-        } else {
-          ; (messageRows || []).forEach((message) => {
+        if (messageRows) {
+          messageRows.forEach((message) => {
             if (!latestMessageByConversationId[message.conversation_id]) {
               latestMessageByConversationId[message.conversation_id] = message
-            }
-
-            if (message.receiver_id === userId && message.is_read === false) {
-              unreadMap[message.conversation_id] = (unreadMap[message.conversation_id] || 0) + 1
             }
           })
         }
       }
 
+      // 4. APPLY visibility filtering based on conversation.updated_at
+      const visibleConversations = rawConversations.filter((conversation) => {
+        const deleteBoundary = normalizeDbTimestamp(getDeleteBoundary(conversation, userId))
+
+        if (!deleteBoundary) return true
+
+        const updatedAt = normalizeDbTimestamp(conversation.updated_at || conversation.created_at)
+        const updatedTime = parseDbTimestamp(updatedAt)
+        const deleteTime = parseDbTimestamp(deleteBoundary)
+
+        console.log("DELETE_BOUNDARY", deleteBoundary)
+        console.log("UPDATED_AT", updatedAt)
+        console.log("UPDATED_TIME", updatedTime)
+        console.log("DELETE_TIME", deleteTime)
+        console.log("COMPARE_RESULT", updatedTime, deleteTime, updatedTime > deleteTime)
+
+        return updatedTime > deleteTime
+      })
+
+      const conversationIds = visibleConversations.map((conversation) => conversation.id)
+
       const partnerIds = [
         ...new Set(
-          rawConversations
+          visibleConversations
             .map((conversation) =>
               conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
             )
@@ -1788,7 +1836,7 @@ export default function Chat() {
       }, {})
 
       // Sort by latest message timestamp (most recent first)
-      const sortedByTime = rawConversations.sort((a, b) => {
+      const sortedByTime = visibleConversations.sort((a, b) => {
         const timeA = latestMessageByConversationId[a.id]?.created_at || a.created_at || 0
         const timeB = latestMessageByConversationId[b.id]?.created_at || b.created_at || 0
         return new Date(timeB) - new Date(timeA)
@@ -1840,6 +1888,19 @@ export default function Chat() {
       })
 
       const sortedHydrated = sortConversationsByPriority(hydratedAndSorted, unreadMap)
+
+      console.log(
+        "[Chat] Final conversations before setConversations",
+        sortedHydrated.map(c => ({
+          id: c.id,
+          latestMessage: c.last_message_at,
+          deletedBy: c.deleted_by,
+        }))
+      )
+
+      console.log("RAW_CONVERSATIONS", rawConversations)
+      console.log("ALL_CONVERSATIONS", allConversations)
+      console.log("VISIBLE_CONVERSATIONS", visibleConversations)
 
       setConversations(sortedHydrated)
       setUnreadCountsByConversation(unreadMap)
@@ -2069,6 +2130,15 @@ export default function Chat() {
   }, [activeConversationPartner?.id, mergeProfiles])
 
   useEffect(() => {
+    // Do not act while conversations are still loading — the list is incomplete
+    // and navigating away would destroy the URL before data arrives
+    if (loadingConversations) {
+      if (import.meta.env.DEV) {
+        console.log("[Chat][RouteRestore] Waiting for conversations to load")
+      }
+      return
+    }
+
     if (conversations.length === 0) {
       if (import.meta.env.DEV) {
         console.log("[Chat][RouteRestore] No conversations available yet")
@@ -2111,10 +2181,14 @@ export default function Chat() {
 
       return null
     })
-  }, [conversations, navigate, requestedConversationId, routeConversationId])
+  }, [conversations, loadingConversations, navigate, requestedConversationId, routeConversationId])
 
   useEffect(() => {
-    if (!activeConversationId) return
+    if (!activeConversationId) {
+      setMessages([])
+      setOldestTimestamp(null)
+      return
+    }
     const cachedMessages = useChatStore.getState().messagesByConversationId[activeConversationId] || []
     if (cachedMessages.length > 0) {
       setMessages(cachedMessages)
@@ -2322,7 +2396,8 @@ export default function Chat() {
                     last_message_is_read: normalizedNextMessage.receiver_id === contextUserIdRef.current
                       ? true
                       : (nextMessage.is_read || false),
-                    last_message_at: nextMessage.created_at || conversation.last_message_at
+                    last_message_at: nextMessage.created_at || conversation.last_message_at,
+                    updated_at: normalizeDbTimestamp(nextMessage.created_at || conversation.updated_at || conversation.created_at)
                   }
                   : conversation
               )
@@ -2857,19 +2932,16 @@ export default function Chat() {
             displayContent = content
           }
 
-          // If this conversation was deleted by the user, restore it now
-          // (new message = conversation should reappear, like WhatsApp/Telegram)
-          const conversationPrefs = conversationPreferencesById[nextMessage.conversation_id]
-          if (conversationPrefs?.is_deleted === true) {
-            // Restore the preference in DB and local state (fire and forget)
-            upsertConversationPreference(nextMessage.conversation_id, {
-              is_deleted: false,
-              is_archived: false
-            }).catch(() => {})
-          }
-
           setConversations((prev) => {
             const exists = prev.some((conv) => conv.id === nextMessage.conversation_id)
+            const updatedAt = normalizeDbTimestamp(nextMessage.created_at)
+            const partnerId = nextMessage.sender_id === contextUser.id ? nextMessage.receiver_id : nextMessage.sender_id
+            const partnerProfile = profilesById[partnerId] || {
+              id: partnerId,
+              username: "unknown",
+              name: "Unknown user",
+              avatar_url: null
+            }
 
             const updated = prev.map((conversation) =>
               conversation.id === nextMessage.conversation_id
@@ -2877,18 +2949,30 @@ export default function Chat() {
                   ...conversation,
                   last_message_content: displayContent,
                   last_message_type: getMessageType(nextMessage),
-                  last_message_at: nextMessage.created_at || conversation.last_message_at
+                  last_message_at: updatedAt,
+                  updated_at: updatedAt
                 }
                 : conversation
             )
 
-            if (!exists || conversationPrefs?.is_deleted === true) {
-              // New or restored conversation — trigger a background refresh after setState
-              setTimeout(() => {
-                fetchConversations(contextUser.id, { force: true, silent: true })
-              }, 800)
-            }
+            if (!exists) {
+              // Add stub immediately so the deleted conversation reappears from the new message alone.
+              const newConvStub = {
+                id: nextMessage.conversation_id,
+                user1_id: nextMessage.sender_id,
+                user2_id: nextMessage.receiver_id,
+                created_at: updatedAt,
+                updated_at: updatedAt,
+                last_message_content: displayContent,
+                last_message_type: getMessageType(nextMessage),
+                last_message_at: updatedAt,
+                last_message_sender_id: nextMessage.sender_id,
+                last_message_is_read: false,
+                partner: partnerProfile
+              }
 
+              return sortConversationsByPriority([...updated, newConvStub])
+            }
             return sortConversationsByPriority(updated)
           })
 
@@ -2906,7 +2990,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey, fetchConversations, upsertConversationPreference, conversationPreferencesById])
+  }, [activeConversationId, contextUser?.id, getMessageType, incrementUnreadForConversation, markConversationMessagesAsRead, markMessageAsDelivered, sortConversationsByPriority, getConversationKey, fetchConversations, upsertConversationPreference, conversationPreferencesById, setMessagesCache, setConversationPreferencesById])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -2931,19 +3015,17 @@ export default function Chat() {
           if (nextMessage.conversation_id === activeConversationId) return
 
           // Restore deleted conversation if user sends a new message to it
-          const sentConvPrefs = conversationPreferencesById[nextMessage.conversation_id]
-          if (sentConvPrefs?.is_deleted === true) {
-            upsertConversationPreference(nextMessage.conversation_id, {
-              is_deleted: false,
-              is_archived: false
-            }).catch(() => {})
-            // Force refresh to pull the conversation back into the list
-            setTimeout(() => {
-              fetchConversations(contextUser.id, { force: true, silent: true })
-            }, 800)
-          }
-
           setConversations((prev) => {
+            const exists = prev.some((conv) => conv.id === nextMessage.conversation_id)
+            const updatedAt = normalizeDbTimestamp(nextMessage.created_at)
+            const partnerId = nextMessage.sender_id === contextUser.id ? nextMessage.receiver_id : nextMessage.sender_id
+            const partnerProfile = profilesById[partnerId] || {
+              id: partnerId,
+              username: "unknown",
+              name: "Unknown user",
+              avatar_url: null
+            }
+
             const updated = prev.map((conversation) =>
               conversation.id === nextMessage.conversation_id
                 ? {
@@ -2957,11 +3039,37 @@ export default function Chat() {
                         : "You: sent a message",
                   last_message_type: getMessageType(nextMessage),
                   last_message_sender_id: nextMessage.sender_id,
-                  last_message_at: nextMessage.created_at || conversation.last_message_at,
+                  last_message_at: updatedAt,
+                  updated_at: updatedAt,
                   last_message_is_read: false,
                 }
                 : conversation
             )
+
+            if (!exists) {
+              const newConvStub = {
+                id: nextMessage.conversation_id,
+                user1_id: nextMessage.sender_id,
+                user2_id: nextMessage.receiver_id,
+                created_at: updatedAt,
+                updated_at: updatedAt,
+                last_message_content: getMessageType(nextMessage) === "post"
+                  ? "📝 Shared a post"
+                  : getMessageType(nextMessage) === "image"
+                    ? "📷 Photo"
+                    : nextMessage.content
+                      ? `You: ${nextMessage.content.substring(0, 47)}${nextMessage.content.length > 47 ? "..." : ""}`
+                      : "You: sent a message",
+                last_message_type: getMessageType(nextMessage),
+                last_message_sender_id: nextMessage.sender_id,
+                last_message_at: updatedAt,
+                last_message_is_read: false,
+                partner: partnerProfile
+              }
+
+              return sortConversationsByPriority([...updated, newConvStub])
+            }
+
             return sortConversationsByPriority(updated)
           })
         }
@@ -2971,7 +3079,7 @@ export default function Chat() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [contextUser?.id, activeConversationId, getMessageType, sortConversationsByPriority, conversationPreferencesById, upsertConversationPreference, fetchConversations])
+  }, [contextUser?.id, activeConversationId, getMessageType, sortConversationsByPriority, conversationPreferencesById, upsertConversationPreference, fetchConversations, setMessagesCache, setConversationPreferencesById])
 
   const handleImageButtonClick = () => {
     if (!activeConversation || uploadingImage) {
@@ -3159,7 +3267,7 @@ export default function Chat() {
       }
 
       const { data: insertedData, error: insertError } = await supabase.from("messages").insert([messagePayload]).select()
-
+      
       if (insertError) {
         console.error("[Chat] Failed to send image message:", insertError)
         setError("Failed to send image")
@@ -3212,7 +3320,8 @@ export default function Chat() {
                 last_message_type: "image",
                 last_message_sender_id: contextUser.id,
                 last_message_is_read: false,
-                last_message_at: sentMessage.created_at || new Date().toISOString()
+                last_message_at: sentMessage.created_at || conversation.last_message_at,
+                updated_at: sentMessage.created_at || conversation.updated_at
               }
               : conversation
           )
@@ -3902,7 +4011,8 @@ export default function Chat() {
               last_message_type: "text",
               last_message_sender_id: contextUser.id,
               last_message_is_read: false,
-              last_message_at: optimisticCreatedAt,
+              last_message_at: conversation.last_message_at,
+              updated_at: conversation.updated_at,
             }
             : conversation
         )
@@ -3935,6 +4045,105 @@ export default function Chat() {
           .select()
 
         if (insertError) {
+          // If conversation was hard-deleted from DB (both users deleted it),
+          // recreate it and retry the message insert with the new conversation ID
+          if (insertError.code === "23503") {
+            try {
+              const { data: newConv, error: createError } = await supabase
+                .from("conversations")
+                .insert({ user1_id: contextUser.id, user2_id: receiverId })
+                .select("id")
+                .single()
+
+              if (createError || !newConv?.id) {
+                console.error("[Chat] Failed to recreate conversation:", createError)
+                setMessages((prev) => prev.filter((item) => item.id !== tempId))
+                setError("Failed to send message")
+                return
+              }
+
+              const newConversationId = newConv.id
+
+              // Retry insert with new conversation ID
+              const { data: retryData, error: retryError } = await supabase
+                .from("messages")
+                .insert([
+                  {
+                    conversation_id: newConversationId,
+                    sender_id: contextUser.id,
+                    receiver_id: receiverId,
+                    encrypted_content: encryptedData.ciphertext,
+                    iv: encryptedData.iv,
+                    type: "text",
+                    media_url: null,
+                    reply_to_id: replyReference?.id || null,
+                    delivery_status: "sent",
+                  },
+                ])
+                .select()
+
+              if (retryError) {
+                console.error("[Chat] Failed to send message after recreating conversation:", retryError)
+                setMessages((prev) => prev.filter((item) => item.id !== tempId))
+                setError("Failed to send message")
+                return
+              }
+
+              // Update local message with real data using the new conversation ID
+              const retriedMessage = retryData?.[0]
+              if (retriedMessage) {
+                setMessages((prev) =>
+                  prev.map((item) =>
+                    item.id === tempId
+                      ? { ...retriedMessage, content, type: "text", reactions: item.reactions || [] }
+                      : item
+                  )
+                )
+              }
+
+              // Update conversation preferences and refresh
+              await upsertConversationPreference(newConversationId, { is_deleted: false, is_archived: false })
+              setConversationPreferencesById((prev) => ({
+                ...prev,
+                [newConversationId]: { is_deleted: false, is_archived: false },
+              }))
+              setConversations((prev) => {
+                const updated = prev.map((conversation) =>
+                  conversation.id === activeConversationId
+                    ? {
+                      ...conversation,
+                      id: newConversationId,
+                      last_message_at: conversation.last_message_at,
+                      updated_at: conversation.updated_at,
+                    }
+                    : conversation
+                )
+                return sortConversationsByPriority(updated)
+              })
+              setConversationsCache((prev) => {
+                const updated = prev.map((conversation) =>
+                  conversation.id === activeConversationId
+                    ? {
+                      ...conversation,
+                      id: newConversationId,
+                      last_message_at: conversation.last_message_at,
+                      updated_at: conversation.updated_at,
+                    }
+                    : conversation
+                )
+                return sortConversationsByPriority(updated)
+              })
+              // Navigate to the new conversation ID so subsequent sends use the correct ID
+              navigateToConversation(newConversationId)
+              return
+            } catch (recreateErr) {
+              console.error("[Chat] Exception recreating conversation:", recreateErr)
+              setMessages((prev) => prev.filter((item) => item.id !== tempId))
+              setError("Failed to send message")
+              return
+            }
+          }
+
           console.error("[Chat] Failed to send message:", insertError)
           setMessages((prev) => prev.filter((item) => item.id !== tempId))
           setError("Failed to send message")
@@ -4062,6 +4271,27 @@ export default function Chat() {
         }
 
         conversationId = createdConversation?.id
+      } else {
+        // Always clear is_deleted from local state immediately — prevents visibleConversations
+        // filter from hiding conversation during the fetchConversations round-trip
+        setConversationPreferencesById((prev) => ({
+          ...prev,
+          [conversationId]: {
+            ...(prev[conversationId] || {}),
+            is_deleted: false,
+            is_archived: false
+          }
+        }))
+        // Also persist to DB if needed
+        const convPref = conversationPreferencesById[conversationId]
+        if (!convPref || convPref?.is_deleted === true) {
+          await upsertConversationPreference(conversationId, {
+            is_deleted: false,
+            is_archived: false
+          })
+        }
+        // Clear stale cached messages so fresh ones load with deleteTime filter applied
+        setMessagesCache(conversationId, [])
       }
 
       if (!conversationId) {
@@ -4072,7 +4302,11 @@ export default function Chat() {
       // Ensure conversation has an encryption key
       await getOrCreateConversationKey(conversationId)
 
-      await fetchConversations(me)
+      // Small delay to allow DB write to propagate before re-fetching
+      _restoringConversationIds.add(conversationId)
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      await fetchConversations(me, { force: true })
+      _restoringConversationIds.delete(conversationId)
       navigateToConversation(conversationId)
       setUserSearchQuery("")
       setUserSearchResults([])
@@ -4746,20 +4980,15 @@ export default function Chat() {
     return conversations.filter((conversation) => {
       const preference = conversationPreferencesById[conversation.id]
       const archived = isPreferenceArchived(preference)
-      const deleted = isPreferenceDeleted(preference)
 
-      if (deleted) return false
       if (directSidebarView === CHAT_LIST_VIEW.ARCHIVED) return archived
       return !archived
     })
-  }, [conversations, conversationPreferencesById, directSidebarView, isPreferenceArchived, isPreferenceDeleted, CHAT_LIST_VIEW.ARCHIVED])
+  }, [conversations, conversationPreferencesById, directSidebarView, isPreferenceArchived, CHAT_LIST_VIEW.ARCHIVED])
 
   const availableConversationCount = useMemo(() => {
-    return conversations.filter((conversation) => {
-      const preference = conversationPreferencesById[conversation.id]
-      return !isPreferenceDeleted(preference)
-    }).length
-  }, [conversations, conversationPreferencesById, isPreferenceDeleted])
+    return conversations.length
+  }, [conversations])
 
   const focusDirectUserSearch = useCallback(() => {
     setChatMode("direct")
@@ -4773,9 +5002,9 @@ export default function Chat() {
   const archivedConversationCount = useMemo(() => {
     return conversations.filter((conversation) => {
       const preference = conversationPreferencesById[conversation.id]
-      return isPreferenceArchived(preference) && !isPreferenceDeleted(preference)
+      return isPreferenceArchived(preference)
     }).length
-  }, [conversations, conversationPreferencesById, isPreferenceArchived, isPreferenceDeleted])
+  }, [conversations, conversationPreferencesById, isPreferenceArchived])
 
   const visibleGroups = useMemo(() => {
     return groups.filter((group) => {
@@ -5614,20 +5843,35 @@ export default function Chat() {
 
   const handleDeleteConversationForMe = useCallback(
     async (conversationId) => {
-      const updated = await upsertConversationPreference(conversationId, { is_deleted: true, is_archived: false })
-      if (!updated) {
-        showToastError("Failed to delete conversation")
-        return
-      }
+      if (!contextUser?.id) return
 
-      if (activeConversationId === conversationId) {
-        navigateToConversation(null, { replace: true })
-      }
+      try {
+        const { error: updateError } = await supabase.rpc("mark_conversation_deleted_for_user", {
+          p_conversation_id: conversationId,
+          p_user_id: contextUser.id
+        })
 
-      setOpenConversationOptionsId(null)
-      showSuccess("Conversation removed")
+        if (updateError) {
+          console.error("[Chat] Failed to update deleted_by for conversation:", updateError)
+          showToastError("Failed to delete conversation")
+          return
+        }
+
+        // Update local state immediately so it disappears from the filtered source
+        setConversations((prev) => prev.filter((c) => c.id !== conversationId))
+
+        // Also update store cache
+        const cached = useChatStore.getState().conversations
+        setConversationsCache(cached.filter((c) => c.id !== conversationId))
+
+        setOpenConversationOptionsId(null)
+        showSuccess("Conversation deleted")
+      } catch (err) {
+        console.error("[Chat] Unexpected error during conversation deletion:", err)
+        showToastError("An unexpected error occurred")
+      }
     },
-    [activeConversationId, navigateToConversation, showSuccess, showToastError, upsertConversationPreference]
+    [contextUser?.id, showSuccess, showToastError, setConversationsCache]
   )
 
   const handleArchiveGroup = useCallback(
@@ -5811,10 +6055,10 @@ export default function Chat() {
               id={`message-${message.id}`}
               data-direct-message-interactive="true"
               className={`relative w-fit cursor-pointer ${isMatchedMessage
-                  ? isActiveMatchedMessage
-                    ? "ring-2 ring-[var(--chat-accent)]/70 ring-offset-2 ring-offset-[var(--chat-bg)]"
-                    : "ring-1 ring-[var(--chat-accent)]/50 ring-offset-1 ring-offset-[var(--chat-bg)]"
-                  : ""
+                ? isActiveMatchedMessage
+                  ? "ring-2 ring-[var(--chat-accent)]/70 ring-offset-2 ring-offset-[var(--chat-bg)]"
+                  : "ring-1 ring-[var(--chat-accent)]/50 ring-offset-1 ring-offset-[var(--chat-bg)]"
+                : ""
                 }`}
               onClick={(event) => {
                 if (isMobileView) {
@@ -5823,7 +6067,7 @@ export default function Chat() {
                 }
 
                 setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                        setActiveMenuId(null)
+                setActiveMenuId(null)
               }}
               onTouchStart={(event) => {
                 startDirectMessageLongPress(event, message.id, mine)
@@ -5856,7 +6100,7 @@ export default function Chat() {
                   onClick={(e) => {
                     e.stopPropagation()
                     setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                            setActiveMenuId(null)
+                    setActiveMenuId(null)
                   }}
                   disabled={isDeletedMessage}
                   className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)]"
@@ -6068,8 +6312,8 @@ export default function Chat() {
               ) : (
                 <div
                   className={`w-fit max-w-sm md:max-w-xs px-[13px] py-[9px] font-['DM_Sans'] text-[13px] leading-[1.55] shadow-[0_1px_2px_rgba(0,0,0,0.05)] ${mine
-                      ? "rounded-[16px_16px_4px_16px] bg-[var(--chat-accent)] text-[var(--chat-on-accent)]"
-                      : "rounded-[16px_16px_16px_4px] bg-[var(--chat-elev)] dark:bg-[var(--chat-hover)] text-[var(--chat-text)] border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.05)]"
+                    ? "rounded-[16px_16px_4px_16px] bg-[var(--chat-accent)] text-[var(--chat-on-accent)]"
+                    : "rounded-[16px_16px_16px_4px] bg-[var(--chat-elev)] dark:bg-[var(--chat-hover)] text-[var(--chat-text)] border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.05)]"
                     }`}
                 >
                   <p className="whitespace-pre-wrap break-words">
@@ -6087,8 +6331,8 @@ export default function Chat() {
                     type="button"
                     onClick={() => setReactionModalMessageId(message.id)}
                     className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${item.reactedByCurrentUser
-                        ? "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text)]"
-                        : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
+                      ? "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text)]"
+                      : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
                       }`}
                   >
                     <span>{item.emoji}</span>
@@ -6180,8 +6424,8 @@ export default function Chat() {
                   navigate("/chat?tab=direct", { replace: true })
                 }}
                 className={`relative flex-1 rounded-[7px] py-[7px] text-center font-['DM_Sans'] text-[12px] font-semibold transition-colors ${chatMode === "direct"
-                    ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
-                    : "text-[var(--chat-text-muted)] hover:bg-[var(--chat-hover)]"
+                  ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                  : "text-[var(--chat-text-muted)] hover:bg-[var(--chat-hover)]"
                   }`}
               >
                 Direct
@@ -6197,8 +6441,8 @@ export default function Chat() {
                   navigate("/chat?tab=groups", { replace: true })
                 }}
                 className={`relative flex-1 rounded-[7px] py-[7px] text-center font-['DM_Sans'] text-[12px] font-semibold transition-colors ${chatMode === "groups"
-                    ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
-                    : "text-[var(--chat-text-muted)] hover:bg-[var(--chat-hover)]"
+                  ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                  : "text-[var(--chat-text-muted)] hover:bg-[var(--chat-hover)]"
                   }`}
               >
                 Groups
@@ -6224,8 +6468,8 @@ export default function Chat() {
                       type="button"
                       onClick={() => setDirectSidebarView(CHAT_LIST_VIEW.ACTIVE)}
                       className={`rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${directSidebarView === CHAT_LIST_VIEW.ACTIVE
-                          ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
-                          : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
+                        ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                        : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                         }`}
                     >
                       Chats
@@ -6234,8 +6478,8 @@ export default function Chat() {
                       type="button"
                       onClick={() => setDirectSidebarView(CHAT_LIST_VIEW.ARCHIVED)}
                       className={`rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${directSidebarView === CHAT_LIST_VIEW.ARCHIVED
-                          ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
-                          : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
+                        ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                        : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                         }`}
                     >
                       Archived ({archivedConversationCount})
@@ -6337,10 +6581,10 @@ export default function Chat() {
                         <button
                           onClick={() => navigateToConversation(conversation.id)}
                           className={`w-full rounded-[12px] px-[10px] py-[9px] pr-10 text-left transition-all duration-150 ${isActive
-                              ? "border-l-[3px] border-[var(--chat-accent)] bg-[var(--chat-hover)] pl-[7px]"
-                              : hasUnread
-                                ? "hover:bg-[var(--chat-elev)]"
-                                : "hover:bg-[var(--chat-elev)]"
+                            ? "border-l-[3px] border-[var(--chat-accent)] bg-[var(--chat-hover)] pl-[7px]"
+                            : hasUnread
+                              ? "hover:bg-[var(--chat-elev)]"
+                              : "hover:bg-[var(--chat-elev)]"
                             }`}
                         >
                           <div className="flex items-center gap-2.5">
@@ -6466,8 +6710,8 @@ export default function Chat() {
                     type="button"
                     onClick={() => setGroupSidebarView(CHAT_LIST_VIEW.ACTIVE)}
                     className={`flex-1 rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${groupSidebarView === CHAT_LIST_VIEW.ACTIVE
-                        ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
-                        : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
+                      ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                      : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                       }`}
                   >
                     Groups
@@ -6476,8 +6720,8 @@ export default function Chat() {
                     type="button"
                     onClick={() => setGroupSidebarView(CHAT_LIST_VIEW.ARCHIVED)}
                     className={`flex-1 rounded-[7px] px-2 py-1 font-['DM_Sans'] text-[11px] font-semibold transition ${groupSidebarView === CHAT_LIST_VIEW.ARCHIVED
-                        ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
-                        : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
+                      ? "bg-[var(--chat-accent)] text-[var(--chat-surface)]"
+                      : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
                       }`}
                   >
                     Archived ({archivedGroupCount})
@@ -7228,7 +7472,7 @@ export default function Chat() {
                                     }
 
                                     setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                                          setActiveMenuId(null)
+                                    setActiveMenuId(null)
                                   }}
                                   onTouchStart={(e) => startGroupMessageLongPress(e, message.id, isOwn)}
                                   onTouchEnd={cancelGroupMessageLongPress}
@@ -7249,7 +7493,7 @@ export default function Chat() {
                                       onClick={(event) => {
                                         event.stopPropagation()
                                         setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                                              setActiveMenuId(null)
+                                        setActiveMenuId(null)
                                       }}
                                       disabled={!canReactMessage}
                                       className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -7264,7 +7508,7 @@ export default function Chat() {
                                         event.stopPropagation()
                                         setGroupReplyTo(message)
                                         setActiveGroupEmojiPickerMessageId(null)
-                                              setActiveMenuId(null)
+                                        setActiveMenuId(null)
                                       }}
                                       disabled={!canReplyMessage}
                                       className="pointer-events-auto inline-flex h-7 w-7 items-center justify-center rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] text-[var(--chat-text-subtle)] shadow-sm transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -7278,7 +7522,7 @@ export default function Chat() {
                                         type="button"
                                         onClick={(event) => {
                                           event.stopPropagation()
-                                            handleOpenGroupMessageMenu(event, message.id, isOwn)
+                                          handleOpenGroupMessageMenu(event, message.id, isOwn)
                                         }}
                                         className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)]"
                                         title="More options"
@@ -7312,7 +7556,7 @@ export default function Chat() {
                                           type="button"
                                           onClick={() => {
                                             setGroupReplyTo(message)
-                                                  setActiveMenuId(null)
+                                            setActiveMenuId(null)
                                           }}
                                           disabled={!canReplyMessage}
                                           className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
@@ -7325,7 +7569,7 @@ export default function Chat() {
                                           type="button"
                                           onClick={() => {
                                             handleCopyGroupMessage(message)
-                                                  setActiveMenuId(null)
+                                            setActiveMenuId(null)
                                           }}
                                           disabled={!canCopyMessage}
                                           className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
@@ -7338,7 +7582,7 @@ export default function Chat() {
                                           type="button"
                                           onClick={() => {
                                             handleForwardGroupMessage(message)
-                                                  setActiveMenuId(null)
+                                            setActiveMenuId(null)
                                           }}
                                           disabled={!canForwardMessage}
                                           className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
@@ -7351,7 +7595,7 @@ export default function Chat() {
                                           type="button"
                                           onClick={() => {
                                             setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                                                  setActiveMenuId(null)
+                                            setActiveMenuId(null)
                                           }}
                                           disabled={!canReactMessage}
                                           className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
@@ -7364,7 +7608,7 @@ export default function Chat() {
                                           type="button"
                                           onClick={() => {
                                             setGroupMessageInfoModalId(message.id)
-                                                  setActiveMenuId(null)
+                                            setActiveMenuId(null)
                                           }}
                                           className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] group"
                                         >
@@ -7379,7 +7623,7 @@ export default function Chat() {
                                             type="button"
                                             onClick={() => {
                                               setDeleteGroupConfirmationMessage(message)
-                                                    setActiveMenuId(null)
+                                              setActiveMenuId(null)
                                             }}
                                             className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-semibold text-red-500 hover:bg-red-500/10 transition-colors group"
                                           >
@@ -7448,8 +7692,8 @@ export default function Chat() {
                                   ) : (
                                     <div
                                       className={`relative w-full rounded-2xl px-3 py-2.5 text-sm shadow-sm transition-colors ${isOwn
-                                          ? "bg-[var(--chat-accent)] text-[var(--chat-on-accent)]"
-                                          : "bg-[var(--chat-elev)] dark:bg-[var(--chat-hover)] text-[var(--chat-text)] border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.05)]"
+                                        ? "bg-[var(--chat-accent)] text-[var(--chat-on-accent)]"
+                                        : "bg-[var(--chat-elev)] dark:bg-[var(--chat-hover)] text-[var(--chat-text)] border border-[rgba(0,0,0,0.05)] dark:border-[rgba(255,255,255,0.05)]"
                                         }`}
                                     >
                                       <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.decrypted_text || message.content}</p>
@@ -7959,8 +8203,8 @@ export default function Chat() {
                       type="button"
                       onClick={() => toggleForwardConversation(conversation.id)}
                       className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition ${isSelected
-                          ? "border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)]"
-                          : "border-[var(--chat-border)] bg-[var(--chat-surface)] hover:bg-[var(--chat-elev)]"
+                        ? "border-[var(--chat-border-strong)] bg-[var(--chat-accent-soft)]"
+                        : "border-[var(--chat-border)] bg-[var(--chat-surface)] hover:bg-[var(--chat-elev)]"
                         }`}
                     >
                       <div className="min-w-0">
@@ -7969,8 +8213,8 @@ export default function Chat() {
                       </div>
                       <span
                         className={`ml-3 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] ${isSelected
-                            ? "border-[var(--chat-accent)] bg-[#f4b400] text-[var(--chat-surface)]"
-                            : "border-[var(--chat-border-strong)] bg-[var(--chat-surface)] text-transparent"
+                          ? "border-[var(--chat-accent)] bg-[#f4b400] text-[var(--chat-surface)]"
+                          : "border-[var(--chat-border-strong)] bg-[var(--chat-surface)] text-transparent"
                           }`}
                       >
                         {"\u2713"}
