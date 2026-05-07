@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://vaultnotes-seven.vercel.app/sitemap.xml

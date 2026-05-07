@@ -40,4 +40,5 @@ supabase/.temp/
 
 # Optional local dumps / debug exports
 *.txt
+!public/robots.txt
 *.bak
