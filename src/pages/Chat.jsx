@@ -31,6 +31,8 @@ const CHAT_LIST_VIEW = {
   ARCHIVED: "archived"
 }
 
+const _restoringConversationIds = new Set()
+
 
 export default function Chat() {
   const REACTION_EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F621}"]
@@ -51,7 +53,9 @@ export default function Chat() {
   const setCurrentChatIdCache = useChatStore((state) => state.setCurrentChatId)
   const [searchParams] = useSearchParams()
   const [conversations, setConversations] = useState(cachedConversations || [])
+  const [allConversations, setAllConversations] = useState(null)
   const [activeConversationId, setActiveConversationId] = useState(null)
+  const [selectedConversation, setSelectedConversation] = useState(null)
   const [messages, setMessages] = useState([])
   const [oldestTimestamp, setOldestTimestamp] = useState(null)
   const [hasMoreMessages, setHasMoreMessages] = useState(true)
@@ -315,8 +319,20 @@ export default function Chat() {
   }, [])
 
   const activeConversation = useMemo(
-    () => conversations.find((conversation) => conversation.id === activeConversationId) || null,
-    [conversations, activeConversationId]
+    () => {
+      const visibleConversation = conversations.find((conversation) => conversation.id === activeConversationId) || null
+
+      if (visibleConversation) {
+        return visibleConversation
+      }
+
+      if (selectedConversation?.id === activeConversationId) {
+        return selectedConversation
+      }
+
+      return null
+    },
+    [conversations, activeConversationId, selectedConversation]
   )
 
   const activeConversationPartner = useMemo(() => {
@@ -783,17 +799,19 @@ export default function Chat() {
       }
 
       const mapped = {}
-        ; (data || []).forEach((row) => {
-          if (!row?.conversation_id) return
-          mapped[row.conversation_id] = {
-            is_archived: row.is_archived === true,
-            is_deleted: row.is_deleted === true
-          }
-        })
+      ;(data || []).forEach((row) => {
+        if (!row?.conversation_id) return
+        mapped[row.conversation_id] = {
+          is_archived: row.is_archived === true,
+          is_deleted: row.is_deleted === true,
+        }
+      })
 
       setConversationPreferencesById(mapped)
+      return mapped
     } catch (err) {
       console.error("[Chat] Exception fetching conversation preferences:", err)
+      return {}
     }
   }, [])
 
@@ -1717,6 +1735,7 @@ export default function Chat() {
     }
 
     try {
+      setAllConversations(null)
       if (!silent) {
         setLoadingConversations(true)
       }
@@ -1798,30 +1817,9 @@ export default function Chat() {
         }
       }
 
-      // 4. APPLY visibility filtering based on conversation.updated_at
-      const visibleConversations = rawConversations.filter((conversation) => {
-        const deleteBoundary = normalizeDbTimestamp(getDeleteBoundary(conversation, userId))
-
-        if (!deleteBoundary) return true
-
-        const updatedAt = normalizeDbTimestamp(conversation.updated_at || conversation.created_at)
-        const updatedTime = parseDbTimestamp(updatedAt)
-        const deleteTime = parseDbTimestamp(deleteBoundary)
-
-        console.log("DELETE_BOUNDARY", deleteBoundary)
-        console.log("UPDATED_AT", updatedAt)
-        console.log("UPDATED_TIME", updatedTime)
-        console.log("DELETE_TIME", deleteTime)
-        console.log("COMPARE_RESULT", updatedTime, deleteTime, updatedTime > deleteTime)
-
-        return updatedTime > deleteTime
-      })
-
-      const conversationIds = visibleConversations.map((conversation) => conversation.id)
-
       const partnerIds = [
         ...new Set(
-          visibleConversations
+          allConversations
             .map((conversation) =>
               conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
             )
@@ -1835,15 +1833,7 @@ export default function Chat() {
         return acc
       }, {})
 
-      // Sort by latest message timestamp (most recent first)
-      const sortedByTime = visibleConversations.sort((a, b) => {
-        const timeA = latestMessageByConversationId[a.id]?.created_at || a.created_at || 0
-        const timeB = latestMessageByConversationId[b.id]?.created_at || b.created_at || 0
-        return new Date(timeB) - new Date(timeA)
-      })
-
-      // Hydrate conversations after sorting
-      const hydratedAndSorted = sortedByTime.map((conversation) => {
+      const hydrateConversation = (conversation) => {
         const partnerId = conversation.user1_id === userId ? conversation.user2_id : conversation.user1_id
         const latestMessage = latestMessageByConversationId[conversation.id]
 
@@ -1885,9 +1875,36 @@ export default function Chat() {
             avatar_url: null
           }
         }
+      }
+
+      const hydratedAllConversations = allConversations.map(hydrateConversation)
+
+      // Sort by latest message timestamp (most recent first)
+      const visibleConversations = hydratedAllConversations.filter((conversation) => {
+        const deleteBoundary = normalizeDbTimestamp(getDeleteBoundary(conversation, userId))
+
+        if (!deleteBoundary) return true
+
+        const updatedAt = normalizeDbTimestamp(conversation.updated_at || conversation.created_at)
+        const updatedTime = parseDbTimestamp(updatedAt)
+        const deleteTime = parseDbTimestamp(deleteBoundary)
+
+        console.log("DELETE_BOUNDARY", deleteBoundary)
+        console.log("UPDATED_AT", updatedAt)
+        console.log("UPDATED_TIME", updatedTime)
+        console.log("DELETE_TIME", deleteTime)
+        console.log("COMPARE_RESULT", updatedTime, deleteTime, updatedTime > deleteTime)
+
+        return updatedTime > deleteTime
       })
 
-      const sortedHydrated = sortConversationsByPriority(hydratedAndSorted, unreadMap)
+      const sortedByTime = visibleConversations.sort((a, b) => {
+        const timeA = a.last_message_at || a.created_at || 0
+        const timeB = b.last_message_at || b.created_at || 0
+        return new Date(timeB) - new Date(timeA)
+      })
+
+      const sortedHydrated = sortConversationsByPriority(sortedByTime, unreadMap)
 
       console.log(
         "[Chat] Final conversations before setConversations",
@@ -1902,6 +1919,7 @@ export default function Chat() {
       console.log("ALL_CONVERSATIONS", allConversations)
       console.log("VISIBLE_CONVERSATIONS", visibleConversations)
 
+      setAllConversations(hydratedAllConversations)
       setConversations(sortedHydrated)
       setUnreadCountsByConversation(unreadMap)
       setConversationsCache(sortedHydrated)
@@ -1915,6 +1933,7 @@ export default function Chat() {
     } catch (err) {
       console.error("[Chat] Conversations exception:", err)
       setError("Failed to load conversations")
+      setAllConversations([])
       setConversations([])
     } finally {
       if (!silent) {
@@ -2130,16 +2149,16 @@ export default function Chat() {
   }, [activeConversationPartner?.id, mergeProfiles])
 
   useEffect(() => {
-    // Do not act while conversations are still loading — the list is incomplete
-    // and navigating away would destroy the URL before data arrives
-    if (loadingConversations) {
+    // Do not act while the full conversation list is still loading — the visible
+    // list alone is not enough to restore hidden routes correctly.
+    if (loadingConversations || allConversations === null) {
       if (import.meta.env.DEV) {
         console.log("[Chat][RouteRestore] Waiting for conversations to load")
       }
       return
     }
 
-    if (conversations.length === 0) {
+    if (allConversations.length === 0) {
       if (import.meta.env.DEV) {
         console.log("[Chat][RouteRestore] No conversations available yet")
       }
@@ -2148,14 +2167,13 @@ export default function Chat() {
     }
 
     if (requestedConversationId) {
-      const requestedExists = conversations.some((conversation) => conversation.id === requestedConversationId)
-      if (requestedExists) {
-        if (import.meta.env.DEV) {
-          console.log("[Chat][RouteRestore] Restored direct conversation", { requestedConversationId })
-        }
-        setActiveConversationId((prev) =>
-          prev === requestedConversationId ? prev : requestedConversationId
-        )
+      const foundConversation = allConversations.find((conversation) => conversation.id === requestedConversationId)
+      if (foundConversation) {
+        console.log("[RouteRestore] Found conversation", { requestedConversationId })
+        console.log("[RouteRestore] Full restored object", foundConversation)
+        setSelectedConversation(foundConversation)
+        console.log("[RouteRestore] Restored selectedConversation", { conversationId: foundConversation.id })
+        setActiveConversationId((prev) => (prev === requestedConversationId ? prev : requestedConversationId))
         return
       }
 
@@ -2175,13 +2193,13 @@ export default function Chat() {
     }
 
     setActiveConversationId((prev) => {
-      if (prev && conversations.some((conversation) => conversation.id === prev)) {
+      if (prev && allConversations.some((conversation) => conversation.id === prev)) {
         return prev
       }
 
       return null
     })
-  }, [conversations, loadingConversations, navigate, requestedConversationId, routeConversationId])
+  }, [allConversations, loadingConversations, navigate, requestedConversationId, routeConversationId])
 
   useEffect(() => {
     if (!activeConversationId) {
@@ -4003,20 +4021,83 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, optimisticMessage])
       setConversations((prev) => {
-        const updated = prev.map((conversation) =>
-          conversation.id === activeConversationId
-            ? {
-              ...conversation,
-              last_message_content: `You: ${content}`,
-              last_message_type: "text",
-              last_message_sender_id: contextUser.id,
-              last_message_is_read: false,
-              last_message_at: conversation.last_message_at,
-              updated_at: conversation.updated_at,
-            }
-            : conversation
-        )
-        return sortConversationsByPriority(updated)
+        const exists = prev.some((c) => c.id === activeConversationId)
+        if (exists) {
+          console.log("[SidebarSync] Updating existing conversation", { conversationId: activeConversationId })
+          const updated = prev.map((conversation) =>
+            conversation.id === activeConversationId
+              ? {
+                ...conversation,
+                last_message_content: `You: ${content}`,
+                last_message_type: "text",
+                last_message_sender_id: contextUser.id,
+                last_message_is_read: false,
+                last_message_at: optimisticCreatedAt,
+                updated_at: optimisticCreatedAt,
+              }
+              : conversation
+          )
+          console.log("[SidebarSync] Moving conversation to top", { conversationId: activeConversationId })
+          const moved = sortConversationsByPriority(updated)
+          return moved
+        }
+
+        // Insert new conversation object (hydrate minimally from known data)
+        console.log("[SidebarSync] Inserting new conversation", { conversationId: activeConversationId })
+        const newConversation = {
+          id: activeConversationId,
+          user1_id: contextUser.id,
+          user2_id: receiverId,
+          created_at: optimisticCreatedAt,
+          updated_at: optimisticCreatedAt,
+          last_message_content: `You: ${content}`,
+          last_message_type: "text",
+          last_message_sender_id: contextUser.id,
+          last_message_is_read: false,
+          last_message_at: optimisticCreatedAt,
+          partner: profilesById[receiverId] || { id: receiverId, username: "unknown", name: "Unknown user", avatar_url: null },
+        }
+
+        const inserted = [newConversation, ...prev]
+        return sortConversationsByPriority(inserted)
+      })
+
+      // Keep the full/all conversations in sync
+      setAllConversations((prevAll) => {
+        if (!prevAll) return prevAll
+        const existsAll = prevAll.some((c) => c.id === activeConversationId)
+        if (existsAll) {
+          const updatedAll = prevAll.map((conversation) =>
+            conversation.id === activeConversationId
+              ? {
+                ...conversation,
+                last_message_content: `You: ${content}`,
+                last_message_type: "text",
+                last_message_sender_id: contextUser.id,
+                last_message_is_read: false,
+                last_message_at: optimisticCreatedAt,
+                updated_at: optimisticCreatedAt,
+              }
+              : conversation
+          )
+          return sortConversationsByPriority(updatedAll)
+        }
+
+        const newConversationAll = {
+          id: activeConversationId,
+          user1_id: contextUser.id,
+          user2_id: receiverId,
+          created_at: optimisticCreatedAt,
+          updated_at: optimisticCreatedAt,
+          last_message_content: `You: ${content}`,
+          last_message_type: "text",
+          last_message_sender_id: contextUser.id,
+          last_message_is_read: false,
+          last_message_at: optimisticCreatedAt,
+          partner: profilesById[receiverId] || { id: receiverId, username: "unknown", name: "Unknown user", avatar_url: null },
+        }
+
+        return sortConversationsByPriority([newConversationAll, ...prevAll])
       })
 
       setDraftInputValue("")
@@ -5858,11 +5939,43 @@ export default function Chat() {
         }
 
         // Update local state immediately so it disappears from the filtered source
-        setConversations((prev) => prev.filter((c) => c.id !== conversationId))
+        setConversations((prev) => {
+          const next = prev.filter((c) => c.id !== conversationId)
+          console.log("[DeleteSync] Removed conversation from sidebar", { conversationId })
+          return next
+        })
 
         // Also update store cache
         const cached = useChatStore.getState().conversations
         setConversationsCache(cached.filter((c) => c.id !== conversationId))
+
+        // Keep the full/all conversations in sync
+        setAllConversations((prevAll) => {
+          if (!prevAll) return prevAll
+          return prevAll.filter((c) => c.id !== conversationId)
+        })
+
+        // Clear messages and selection if the deleted conversation was open
+        const wasActive = activeConversationId === conversationId
+        const wasSelected = selectedConversation?.id === conversationId
+
+        if (wasActive || wasSelected) {
+          setSelectedConversation(null)
+          setActiveConversationId(null)
+          setMessages([])
+          // Clear messages cache for that conversation
+          try {
+            setMessagesCache(conversationId, [])
+            setCurrentChatIdCache(null)
+          } catch (e) {
+            // ignore if cache funcs behave differently
+          }
+          console.log("[DeleteSync] Cleared selected conversation", { conversationId })
+
+          // Navigate back to empty chat list view
+          navigateToConversation(null)
+          console.log("[DeleteSync] Navigated back to empty chat state")
+        }
 
         setOpenConversationOptionsId(null)
         showSuccess("Conversation deleted")
@@ -5871,7 +5984,18 @@ export default function Chat() {
         showToastError("An unexpected error occurred")
       }
     },
-    [contextUser?.id, showSuccess, showToastError, setConversationsCache]
+    [
+      contextUser?.id,
+      showSuccess,
+      showToastError,
+      setConversationsCache,
+      activeConversationId,
+      selectedConversation,
+      setAllConversations,
+      setMessagesCache,
+      setCurrentChatIdCache,
+      navigateToConversation,
+    ]
   )
 
   const handleArchiveGroup = useCallback(
