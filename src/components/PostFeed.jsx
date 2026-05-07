@@ -248,13 +248,12 @@ export default function PostFeed({
                 {post.image_url && (
                   <div
                     onClick={() => onOpenPost(post)}
-                    className="relative mt-3 w-full cursor-pointer overflow-hidden rounded-[14px]"
-                    style={{ aspectRatio: "4/3" }}
+                    className="mt-3 w-full cursor-pointer overflow-hidden rounded-[14px] bg-[var(--profile-elev)]"
                   >
                     <img
                       src={getFeedImageUrl(post.image_url, { width: 600, quality: 75 })}
                       alt="Post"
-                      className="absolute inset-0 block h-full w-full object-cover"
+                      className="h-auto w-full max-h-[80vh] object-contain"
                       loading="lazy"
                     />
                   </div>

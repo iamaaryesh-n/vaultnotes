@@ -6846,7 +6846,7 @@ export default function Chat() {
               <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="shrink-0 border-b border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-2.5 sm:px-4 sm:py-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       {isMobileConversationView && (
                         <button
                           type="button"
@@ -6859,12 +6859,27 @@ export default function Chat() {
                           </svg>
                         </button>
                       )}
+                      {activeConversation && activeConversationPartner && (
+                        <>
+                          {activeConversationPartner.avatar_url ? (
+                            <img
+                              src={activeConversationPartner.avatar_url}
+                              alt={getDisplayName(activeConversationPartner)}
+                              className="h-10 w-10 shrink-0 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--chat-accent-soft)] font-['Sora'] text-sm font-bold text-[var(--chat-accent)]">
+                              {getDisplayName(activeConversationPartner)?.charAt(0)?.toUpperCase() || "?"}
+                            </div>
+                          )}
+                        </>
+                      )}
                       <div>
                         <h2 className="font-['Sora'] text-base font-semibold text-[var(--chat-text)]">
                           {activeConversation ? getDisplayName(activeConversationPartner) : "Select a conversation"}
                         </h2>
                         {activeConversation && (
-                          <p className="mt-1.5 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">{activeConversationStatus}</p>
+                          <p className="mt-1 font-['DM_Sans'] text-xs text-[var(--chat-text-subtle)]">{activeConversationStatus}</p>
                         )}
                       </div>
                     </div>

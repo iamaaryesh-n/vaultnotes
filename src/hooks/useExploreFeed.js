@@ -47,6 +47,8 @@ export function useExploreFeed(user, authReady) {
         const start = pageNum * BATCH_SIZE
         const end = start + BATCH_SIZE - 1
 
+        console.log("[useExploreFeed] Fetching posts batch:", { pageNum, start, end, userId: userIdRef.current })
+
         const { data, error: fetchError } = await supabase
           .from("posts")
           .select("id, user_id, content, image_url, created_at, visibility, profiles(id, username, name, avatar_url)", {
@@ -56,8 +58,14 @@ export function useExploreFeed(user, authReady) {
           .range(start, end)
 
         if (fetchError) {
-          throw new Error("Failed to load posts")
+          console.error("[useExploreFeed] Supabase fetch error:", fetchError)
+          console.error("[useExploreFeed] Error code:", fetchError.code)
+          console.error("[useExploreFeed] Error message:", fetchError.message)
+          console.error("[useExploreFeed] Full error object:", JSON.stringify(fetchError, null, 2))
+          throw new Error(`Failed to load posts: ${fetchError.message || JSON.stringify(fetchError)}`)
         }
+
+        console.log("[useExploreFeed] Posts fetched successfully:", { count: data?.length, totalCount: data?.length })
 
         const fetchedPosts = data || []
 
@@ -80,10 +88,13 @@ export function useExploreFeed(user, authReady) {
 
           setCommentsByPost((prev) => ({ ...prev, ...comments }))
           setLikesByPost((prev) => ({ ...prev, ...likeData }))
+        } else {
+          console.log("[useExploreFeed] No posts found (result was empty)")
         }
 
         return fetchedPosts
       } catch (err) {
+        console.error("[useExploreFeed] fetchPostsBatch error:", err)
         setError(err.message || "Failed to fetch posts")
         return []
       }

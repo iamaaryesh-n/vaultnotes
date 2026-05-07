@@ -111,7 +111,7 @@ export function FollowersModal({ isOpen, onClose, userId, currentUserId }) {
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed left-1/2 top-1/2 z-50 flex max-h-96 w-full max-w-md -translate-x-1/2 -translate-y-1/2 transform flex-col rounded-[20px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]"
+            className="fixed left-0 right-0 top-[25%] z-50 mx-auto flex max-h-96 w-[calc(100%-2rem)] max-w-md -translate-y-1/2 transform flex-col rounded-[20px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]"
           >
             {/* Header */}
             <div className="flex shrink-0 items-center justify-between border-b border-[var(--overlay-border)] px-6 py-4">

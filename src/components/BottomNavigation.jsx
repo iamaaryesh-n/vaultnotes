@@ -289,7 +289,7 @@ export default function BottomNavigation() {
         className="fixed bottom-0 left-0 right-0 z-40 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_-6px_22px_rgba(26,22,18,0.10)] backdrop-blur-[20px] dark:shadow-[0_-6px_22px_rgba(0,0,0,0.45)]"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="flex h-[62px] items-center justify-around px-2">
+        <div className="flex h-[56px] items-center justify-around px-2">
           {/* Explore */}
           <button
             onClick={() => handleNavigation("/explore")}
@@ -298,7 +298,7 @@ export default function BottomNavigation() {
             }`}
           >
             <svg
-              className="h-[22px] w-[22px]"
+              className="h-[24px] w-[24px]"
               fill={isActive("/explore") ? "currentColor" : "none"}
               stroke="currentColor"
               strokeWidth={isActive("/explore") ? 0 : 2}
@@ -321,7 +321,7 @@ export default function BottomNavigation() {
             }`}
           >
             <svg
-              className="h-[22px] w-[22px]"
+              className="h-[24px] w-[24px]"
               fill={isActive("/workspaces") ? "currentColor" : "none"}
               stroke="currentColor"
               strokeWidth={isActive("/workspaces") ? 0 : 2}
@@ -348,7 +348,7 @@ export default function BottomNavigation() {
           >
             <div className="relative">
               <svg
-                className="h-[22px] w-[22px]"
+                className="h-[24px] w-[24px]"
                 fill={isActive("/chat") ? "currentColor" : "none"}
                 stroke="currentColor"
                 strokeWidth={isActive("/chat") ? 0 : 2}

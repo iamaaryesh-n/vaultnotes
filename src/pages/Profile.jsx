@@ -1135,7 +1135,7 @@ export default function Profile() {
               </div>
 
               <div className="min-w-0 flex flex-1 flex-col">
-                <h1 className="font-['Sora'] text-[clamp(1.5rem,6.2vw,1.75rem)] font-bold leading-tight text-[var(--profile-text)] md:text-[28px]">
+                <h1 className="font-['Sora'] text-[clamp(1.5rem,6.2vw,1.75rem)] font-bold leading-tight text-[var(--profile-text)] md:text-[36px]">
                   {profile?.name || "User"}
                 </h1>
 

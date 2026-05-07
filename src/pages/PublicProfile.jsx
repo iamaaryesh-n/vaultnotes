@@ -742,7 +742,7 @@ export default function PublicProfile() {
                     <img
                       src={post.image_url}
                       alt="Post"
-                      className="w-full rounded-lg border border-slate-200 object-cover max-h-96"
+                      className="w-full rounded-lg border border-slate-200 object-contain max-h-96"
                     />
                   )}
 

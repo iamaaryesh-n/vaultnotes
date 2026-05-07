@@ -338,20 +338,25 @@ export function EditProfileModal({
                 <div className="w-full">
                   <p className="mb-2 text-[12px] font-semibold text-[var(--overlay-text-subtle)]">Change Cover Photo</p>
                   <div
-                    className={`h-28 overflow-hidden rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] ${isDraggingCover ? "cursor-grabbing" : "cursor-grab"}`}
+                    className={`h-28 overflow-hidden rounded-[10px] border border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] touch-none ${isDraggingCover ? "cursor-grabbing" : "cursor-grab"}`}
                     onMouseDown={(e) => startCoverDrag(e.clientX, e.clientY)}
                     onMouseMove={(e) => moveCoverDrag(e.clientX, e.clientY)}
                     onMouseUp={endCoverDrag}
                     onMouseLeave={endCoverDrag}
                     onTouchStart={(e) => {
+                      e.preventDefault()
                       const touch = e.touches?.[0]
                       if (touch) startCoverDrag(touch.clientX, touch.clientY)
                     }}
                     onTouchMove={(e) => {
+                      e.preventDefault()
                       const touch = e.touches?.[0]
                       if (touch) moveCoverDrag(touch.clientX, touch.clientY)
                     }}
-                    onTouchEnd={endCoverDrag}
+                    onTouchEnd={(e) => {
+                      e.preventDefault()
+                      endCoverDrag()
+                    }}
                   >
                     {coverPreview ? (
                       <img
@@ -400,20 +405,25 @@ export function EditProfileModal({
                   <div className="relative">
                     {avatarPreview ? (
                       <div
-                        className={`mx-auto h-32 w-32 overflow-hidden rounded-full border-[2px] border-dashed border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] ${isDraggingAvatar ? "cursor-grabbing" : "cursor-grab"}`}
+                        className={`mx-auto h-32 w-32 overflow-hidden rounded-full border-[2px] border-dashed border-[var(--overlay-border-strong)] bg-[var(--overlay-elev)] touch-none ${isDraggingAvatar ? "cursor-grabbing" : "cursor-grab"}`}
                         onMouseDown={(e) => startAvatarDrag(e.clientX, e.clientY)}
                         onMouseMove={(e) => moveAvatarDrag(e.clientX, e.clientY)}
                         onMouseUp={endAvatarDrag}
                         onMouseLeave={endAvatarDrag}
                         onTouchStart={(e) => {
+                          e.preventDefault()
                           const touch = e.touches?.[0]
                           if (touch) startAvatarDrag(touch.clientX, touch.clientY)
                         }}
                         onTouchMove={(e) => {
+                          e.preventDefault()
                           const touch = e.touches?.[0]
                           if (touch) moveAvatarDrag(touch.clientX, touch.clientY)
                         }}
-                        onTouchEnd={endAvatarDrag}
+                        onTouchEnd={(e) => {
+                          e.preventDefault()
+                          endAvatarDrag()
+                        }}
                       >
                         <img
                           src={avatarPreview}
