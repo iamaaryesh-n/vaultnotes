@@ -47,7 +47,9 @@ export function useExploreFeed(user, authReady) {
         const start = pageNum * BATCH_SIZE
         const end = start + BATCH_SIZE - 1
 
-        console.log("[useExploreFeed] Fetching posts batch:", { pageNum, start, end, userId: userIdRef.current })
+        if (import.meta.env.DEV) {
+          console.log("[useExploreFeed] Fetching posts batch:", { pageNum, start, end, userId: userIdRef.current })
+        }
 
         const { data, error: fetchError } = await supabase
           .from("posts")
@@ -65,7 +67,9 @@ export function useExploreFeed(user, authReady) {
           throw new Error(`Failed to load posts: ${fetchError.message || JSON.stringify(fetchError)}`)
         }
 
-        console.log("[useExploreFeed] Posts fetched successfully:", { count: data?.length, totalCount: data?.length })
+        if (import.meta.env.DEV) {
+          console.log("[useExploreFeed] Posts fetched successfully:", { count: data?.length, totalCount: data?.length })
+        }
 
         const fetchedPosts = data || []
 
@@ -89,7 +93,9 @@ export function useExploreFeed(user, authReady) {
           setCommentsByPost((prev) => ({ ...prev, ...comments }))
           setLikesByPost((prev) => ({ ...prev, ...likeData }))
         } else {
-          console.log("[useExploreFeed] No posts found (result was empty)")
+          if (import.meta.env.DEV) {
+            console.log("[useExploreFeed] No posts found (result was empty)")
+          }
         }
 
         return fetchedPosts

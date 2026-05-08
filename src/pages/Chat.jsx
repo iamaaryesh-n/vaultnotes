@@ -32,6 +32,17 @@ const CHAT_LIST_VIEW = {
 }
 
 const _restoringConversationIds = new Set()
+const isDev = import.meta.env.DEV
+const devLog = (...args) => {
+  if (isDev) {
+    console.log(...args)
+  }
+}
+const devWarn = (...args) => {
+  if (isDev) {
+    console.warn(...args)
+  }
+}
 
 
 export default function Chat() {
@@ -480,7 +491,7 @@ export default function Chat() {
       .in("id", ids)
 
     if (profileError) {
-      console.warn("[Chat] Failed to load profiles:", profileError)
+      devWarn("[Chat] Failed to load profiles:", profileError)
       return []
     }
 
@@ -538,14 +549,14 @@ export default function Chat() {
             const cryptoKey = await importKey(keyToUse)
             conversationCryptoKeysRef.current[conversationId] = cryptoKey
             debugLogKey(keyToUse, `Chat-Conversation-${conversationId}-FromDB`)
-            console.log(`[Chat] [ok] Successfully loaded shared key for conversation ${conversationId}`)
+            devLog(`[Chat] [ok] Successfully loaded shared key for conversation ${conversationId}`)
             return cryptoKey
           }
         }
       }
 
       // Generate new key for this conversation if it doesn't exist
-      console.log(`[Chat] Generating new encryption key for conversation ${conversationId}`)
+      devLog(`[Chat] Generating new encryption key for conversation ${conversationId}`)
       const newKey = await generateKey()
       const exportedKey = await exportKey(newKey)
 
@@ -570,7 +581,7 @@ export default function Chat() {
             console.warn(`[Chat] Failed to store key in database:`, insertError)
           }
         } else {
-          console.log(`[Chat] [ok] Stored shared key in database for conversation ${conversationId}`)
+          devLog(`[Chat] [ok] Stored shared key in database for conversation ${conversationId}`)
         }
       } catch (dbErr) {
         console.warn(`[Chat] Database error storing key:`, dbErr)
@@ -611,7 +622,7 @@ export default function Chat() {
             // Update cache with fresh key from DB
             conversationCryptoKeysRef.current[conversationId] = cryptoKey
             debugLogKey(keyToUse, `Chat-Conversation-${conversationId}-FreshFromDB`)
-            console.log(`[Chat] [ok] Successfully loaded fresh key for conversation ${conversationId}`)
+            devLog(`[Chat] [ok] Successfully loaded fresh key for conversation ${conversationId}`)
             return cryptoKey
           }
         }
@@ -656,7 +667,7 @@ export default function Chat() {
         // Check if we have a valid cached signed URL
         const cached = signedImageUrlCacheRef.current[message.storage_path]
         if (cached && isSignedUrlValid(cached.expiresAt)) {
-          console.log(`[Chat] Using cached signed URL for: ${message.storage_path}`)
+          devLog(`[Chat] Using cached signed URL for: ${message.storage_path}`)
           return cached.url
         }
 
@@ -665,11 +676,11 @@ export default function Chat() {
         if (result) {
           // Cache the signed URL with expiry time
           signedImageUrlCacheRef.current[message.storage_path] = result
-          console.log(`[Chat] Generated new signed URL for: ${message.storage_path}`)
+          devLog(`[Chat] Generated new signed URL for: ${message.storage_path}`)
           return result.url
         }
 
-        console.warn(`[Chat] Failed to generate signed URL for: ${message.storage_path}`)
+        devWarn(`[Chat] Failed to generate signed URL for: ${message.storage_path}`)
         return null
       }
 
@@ -959,7 +970,7 @@ export default function Chat() {
       .eq("id", contextUser.id)
 
     if (updateError) {
-      console.warn("[Chat] Failed to update last_seen:", updateError)
+      devWarn("[Chat] Failed to update last_seen:", updateError)
     }
   }, [contextUser?.id])
 
@@ -972,7 +983,7 @@ export default function Chat() {
       .eq("id", contextUser.id)
 
     if (updateError) {
-      console.warn("[Chat] Failed to persist last_seen on disconnect:", updateError)
+      devWarn("[Chat] Failed to persist last_seen on disconnect:", updateError)
     }
   }, [contextUser?.id])
 
@@ -1230,7 +1241,7 @@ export default function Chat() {
         }
       })
     } catch (typingError) {
-      console.warn("[Chat] Failed to broadcast typing state:", typingError)
+      devWarn("[Chat] Failed to broadcast typing state:", typingError)
     }
   }, [activeConversationId, contextUser?.id])
 
@@ -1268,7 +1279,7 @@ export default function Chat() {
           }
         })
       } catch (broadcastError) {
-        console.warn("[Chat] Failed to broadcast reaction event:", broadcastError)
+        devWarn("[Chat] Failed to broadcast reaction event:", broadcastError)
       }
     },
     [activeConversationId, contextUser?.id]
@@ -1353,7 +1364,7 @@ export default function Chat() {
     const { message_id, emoji, user_id } = newReaction
 
     if (!message_id || !emoji || !user_id) {
-      console.warn("[Chat] Invalid reaction data for INSERT:", newReaction)
+      devWarn("[Chat] Invalid reaction data for INSERT:", newReaction)
       return
     }
 
@@ -1367,7 +1378,7 @@ export default function Chat() {
         const alreadyExists = existing.some((r) => r.user_id === user_id && r.emoji === emoji)
 
         if (alreadyExists) {
-          console.log("[Chat] Reaction already exists, skipping duplicate")
+          devLog("[Chat] Reaction already exists, skipping duplicate")
           return msg
         }
 
@@ -1383,7 +1394,7 @@ export default function Chat() {
     const { message_id, emoji, user_id, id } = oldReaction
 
     if (!message_id) {
-      console.warn("[Chat] Invalid reaction data for DELETE:", oldReaction)
+      devWarn("[Chat] Invalid reaction data for DELETE:", oldReaction)
       return
     }
 
@@ -1403,7 +1414,7 @@ export default function Chat() {
 
   const handleReactionInsert = useCallback((newData) => {
     if (!newData?.message_id) {
-      console.warn("[Chat] Invalid insert data, missing message_id:", newData)
+      devWarn("[Chat] Invalid insert data, missing message_id:", newData)
       return
     }
     addReactionToState(newData)
@@ -1411,7 +1422,7 @@ export default function Chat() {
 
   const handleReactionDelete = useCallback((oldData) => {
     if (!oldData?.message_id) {
-      console.warn("[Chat] Invalid delete data, missing message_id:", oldData)
+      devWarn("[Chat] Invalid delete data, missing message_id:", oldData)
       return
     }
     removeReactionFromState(oldData)
@@ -1419,7 +1430,7 @@ export default function Chat() {
 
   const updateReactionInState = useCallback((updatedReaction) => {
     if (!updatedReaction?.message_id || !updatedReaction?.id) {
-      console.warn("[Chat] Invalid reaction data for UPDATE:", updatedReaction)
+      devWarn("[Chat] Invalid reaction data for UPDATE:", updatedReaction)
       return
     }
 
@@ -1460,7 +1471,7 @@ export default function Chat() {
         return
       }
 
-      console.log("[Chat] Fetched", (data || []).length, "reactions")
+      devLog("[Chat] Fetched", (data || []).length, "reactions")
 
       // Group reactions by message_id
       const reactionsByMessageId = {}
@@ -1472,7 +1483,7 @@ export default function Chat() {
           reactionsByMessageId[reaction.message_id].push(reaction)
         })
 
-      console.log("[Chat] Grouped reactions by message:", Object.keys(reactionsByMessageId).length, "messages have reactions")
+      devLog("[Chat] Grouped reactions by message:", Object.keys(reactionsByMessageId).length, "messages have reactions")
 
       // Update messages with reactions
       setMessages((prev) => {
@@ -1480,7 +1491,7 @@ export default function Chat() {
           ...msg,
           reactions: reactionsByMessageId[msg.id] || []
         }))
-        console.log("[Chat] Updated messages with reactions, total reactions across all messages:", Object.values(reactionsByMessageId).reduce((sum, arr) => sum + arr.length, 0))
+        devLog("[Chat] Updated messages with reactions, total reactions across all messages:", Object.values(reactionsByMessageId).reduce((sum, arr) => sum + arr.length, 0))
         return updated
       })
     },
@@ -1501,7 +1512,7 @@ export default function Chat() {
 
           return { ...msg, post: data };
         } catch (err) {
-          console.warn("[Chat] Failed to enrich post for message:", msg.id, err);
+          devWarn("[Chat] Failed to enrich post for message:", msg.id, err);
           return msg;
         }
       })
@@ -1889,11 +1900,11 @@ export default function Chat() {
         const updatedTime = parseDbTimestamp(updatedAt)
         const deleteTime = parseDbTimestamp(deleteBoundary)
 
-        console.log("DELETE_BOUNDARY", deleteBoundary)
-        console.log("UPDATED_AT", updatedAt)
-        console.log("UPDATED_TIME", updatedTime)
-        console.log("DELETE_TIME", deleteTime)
-        console.log("COMPARE_RESULT", updatedTime, deleteTime, updatedTime > deleteTime)
+        devLog("DELETE_BOUNDARY", deleteBoundary)
+        devLog("UPDATED_AT", updatedAt)
+        devLog("UPDATED_TIME", updatedTime)
+        devLog("DELETE_TIME", deleteTime)
+        devLog("COMPARE_RESULT", updatedTime, deleteTime, updatedTime > deleteTime)
 
         return updatedTime > deleteTime
       })
@@ -1906,7 +1917,7 @@ export default function Chat() {
 
       const sortedHydrated = sortConversationsByPriority(sortedByTime, unreadMap)
 
-      console.log(
+      devLog(
         "[Chat] Final conversations before setConversations",
         sortedHydrated.map(c => ({
           id: c.id,
@@ -1915,9 +1926,9 @@ export default function Chat() {
         }))
       )
 
-      console.log("RAW_CONVERSATIONS", rawConversations)
-      console.log("ALL_CONVERSATIONS", allConversations)
-      console.log("VISIBLE_CONVERSATIONS", visibleConversations)
+      devLog("RAW_CONVERSATIONS", rawConversations)
+      devLog("ALL_CONVERSATIONS", allConversations)
+      devLog("VISIBLE_CONVERSATIONS", visibleConversations)
 
       setAllConversations(hydratedAllConversations)
       setConversations(sortedHydrated)
@@ -2131,7 +2142,7 @@ export default function Chat() {
 
       if (canceled || profileError || !data) {
         if (profileError) {
-          console.warn("[Chat] Failed to refresh partner presence:", profileError)
+          devWarn("[Chat] Failed to refresh partner presence:", profileError)
         }
         return
       }
@@ -2169,10 +2180,10 @@ export default function Chat() {
     if (requestedConversationId) {
       const foundConversation = allConversations.find((conversation) => conversation.id === requestedConversationId)
       if (foundConversation) {
-        console.log("[RouteRestore] Found conversation", { requestedConversationId })
-        console.log("[RouteRestore] Full restored object", foundConversation)
+        devLog("[RouteRestore] Found conversation", { requestedConversationId })
+        devLog("[RouteRestore] Full restored object", foundConversation)
         setSelectedConversation(foundConversation)
-        console.log("[RouteRestore] Restored selectedConversation", { conversationId: foundConversation.id })
+        devLog("[RouteRestore] Restored selectedConversation", { conversationId: foundConversation.id })
         setActiveConversationId((prev) => (prev === requestedConversationId ? prev : requestedConversationId))
         return
       }
@@ -3172,7 +3183,7 @@ export default function Chat() {
         if (message.storage_path && signedImageUrlCacheRef.current[message.storage_path]) {
           const cached = signedImageUrlCacheRef.current[message.storage_path]
           if (!isSignedUrlValid(cached.expiresAt)) {
-            console.log(`[Chat] Signed URL expired for: ${message.storage_path}, will refresh on next view`)
+            devLog(`[Chat] Signed URL expired for: ${message.storage_path}, will refresh on next view`)
             delete signedImageUrlCacheRef.current[message.storage_path]
           }
         }
@@ -3244,7 +3255,7 @@ export default function Chat() {
       }
 
       const storagePath = uploadResult.storagePath
-      console.log(`[Chat] Image uploaded to private storage: ${storagePath}`)
+      devLog(`[Chat] Image uploaded to private storage: ${storagePath}`)
 
       // Get encryption key for this conversation
       const cryptoKey = await getOrCreateConversationKey(activeConversationId)
@@ -3347,7 +3358,7 @@ export default function Chat() {
         })
       }
 
-      console.log("[Chat] Image message sent successfully")
+      devLog("[Chat] Image message sent successfully")
       clearSelectedImageComposer()
       requestAnimationFrame(() => {
         inputRef.current?.focus()
@@ -3821,7 +3832,7 @@ export default function Chat() {
         setReplyToMessage(null)
       }
 
-      console.log("[Chat] Deleting message:", { messageId: message.id, deletePayload: updatePayload })
+      devLog("[Chat] Deleting message:", { messageId: message.id, deletePayload: updatePayload })
 
       const { error: unsendError } = await supabase
         .from("messages")
@@ -3837,16 +3848,16 @@ export default function Chat() {
           prev.map((item) => (item.id === message.id ? { ...item, ...previousMessage } : item))
         )
       } else {
-        console.log("[Chat] Message successfully deleted")
+        devLog("[Chat] Message successfully deleted")
         showSuccess("Message unsent")
 
         // Delete image from private storage if it's an image message
         if (message.storage_path) {
           try {
             await deletePrivateImage(message.storage_path)
-            console.log("[Chat] Image deleted from storage")
+            devLog("[Chat] Image deleted from storage")
           } catch (deleteError) {
-            console.warn("[Chat] Failed to delete image from storage:", deleteError)
+            devWarn("[Chat] Failed to delete image from storage:", deleteError)
           }
         }
       }
@@ -3856,11 +3867,11 @@ export default function Chat() {
 
   const handleRemoveReaction = async (messageId, emoji, userId, reactionId = null) => {
     if (!messageId || !emoji || !userId) {
-      console.warn("[Chat] Missing required fields for remove reaction:", { messageId, emoji, userId })
+      devWarn("[Chat] Missing required fields for remove reaction:", { messageId, emoji, userId })
       return
     }
 
-    console.log("[Chat] Removing reaction:", {
+    devLog("[Chat] Removing reaction:", {
       messageId,
       userId,
       emoji
@@ -3893,7 +3904,7 @@ export default function Chat() {
         setError("Failed to remove reaction")
         addReactionToState(optimisticReaction)
       } else {
-        console.log("[Chat] Reaction removed successfully")
+        devLog("[Chat] Reaction removed successfully")
         await broadcastReactionEvent("DELETE", optimisticReaction)
       }
     } catch (removeError) {
@@ -4023,7 +4034,7 @@ export default function Chat() {
       setConversations((prev) => {
         const exists = prev.some((c) => c.id === activeConversationId)
         if (exists) {
-          console.log("[SidebarSync] Updating existing conversation", { conversationId: activeConversationId })
+          devLog("[SidebarSync] Updating existing conversation", { conversationId: activeConversationId })
           const updated = prev.map((conversation) =>
             conversation.id === activeConversationId
               ? {
@@ -4037,13 +4048,13 @@ export default function Chat() {
               }
               : conversation
           )
-          console.log("[SidebarSync] Moving conversation to top", { conversationId: activeConversationId })
+          devLog("[SidebarSync] Moving conversation to top", { conversationId: activeConversationId })
           const moved = sortConversationsByPriority(updated)
           return moved
         }
 
         // Insert new conversation object (hydrate minimally from known data)
-        console.log("[SidebarSync] Inserting new conversation", { conversationId: activeConversationId })
+        devLog("[SidebarSync] Inserting new conversation", { conversationId: activeConversationId })
         const newConversation = {
           id: activeConversationId,
           user1_id: contextUser.id,
@@ -4597,7 +4608,7 @@ export default function Chat() {
         .limit(1)
 
       if (error) {
-        console.warn('[GroupChat] [RLS-FIX] Error checking group membership:', {
+        devWarn('[GroupChat] [RLS-FIX] Error checking group membership:', {
           groupId,
           authUserId: contextUser.id,
           error: error.message
@@ -4606,7 +4617,7 @@ export default function Chat() {
       }
 
       const isMember = (data && data.length > 0)
-      console.log('[GroupChat] [RLS-FIX] Group membership validation:', {
+      devLog('[GroupChat] [RLS-FIX] Group membership validation:', {
         groupId,
         authUserId: contextUser.id,
         is_member: isMember,
@@ -4614,7 +4625,7 @@ export default function Chat() {
       })
       return isMember
     } catch (err) {
-      console.warn('[GroupChat] [RLS-FIX] Exception validating group membership:', err)
+      devWarn('[GroupChat] [RLS-FIX] Exception validating group membership:', err)
       return false
     }
   }, [contextUser?.id])
@@ -4647,7 +4658,7 @@ export default function Chat() {
         })
 
       setGroupMessageReads(map)
-      console.log('[GroupChat] Fetched read receipts for', messageIds.length, 'messages')
+      devLog('[GroupChat] Fetched read receipts for', messageIds.length, 'messages')
       return map
     } catch (err) {
       console.error('[GroupChat] Exception fetching message reads:', err)
@@ -4656,7 +4667,7 @@ export default function Chat() {
 
   const markGroupMessagesAsRead = useCallback(async (groupId, messageIds) => {
     if (!groupId || !messageIds || messageIds.length === 0) {
-      console.warn('[GroupChat] markGroupMessagesAsRead: Missing groupId or messageIds')
+      devWarn('[GroupChat] markGroupMessagesAsRead: Missing groupId or messageIds')
       return
     }
 
@@ -4680,7 +4691,7 @@ export default function Chat() {
 
       await fetchGroupMessageReads(messageIds)
     } catch (err) {
-      console.warn('[GroupChat] Exception marking messages as read:', {
+      devWarn('[GroupChat] Exception marking messages as read:', {
         error: err.message,
         userId: contextUser.id,
         groupId
@@ -4911,11 +4922,11 @@ export default function Chat() {
           table: "group_message_reads"
         },
         async (payload) => {
-          console.log("[Chat] group_message_reads INSERT received:", payload)
+          devLog("[Chat] group_message_reads INSERT received:", payload)
           const ids = groupMessages.map((m) => m.id)
 
           if (ids.length) {
-            console.log("[Chat] Fetching message reads for", ids.length, "messages")
+            devLog("[Chat] Fetching message reads for", ids.length, "messages")
             await fetchGroupMessageReads(ids)
           }
         }
@@ -5108,7 +5119,7 @@ export default function Chat() {
 
   // Dispatch unread count update to navbar
   useEffect(() => {
-    console.log("[Chat] Dispatching unread count update:", {
+    devLog("[Chat] Dispatching unread count update:", {
       totalUnreadChatCount,
       unreadDirectCount,
       unreadGroupCount
@@ -5136,7 +5147,7 @@ export default function Chat() {
         return
       }
 
-      console.log("[GroupChat] Preparing to send message", {
+      devLog("[GroupChat] Preparing to send message", {
         group_id: activeGroupId,
         sender_id: contextUser.id,
         content_length: groupDraft.length
@@ -5145,7 +5156,7 @@ export default function Chat() {
       const cryptoKey = await importKey(activeGroup.encryption_key)
       const encrypted = await encrypt(groupDraft, cryptoKey)
 
-      console.log("[GroupChat] Message encrypted successfully", {
+      devLog("[GroupChat] Message encrypted successfully", {
         ciphertext_length: encrypted.ciphertext.length,
         iv_length: encrypted.iv.length
       })
@@ -5163,7 +5174,7 @@ export default function Chat() {
         }
       ]
 
-      console.log("[GroupChat] Inserting message with payload:", {
+      devLog("[GroupChat] Inserting message with payload:", {
         group_id: insertPayload[0].group_id,
         sender_id: insertPayload[0].sender_id,
         is_encrypted: insertPayload[0].is_encrypted,
@@ -5186,7 +5197,7 @@ export default function Chat() {
         return
       }
 
-      console.log("[GroupChat] Message inserted successfully:", insertedData)
+      devLog("[GroupChat] Message inserted successfully:", insertedData)
 
       // Save draft before clearing
       const sentContent = groupDraft.trim()
@@ -5244,7 +5255,7 @@ export default function Chat() {
           ...prev,
           [newMessageId]: []
         }))
-        console.log("[GroupChat] Optimistically updated message list with new message, initialized read state")
+        devLog("[GroupChat] Optimistically updated message list with new message, initialized read state")
       }
 
       // Fire-and-forget: Update last message timestamp in group (non-blocking)
@@ -5259,17 +5270,17 @@ export default function Chat() {
             .eq("id", activeGroupId)
 
           if (updateError) {
-            console.warn("[GroupChat] Warning: Failed to update group last_message_at (non-blocking):", updateError)
+            devWarn("[GroupChat] Warning: Failed to update group last_message_at (non-blocking):", updateError)
           }
         } catch (err) {
-          console.warn("[GroupChat] Warning: Exception updating group last_message_at (non-blocking):", err)
+          devWarn("[GroupChat] Warning: Exception updating group last_message_at (non-blocking):", err)
         }
       })()
 
       // ONLY clear draft after successful insert
       setGroupDraft("")
       setGroupReplyTo(null)
-      console.log("[GroupChat] Message sent successfully, draft cleared")
+      devLog("[GroupChat] Message sent successfully, draft cleared")
     } catch (err) {
       console.error("[GroupChat] Exception sending message:", {
         error: err,
@@ -5327,7 +5338,7 @@ export default function Chat() {
         return
       }
       const userId = contextUser.id
-      console.log('[GroupChat] Creating group as user:', userId)
+      devLog('[GroupChat] Creating group as user:', userId)
 
       // Generate encryption key
       const key = await generateKey()
@@ -5340,7 +5351,7 @@ export default function Chat() {
         encryption_key: exportedKey,
         last_message_at: new Date().toISOString()
       }
-      console.log('[GroupChat] Inserting group with payload:', { ...insertPayload, encryption_key: '[REDACTED]' })
+      devLog('[GroupChat] Inserting group with payload:', { ...insertPayload, encryption_key: '[REDACTED]' })
 
       const { data: newGroup, error: groupError } = await supabase
         .from('group_conversations')
@@ -5355,7 +5366,7 @@ export default function Chat() {
         return
       }
 
-      console.log('[GroupChat] Group created:', newGroup.id)
+      devLog('[GroupChat] Group created:', newGroup.id)
 
       // Step 2: Add creator as admin
       const { error: creatorError } = await supabase
@@ -5941,7 +5952,7 @@ export default function Chat() {
         // Update local state immediately so it disappears from the filtered source
         setConversations((prev) => {
           const next = prev.filter((c) => c.id !== conversationId)
-          console.log("[DeleteSync] Removed conversation from sidebar", { conversationId })
+          devLog("[DeleteSync] Removed conversation from sidebar", { conversationId })
           return next
         })
 
@@ -5970,11 +5981,11 @@ export default function Chat() {
           } catch (e) {
             // ignore if cache funcs behave differently
           }
-          console.log("[DeleteSync] Cleared selected conversation", { conversationId })
+          devLog("[DeleteSync] Cleared selected conversation", { conversationId })
 
           // Navigate back to empty chat list view
           navigateToConversation(null)
-          console.log("[DeleteSync] Navigated back to empty chat state")
+          devLog("[DeleteSync] Navigated back to empty chat state")
         }
 
         setOpenConversationOptionsId(null)
