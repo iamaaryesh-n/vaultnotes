@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase"
 import { fetchCommentCountsForPosts, fetchLikeCountsForPosts } from "../lib/postInteractions"
 import { usePostCacheStore } from "../stores/postCacheStore"
 
-const BATCH_SIZE = 3
+const BATCH_SIZE = 6
 
 export function useExploreFeed(user, authReady) {
   const initialCachedPosts = (() => {
@@ -48,7 +48,7 @@ export function useExploreFeed(user, authReady) {
         const end = start + BATCH_SIZE - 1
 
         if (import.meta.env.DEV) {
-          console.log("[useExploreFeed] Fetching posts batch:", { pageNum, start, end, userId: userIdRef.current })
+          console.log("[ExploreFetch] Fetching posts batch:", { pageNum, start, end, userId: userIdRef.current })
         }
 
         const { data, error: fetchError } = await supabase
@@ -116,6 +116,10 @@ export function useExploreFeed(user, authReady) {
 
       if (loadedPagesRef.current.has(pageNumber)) {
         return
+      }
+
+      if (import.meta.env.DEV) {
+        console.log("[BatchLoad] Loading next page:", { pageNumber })
       }
 
       loadingMoreRef.current = true

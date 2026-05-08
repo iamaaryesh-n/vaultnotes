@@ -88,6 +88,9 @@ export default function PostFeed({
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && hasMore && !loadingMore) {
+            if (import.meta.env.DEV) {
+              console.log("[IntersectionTrigger] Load more observer fired")
+            }
             queueNextPageLoad()
           }
         })
@@ -101,21 +104,6 @@ export default function PostFeed({
       observer.disconnect()
     }
   }, [hasMore, loadingMore, page, filteredPosts.length, queueNextPageLoad])
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const isNearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 300
-
-      if (isNearBottom && hasMore && !loadingMore) {
-        queueNextPageLoad()
-      }
-    }
-
-    window.addEventListener("scroll", handleScroll)
-    return () => {
-      window.removeEventListener("scroll", handleScroll)
-    }
-  }, [hasMore, loadingMore, queueNextPageLoad])
 
   if (loading) {
     return (
