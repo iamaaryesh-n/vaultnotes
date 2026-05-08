@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase"
 import { useAuth } from "../hooks/useAuth"
 import { useToast } from "../hooks/useToast"
 import { decrypt, encrypt, exportKey, generateKey, importKey } from "../utils/encryption"
-import { Copy, Forward, Info, MoreHorizontal, Reply, SmilePlus, Trash2 } from "lucide-react"
+import { Copy, Forward, Info, MoreHorizontal, MoreVertical, Reply, SmilePlus, Trash2 } from "lucide-react"
 import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { useNavigationStore } from "../stores/navigationStore"
 import { useChatStore } from "../stores/chatStore"
@@ -19,6 +19,237 @@ dayjs.extend(utc)
 
 const MESSAGE_BATCH_SIZE = 20
 const GROUP_BATCH_SIZE = 15
+
+const getProfileDisplayName = (profile) => {
+  if (!profile) return "Unknown"
+  return profile.name || profile.username || "Unknown"
+}
+
+const GroupMessageRow = memo(function GroupMessageRow({
+  message,
+  isOwn,
+  sender,
+  messageReadsByIdRef,
+  actionsRef
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
+  const reads = messageReadsByIdRef.current[message.id] || []
+  const seenCount = reads.filter((entry) => entry.user_id !== message.sender_id).length
+
+  const handleOpenMenu = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const x = event.clientX || (event.touches && event.touches[0]?.clientX) || 0
+    const y = event.clientY || (event.touches && event.touches[0]?.clientY) || 0
+    setMenuPosition({ x, y })
+    setMenuOpen(true)
+    if (import.meta.env.DEV) {
+      console.log("[GroupMenuOpen]", { messageId: message.id })
+    }
+  }
+
+  return (
+    <div
+      className={`group relative flex min-w-0 gap-2 ${isOwn ? "justify-end" : "justify-start"}`}
+    >
+      {!isOwn && (
+        <>
+          {sender?.avatar_url ? (
+            <img
+              src={sender.avatar_url}
+              alt={getProfileDisplayName(sender)}
+              className="h-6 w-6 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+              {getProfileDisplayName(sender).charAt(0).toUpperCase()}
+            </div>
+          )}
+        </>
+      )}
+
+      <div className={`relative flex min-w-0 max-w-[75%] md:max-w-[65%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
+        {!isOwn && (
+          <p className="mb-1 text-xs font-semibold text-slate-600">{getProfileDisplayName(sender)}</p>
+        )}
+
+        <div className="relative w-fit max-w-sm">
+          <div
+            className={`rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
+              isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
+            }`}
+          >
+            {message.type === "post" ? (
+              <PostPreview post_id={message.post_id} isMine={isOwn} />
+            ) : (
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onPointerDown={handleOpenMenu}
+            onClick={(event) => event.preventDefault()}
+            className="absolute right-0 -top-8 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 opacity-70 group-hover:opacity-100"
+            title="More options"
+            aria-label="Open message options"
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+
+          {menuOpen && (
+            <DropdownMenu
+              x={menuPosition.x}
+              y={menuPosition.y}
+              onClose={() => setMenuOpen(false)}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  actionsRef.current.onReply?.(message)
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Reply className="h-3.5 w-3.5" />
+                Reply
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  actionsRef.current.onCopy?.(message)
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  actionsRef.current.onForward?.(message)
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Forward className="h-3.5 w-3.5" />
+                Forward
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  actionsRef.current.onReact?.(message)
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <SmilePlus className="h-3.5 w-3.5" />
+                React
+              </button>
+
+              {isOwn && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    actionsRef.current.onDelete?.(message)
+                    setMenuOpen(false)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  actionsRef.current.onInfo?.(message)
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <Info className="h-3.5 w-3.5" />
+                Message info
+              </button>
+            </DropdownMenu>
+          )}
+        </div>
+
+        <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+          <span>{dayjs(message.created_at).format("HH:mm")}</span>
+          {isOwn && (
+            <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400" title="Delivered">
+              <span className="font-semibold tracking-[-0.08em]">âœ“âœ“</span>
+              {seenCount > 0 && (
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                  {seenCount}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+const MemberRow = memo(function MemberRow({ member, isAdmin, isCurrentUser, onMakeAdmin, onRemove }) {
+  return (
+    <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 px-3 py-2 last:border-b-0">
+      {member.profiles?.avatar_url ? (
+        <img
+          src={member.profiles.avatar_url}
+          alt={getProfileDisplayName(member.profiles)}
+          className="h-6 w-6 rounded-full object-cover"
+        />
+      ) : (
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+          {getProfileDisplayName(member.profiles).charAt(0).toUpperCase()}
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+          {getProfileDisplayName(member.profiles)}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        {member.role === "admin" && (
+          <span className="rounded bg-yellow-50 px-2 py-0.5 text-[10px] font-semibold text-yellow-600">
+            Admin
+          </span>
+        )}
+        {isAdmin && !isCurrentUser && (
+          <div className="flex items-center gap-1">
+            {member.role === "member" && (
+              <button
+                type="button"
+                onClick={onMakeAdmin}
+                className="rounded px-1.5 py-0.5 text-[10px] font-medium text-slate-600 transition hover:bg-slate-100"
+              >
+                Make admin
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded px-1.5 py-0.5 text-[10px] font-medium text-red-600 transition hover:bg-red-50"
+            >
+              Remove
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+})
 
 export default function GroupChat() {
   const { user: contextUser } = useAuth()
@@ -39,6 +270,11 @@ export default function GroupChat() {
   const [hasMoreGroups, setHasMoreGroups] = useState(true)
   const [loadingMoreGroups, setLoadingMoreGroups] = useState(false)
   const [groupSearch, setGroupSearch] = useState("")
+  const [groupPreferencesById, setGroupPreferencesById] = useState({})
+  const [openGroupOptionsId, setOpenGroupOptionsId] = useState(null)
+  const [groupMenuPosition, setGroupMenuPosition] = useState({ x: 0, y: 0 })
+  const [groupActionsOpen, setGroupActionsOpen] = useState(false)
+  const [groupActionsPosition, setGroupActionsPosition] = useState({ x: 0, y: 0 })
 
   const [messages, setMessages] = useState([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -52,10 +288,11 @@ export default function GroupChat() {
   const [groupMembers, setGroupMembers] = useState([])
   const [groupKey, setGroupKey] = useState(null)
   const [membersDropdownOpen, setMembersDropdownOpen] = useState(false)
+  const [memberSearchQuery, setMemberSearchQuery] = useState("")
+  const [memberSearchResults, setMemberSearchResults] = useState([])
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false)
 
   const [messageReadsById, setMessageReadsById] = useState({})
-  const [activeMenuId, setActiveMenuId] = useState(null)
-  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
   const [messageInfoMessageId, setMessageInfoMessageId] = useState(null)
   const [replyTarget, setReplyTarget] = useState(null)
 
@@ -73,41 +310,78 @@ export default function GroupChat() {
   const inputRef = useRef(null)
   const groupChannelRef = useRef(null)
   const readReceiptsChannelRef = useRef(null)
+  const groupListChannelRef = useRef(null)
+  const groupMembershipChannelRef = useRef(null)
+  const groupMembersCacheRef = useRef(new Map())
+  const groupMembersProfileMapRef = useRef(new Map())
+  const groupPreferencesByIdRef = useRef({})
+  const messageReadsByIdRef = useRef({})
+  const messagesRef = useRef([])
+  const activeGroupIdRef = useRef(activeGroupId)
+  const groupKeyRef = useRef(null)
+  const actionsRef = useRef({})
   const messageIdsRef = useRef(new Set())
+  const deletedBeforeTimestampByGroupIdRef = useRef({})
+  const groupListScrollRafRef = useRef(null)
+  const messageListScrollRafRef = useRef(null)
   const isPrependingOlderRef = useRef(false)
   const isRestoringMessageScrollRef = useRef(true)
-  const menuRef = useRef(null)
-
   useRouteScrollRestoration("group-chat-page")
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setActiveMenuId(null);
+    return () => {
+      if (groupListScrollRafRef.current) {
+        cancelAnimationFrame(groupListScrollRafRef.current)
+      }
+      if (messageListScrollRafRef.current) {
+        cancelAnimationFrame(messageListScrollRafRef.current)
       }
     }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    activeGroupIdRef.current = activeGroupId
+  }, [activeGroupId])
+
+  useEffect(() => {
+    groupKeyRef.current = groupKey
+  }, [groupKey])
 
   const applyMessages = useCallback((nextValue) => {
     setMessages((prev) => {
       const next = typeof nextValue === "function" ? nextValue(prev) : (nextValue || [])
-      if (activeGroupId) {
-        setGroupMessagesCache(activeGroupId, next)
+      const currentGroupId = activeGroupIdRef.current
+      if (currentGroupId) {
+        setGroupMessagesCache(currentGroupId, next)
       }
       return next
     })
-  }, [activeGroupId, setGroupMessagesCache])
+  }, [setGroupMessagesCache])
 
   const activeGroup = useMemo(
     () => groups.find((group) => group.id === activeGroupId) || null,
     [groups, activeGroupId]
   )
 
+  const isPreferenceDeleted = useCallback((preference) => preference?.is_deleted === true, [])
+
+  const visibleGroups = useMemo(
+    () => groups.filter((group) => !isPreferenceDeleted(groupPreferencesById[group.id])),
+    [groups, groupPreferencesById, isPreferenceDeleted]
+  )
+
   const filteredGroups = useMemo(
-    () => groups.filter((group) => group.name.toLowerCase().includes(groupSearch.toLowerCase())),
-    [groups, groupSearch]
+    () => visibleGroups.filter((group) => group.name.toLowerCase().includes(groupSearch.toLowerCase())),
+    [visibleGroups, groupSearch]
+  )
+
+  const groupIdsKey = useMemo(
+    () => groups.map((group) => group.id).filter(Boolean).join(","),
+    [groups]
   )
 
   const messageInfoReads = useMemo(() => {
@@ -115,18 +389,67 @@ export default function GroupChat() {
     return messageReadsById[messageInfoMessageId] || []
   }, [messageInfoMessageId, messageReadsById])
 
+  const currentUserMember = useMemo(
+    () => groupMembers.find((member) => member.user_id === contextUser?.id) || null,
+    [contextUser?.id, groupMembers]
+  )
+
+  const isCurrentUserAdmin = useMemo(
+    () => currentUserMember?.role === "admin",
+    [currentUserMember]
+  )
+
+  const isMembersDropdownOpen = membersDropdownOpen
+
+  const renderedMembers = useMemo(() => {
+    if (import.meta.env.DEV && isMembersDropdownOpen) {
+      console.log("[GroupMembersRender]", { count: groupMembers.length })
+    }
+
+    return groupMembers.map((member) => (
+      <MemberRow
+        key={member.user_id}
+        member={member}
+        isAdmin={isCurrentUserAdmin}
+        isCurrentUser={member.user_id === contextUser?.id}
+        onMakeAdmin={() => handleMakeMemberAdmin(member.user_id)}
+        onRemove={() => handleRemoveMember(member.user_id)}
+      />
+    ))
+  }, [contextUser?.id, groupMembers, handleMakeMemberAdmin, handleRemoveMember, isCurrentUserAdmin, isMembersDropdownOpen])
+
   const getDisplayName = useCallback((profile) => {
-    if (!profile) return "Unknown"
-    return profile.name || profile.username || "Unknown"
+    return getProfileDisplayName(profile)
   }, [])
 
-  const getMemberProfileById = useCallback(
-    (userId) => {
-      const member = groupMembers.find((item) => item.user_id === userId)
-      return member?.profiles || null
-    },
-    [groupMembers]
-  )
+  useEffect(() => {
+    groupMembersProfileMapRef.current = new Map(
+      groupMembers
+        .filter((member) => member?.user_id)
+        .map((member) => [member.user_id, member.profiles || null])
+    )
+  }, [groupMembers])
+
+  useEffect(() => {
+    groupPreferencesByIdRef.current = groupPreferencesById
+  }, [groupPreferencesById])
+
+  useEffect(() => {
+    messageReadsByIdRef.current = messageReadsById
+  }, [messageReadsById])
+
+  const getMemberProfileById = useCallback((userId) => {
+    return groupMembersProfileMapRef.current.get(userId) || null
+  }, [])
+
+  const sortGroupsByLatest = useCallback((list) => {
+    const next = Array.isArray(list) ? [...list] : []
+    return next.sort((a, b) => {
+      const aTime = a.last_message_at || a.created_at
+      const bTime = b.last_message_at || b.created_at
+      return new Date(bTime || 0).getTime() - new Date(aTime || 0).getTime()
+    })
+  }, [])
 
   const updatePresence = useCallback(
     async (isOnline) => {
@@ -202,7 +525,8 @@ export default function GroupChat() {
           return prev
         }
 
-        return list[0]?.id || null
+        const firstVisible = list.find((group) => !isPreferenceDeleted(groupPreferencesById[group.id]))
+        return firstVisible?.id || null
       })
     } catch (err) {
       console.error("[GroupChat] Exception fetching groups:", err)
@@ -212,7 +536,93 @@ export default function GroupChat() {
         setLoadingGroups(false)
       }
     }
-  }, [contextUser?.id, groups.length, setGroupConversationsCache, shouldFetchGroupConversations])
+  }, [contextUser?.id, groups.length, groupPreferencesById, isPreferenceDeleted, setGroupConversationsCache, shouldFetchGroupConversations])
+
+  const fetchGroupPreferences = useCallback(async (userId, groupIds = []) => {
+    if (!userId || groupIds.length === 0) {
+      setGroupPreferencesById({})
+      return
+    }
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from("conversation_preferences")
+        .select("group_id, is_archived, is_deleted, updated_at")
+        .eq("user_id", userId)
+        .is("conversation_id", null)
+        .in("group_id", groupIds)
+
+      if (fetchError) {
+        console.error("[GroupChat] Failed to fetch group preferences:", fetchError)
+        return
+      }
+
+      const mapped = {}
+      ;(data || []).forEach((row) => {
+        if (!row?.group_id) return
+        mapped[row.group_id] = {
+          is_archived: row.is_archived === true,
+          is_deleted: row.is_deleted === true,
+          updated_at: row.updated_at || null
+        }
+      })
+
+      setGroupPreferencesById(mapped)
+      return mapped
+    } catch (err) {
+      console.error("[GroupChat] Exception fetching group preferences:", err)
+      return {}
+    }
+  }, [])
+
+  const upsertGroupPreference = useCallback(
+    async (groupId, updates) => {
+      if (!contextUser?.id || !groupId) return false
+
+      const existingPreference = groupPreferencesById[groupId] || {}
+      const nextPreference = {
+        is_archived: updates?.is_archived ?? existingPreference.is_archived ?? false,
+        is_deleted: updates?.is_deleted ?? existingPreference.is_deleted ?? false
+      }
+
+      setGroupPreferencesById((prev) => ({
+        ...prev,
+        [groupId]: {
+          ...nextPreference,
+          updated_at: new Date().toISOString()
+        }
+      }))
+
+      const { error: upsertError } = await supabase.from("conversation_preferences").upsert(
+        {
+          user_id: contextUser.id,
+          conversation_id: null,
+          group_id: groupId,
+          is_archived: nextPreference.is_archived,
+          is_deleted: nextPreference.is_deleted,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: "user_id,group_id" }
+      )
+
+      if (upsertError) {
+        console.error("[GroupChat] Failed to update group preference:", upsertError)
+        setGroupPreferencesById((prev) => {
+          const reverted = { ...prev }
+          if (existingPreference && Object.keys(existingPreference).length > 0) {
+            reverted[groupId] = existingPreference
+          } else {
+            delete reverted[groupId]
+          }
+          return reverted
+        })
+        return false
+      }
+
+      return true
+    },
+    [contextUser?.id, groupPreferencesById]
+  )
 
   const loadMoreGroups = useCallback(async () => {
     if (!contextUser?.id || loadingGroups || loadingMoreGroups || !hasMoreGroups) {
@@ -270,18 +680,37 @@ export default function GroupChat() {
   }, [contextUser?.id, groupPage, hasMoreGroups, loadingGroups, loadingMoreGroups, setGroupConversationsCache])
 
   const handleGroupListScroll = useCallback(() => {
-    const container = groupListRef.current
-    if (!container) return
+    if (groupListScrollRafRef.current) return
 
-    setScrollPosition("groupchat-group-list", container.scrollTop)
+    groupListScrollRafRef.current = requestAnimationFrame(() => {
+      groupListScrollRafRef.current = null
 
-    if (container.scrollHeight - container.scrollTop - container.clientHeight < 80) {
-      void loadMoreGroups()
-    }
+      const container = groupListRef.current
+      if (!container) return
+
+      setScrollPosition("groupchat-group-list", container.scrollTop)
+
+      if (container.scrollHeight - container.scrollTop - container.clientHeight < 80) {
+        void loadMoreGroups()
+      }
+    })
   }, [loadMoreGroups, setScrollPosition])
 
-  const fetchGroupMembers = useCallback(async (groupId) => {
+  const fetchGroupMembers = useCallback(async (groupId, { force = false } = {}) => {
     if (!groupId) return
+
+    const cached = groupMembersCacheRef.current.get(groupId)
+    if (!force && cached) {
+      if (import.meta.env.DEV) {
+        console.log("[GroupMembersCacheHit]", { groupId, count: cached.length })
+      }
+      setGroupMembers(cached)
+      return
+    }
+
+    if (import.meta.env.DEV) {
+      console.log("[GroupMembersFetch]", { groupId, force })
+    }
 
     try {
       const { data, error: fetchError } = await supabase
@@ -298,7 +727,9 @@ export default function GroupChat() {
         return
       }
 
-      setGroupMembers(data || [])
+      const nextMembers = data || []
+      groupMembersCacheRef.current.set(groupId, nextMembers)
+      setGroupMembers(nextMembers)
     } catch (err) {
       console.error("[GroupChat] Exception fetching members:", err)
     }
@@ -336,10 +767,18 @@ export default function GroupChat() {
     }
   }, [])
 
-  const fetchGroupMessageReads = useCallback(async (messageIds) => {
+  const fetchGroupMessageReads = useCallback(async (messageIds, { onlyNewIds = true } = {}) => {
     const ids = [...new Set((messageIds || []).filter(Boolean))]
     if (ids.length === 0) {
       setMessageReadsById({})
+      return {}
+    }
+
+    const idsToFetch = onlyNewIds
+      ? ids.filter((id) => !Object.prototype.hasOwnProperty.call(messageReadsByIdRef.current, id))
+      : ids
+
+    if (idsToFetch.length === 0) {
       return {}
     }
 
@@ -347,14 +786,17 @@ export default function GroupChat() {
       const { data, error: readsError } = await supabase
         .from("group_message_reads")
         .select("message_id, user_id, read_at, profiles(id, username, name, avatar_url)")
-        .in("message_id", ids)
+        .in("message_id", idsToFetch)
 
       if (readsError) {
         console.error("[GroupChat] Error fetching read receipts:", readsError)
         return {}
       }
 
-      const mapped = {}
+      const mapped = idsToFetch.reduce((acc, id) => {
+        acc[id] = []
+        return acc
+      }, {})
       ;(data || []).forEach((row) => {
         if (!row?.message_id) return
         if (!mapped[row.message_id]) mapped[row.message_id] = []
@@ -366,7 +808,10 @@ export default function GroupChat() {
         })
       })
 
-      setMessageReadsById(mapped)
+      setMessageReadsById((prev) => ({
+        ...prev,
+        ...mapped
+      }))
       return mapped
     } catch (err) {
       console.error("[GroupChat] Exception fetching read receipts:", err)
@@ -406,28 +851,31 @@ export default function GroupChat() {
     [contextUser?.id]
   )
 
-  const enrichMessagesWithPosts = async (messages) => {
-    const updated = await Promise.all(
-      messages.map(async (msg) => {
-        if (!msg.post_id) return msg;
+  const enrichMessagesWithPosts = useCallback(async (messages) => {
+    const nextMessages = messages || []
+    const postIds = [...new Set(nextMessages.map((msg) => msg.post_id).filter(Boolean))]
+    if (postIds.length === 0) return nextMessages
 
-        try {
-          const { data } = await supabase
-            .from("posts")
-            .select("id, content, image_url, updated_at, is_edited")
-            .eq("id", msg.post_id)
-            .maybeSingle();
+    try {
+      const { data, error: postsError } = await supabase
+        .from("posts")
+        .select("id, content, image_url, updated_at, is_edited")
+        .in("id", postIds)
 
-          return { ...msg, post: data };
-        } catch (err) {
-          console.warn("[GroupChat] Failed to enrich post for message:", msg.id, err);
-          return msg;
-        }
-      })
-    );
+      if (postsError) {
+        console.warn("[GroupChat] Failed to enrich posts for messages:", postsError)
+        return nextMessages
+      }
 
-    return updated;
-  };
+      const postsById = new Map((data || []).map((post) => [post.id, post]))
+      return nextMessages.map((msg) => (
+        msg.post_id ? { ...msg, post: postsById.get(msg.post_id) || null } : msg
+      ))
+    } catch (err) {
+      console.warn("[GroupChat] Failed to enrich posts for messages:", err)
+      return nextMessages
+    }
+  }, [])
 
   const hydrateMessages = useCallback(
     async (rows) => {
@@ -436,10 +884,11 @@ export default function GroupChat() {
       const hydrated = await Promise.all(
         nextRows.map(async (message) => {
           let content = message.content || ""
+          const currentGroupKey = groupKeyRef.current
 
-          if (message.is_encrypted && message.encrypted_content && message.iv && groupKey) {
+          if (message.is_encrypted && message.encrypted_content && message.iv && currentGroupKey) {
             try {
-              content = await decrypt(message.encrypted_content, message.iv, groupKey)
+              content = await decrypt(message.encrypted_content, message.iv, currentGroupKey)
             } catch (decryptError) {
               console.warn("[GroupChat] Could not decrypt message", message.id, decryptError)
               content = "[Unable to decrypt]"
@@ -456,29 +905,46 @@ export default function GroupChat() {
 
       return enrichMessagesWithPosts(hydrated)
     },
-    [getMemberProfileById, groupKey]
+    [enrichMessagesWithPosts, getMemberProfileById]
   )
 
   const hydrateAndSetMessages = useCallback(
-    async (rows) => {
+    async (rows, expectedGroupId = null) => {
       const decrypted = await hydrateMessages(rows)
+      if (expectedGroupId && activeGroupIdRef.current !== expectedGroupId) return
 
       setMessages(decrypted)
       messageIdsRef.current = new Set(decrypted.map((msg) => msg.id))
 
       const ids = decrypted.map((msg) => msg.id)
       await fetchGroupMessageReads(ids)
+      if (expectedGroupId && activeGroupIdRef.current !== expectedGroupId) return
       await markGroupMessagesAsRead(decrypted)
     },
     [fetchGroupMessageReads, hydrateMessages, markGroupMessagesAsRead]
   )
 
+  const filterMessagesAfterDeletedBefore = useCallback((groupId, rows) => {
+    const deletedBefore = deletedBeforeTimestampByGroupIdRef.current[groupId]
+    if (!deletedBefore) return rows || []
+
+    const deletedBeforeTime = new Date(deletedBefore).getTime()
+    if (!Number.isFinite(deletedBeforeTime)) return rows || []
+
+    return (rows || []).filter((message) => {
+      const messageTime = new Date(message.created_at).getTime()
+      return Number.isFinite(messageTime) && messageTime >= deletedBeforeTime
+    })
+  }, [])
+
   const fetchGroupMessages = useCallback(async ({ force = false, silent = false } = {}) => {
     if (!activeGroupId) return
+    const groupIdAtStart = activeGroupId
 
-    const cachedMessages = useChatStore.getState().groupMessagesByGroupId[activeGroupId] || []
-    if (!force && cachedMessages.length > 0 && !shouldFetchGroupMessages(activeGroupId)) {
-      applyMessages(cachedMessages)
+    const cachedMessages = useChatStore.getState().groupMessagesByGroupId[groupIdAtStart] || []
+    if (!force && cachedMessages.length > 0 && !shouldFetchGroupMessages(groupIdAtStart)) {
+      if (activeGroupIdRef.current !== groupIdAtStart) return
+      applyMessages(filterMessagesAfterDeletedBefore(groupIdAtStart, cachedMessages))
       return
     }
 
@@ -504,9 +970,11 @@ export default function GroupChat() {
           post_id,
           profiles(id, username, name, avatar_url)
         `)
-        .eq("group_id", activeGroupId)
+        .eq("group_id", groupIdAtStart)
         .order("created_at", { ascending: false })
         .limit(MESSAGE_BATCH_SIZE)
+
+      if (activeGroupIdRef.current !== groupIdAtStart) return
 
       if (fetchError) {
         console.error("[GroupChat] Error fetching messages:", fetchError)
@@ -515,26 +983,31 @@ export default function GroupChat() {
       }
 
       const fetchedRows = data || []
-      const orderedMessages = [...fetchedRows].reverse()
-      await hydrateAndSetMessages(orderedMessages)
+      const orderedMessages = filterMessagesAfterDeletedBefore(groupIdAtStart, [...fetchedRows].reverse())
+      await hydrateAndSetMessages(orderedMessages, groupIdAtStart)
+
+      if (activeGroupIdRef.current !== groupIdAtStart) return
 
       if (fetchedRows.length < MESSAGE_BATCH_SIZE) {
         setHasMoreMessages(false)
       }
     } catch (err) {
       console.error("[GroupChat] Exception fetching messages:", err)
-      applyMessages([])
+      if (activeGroupIdRef.current === groupIdAtStart) {
+        applyMessages([])
+      }
     } finally {
-      if (!silent) {
+      if (!silent && activeGroupIdRef.current === groupIdAtStart) {
         setLoadingMessages(false)
       }
     }
-  }, [activeGroupId, applyMessages, hydrateAndSetMessages, shouldFetchGroupMessages])
+  }, [activeGroupId, applyMessages, filterMessagesAfterDeletedBefore, hydrateAndSetMessages, shouldFetchGroupMessages])
 
   const loadOlderMessages = useCallback(async () => {
     if (!activeGroupId || loadingOlderMessages || loadingMessages || !hasMoreMessages) {
       return
     }
+    const groupIdAtStart = activeGroupId
 
     const container = messageListRef.current
     if (!container) {
@@ -563,9 +1036,11 @@ export default function GroupChat() {
           post_id,
           profiles(id, username, name, avatar_url)
         `)
-        .eq("group_id", activeGroupId)
+        .eq("group_id", groupIdAtStart)
         .order("created_at", { ascending: false })
         .range(offset, offset + MESSAGE_BATCH_SIZE - 1)
+
+      if (activeGroupIdRef.current !== groupIdAtStart) return
 
       if (fetchError) {
         console.error("[GroupChat] Error fetching older messages:", fetchError)
@@ -573,10 +1048,13 @@ export default function GroupChat() {
       }
 
       const fetchedRows = data || []
-      const orderedMessages = [...fetchedRows].reverse()
+      const orderedMessages = filterMessagesAfterDeletedBefore(groupIdAtStart, [...fetchedRows].reverse())
       const hydratedOlderMessages = await hydrateMessages(orderedMessages)
 
+      if (activeGroupIdRef.current !== groupIdAtStart) return
+
       let prependedMessages = []
+      isPrependingOlderRef.current = true
       applyMessages((prev) => {
         const existingIds = new Set(prev.map((item) => item.id))
         prependedMessages = hydratedOlderMessages.filter((item) => !existingIds.has(item.id))
@@ -584,24 +1062,37 @@ export default function GroupChat() {
           return prev
         }
 
-        isPrependingOlderRef.current = true
         return [...prependedMessages, ...prev]
       })
 
       if (prependedMessages.length > 0) {
         prependedMessages.forEach((item) => messageIdsRef.current.add(item.id))
 
-        const combinedIds = [...new Set([...messages.map((item) => item.id), ...prependedMessages.map((item) => item.id)])]
+        const combinedIds = [...new Set([...messagesRef.current.map((item) => item.id), ...prependedMessages.map((item) => item.id)])]
         await fetchGroupMessageReads(combinedIds)
+        if (activeGroupIdRef.current !== groupIdAtStart) {
+          isPrependingOlderRef.current = false
+          return
+        }
         await markGroupMessagesAsRead(prependedMessages)
+        if (activeGroupIdRef.current !== groupIdAtStart) {
+          isPrependingOlderRef.current = false
+          return
+        }
 
         requestAnimationFrame(() => {
+          if (activeGroupIdRef.current !== groupIdAtStart) {
+            isPrependingOlderRef.current = false
+            return
+          }
           const currentContainer = messageListRef.current
           if (currentContainer) {
             currentContainer.scrollTop = currentContainer.scrollHeight - previousHeight
           }
           isPrependingOlderRef.current = false
         })
+      } else {
+        isPrependingOlderRef.current = false
       }
 
       if (fetchedRows.length < MESSAGE_BATCH_SIZE) {
@@ -612,32 +1103,40 @@ export default function GroupChat() {
     } catch (err) {
       console.error("[GroupChat] Exception loading older messages:", err)
     } finally {
-      setLoadingOlderMessages(false)
+      if (activeGroupIdRef.current === groupIdAtStart) {
+        setLoadingOlderMessages(false)
+      }
     }
   }, [
     activeGroupId,
     applyMessages,
     fetchGroupMessageReads,
+    filterMessagesAfterDeletedBefore,
     hasMoreMessages,
     hydrateMessages,
     loadingMessages,
     loadingOlderMessages,
     markGroupMessagesAsRead,
-    messagePage,
-    messages
+    messagePage
   ])
 
   const handleMessageListScroll = useCallback(() => {
-    const container = messageListRef.current
-    if (!container) return
+    if (messageListScrollRafRef.current) return
 
-    if (activeGroupId) {
-      setScrollPosition(`groupchat-messages-${activeGroupId}`, container.scrollTop)
-    }
+    messageListScrollRafRef.current = requestAnimationFrame(() => {
+      messageListScrollRafRef.current = null
 
-    if (container.scrollTop < 50) {
-      void loadOlderMessages()
-    }
+      const container = messageListRef.current
+      if (!container) return
+
+      if (activeGroupId) {
+        setScrollPosition(`groupchat-messages-${activeGroupId}`, container.scrollTop)
+      }
+
+      if (container.scrollTop < 50) {
+        void loadOlderMessages()
+      }
+    })
   }, [activeGroupId, loadOlderMessages, setScrollPosition])
 
   const sendMessage = useCallback(async () => {
@@ -786,6 +1285,107 @@ export default function GroupChat() {
     }
   }, [contextUser?.id, fetchGroups, newGroupName, newGroupSelectedUsers, showSuccess, showToastError])
 
+  const handleAddMemberToGroup = useCallback(
+    async (userId) => {
+      if (!activeGroupId || !userId) return
+      if (!isCurrentUserAdmin) {
+        showToastError("Only admins can add members")
+        return
+      }
+
+      try {
+        const { error } = await supabase
+          .from("group_members")
+          .insert({ group_id: activeGroupId, user_id: userId, role: "member" })
+
+        if (error) {
+          console.error("[GroupChat] Error adding member:", error)
+          showToastError("Failed to add member")
+          return
+        }
+
+        await fetchGroupMembers(activeGroupId)
+        setMemberSearchQuery("")
+        setMemberSearchResults([])
+        showSuccess("Member added")
+      } catch (err) {
+        console.error("[GroupChat] Exception adding member:", err)
+        showToastError("Failed to add member")
+      }
+    },
+    [activeGroupId, fetchGroupMembers, isCurrentUserAdmin, showSuccess, showToastError]
+  )
+
+  const handleRemoveMember = useCallback(
+    async (userId) => {
+      if (!activeGroupId || !userId) return
+      if (!isCurrentUserAdmin) {
+        showToastError("Only admins can remove members")
+        return
+      }
+      if (userId === contextUser?.id) {
+        showToastError("Use Leave Group to remove yourself")
+        return
+      }
+
+      if (import.meta.env.DEV) {
+        console.log("[GroupMemberRemove]", { groupId: activeGroupId, userId })
+      }
+
+      try {
+        const { error } = await supabase
+          .from("group_members")
+          .delete()
+          .eq("group_id", activeGroupId)
+          .eq("user_id", userId)
+
+        if (error) {
+          console.error("[GroupChat] Error removing member:", error)
+          showToastError("Failed to remove member")
+          return
+        }
+
+        await fetchGroupMembers(activeGroupId)
+        showSuccess("Member removed")
+      } catch (err) {
+        console.error("[GroupChat] Exception removing member:", err)
+        showToastError("Failed to remove member")
+      }
+    },
+    [activeGroupId, contextUser?.id, fetchGroupMembers, isCurrentUserAdmin, showSuccess, showToastError]
+  )
+
+  const handleMakeMemberAdmin = useCallback(
+    async (userId) => {
+      if (!activeGroupId || !userId) return
+      if (!isCurrentUserAdmin) {
+        showToastError("Only admins can update roles")
+        return
+      }
+
+      try {
+        const { error } = await supabase
+          .from("group_members")
+          .update({ role: "admin" })
+          .eq("group_id", activeGroupId)
+          .eq("user_id", userId)
+
+        if (error) {
+          console.error("[GroupChat] Error updating role:", error)
+          showToastError("Failed to update role")
+          return
+        }
+
+        await fetchGroupMembers(activeGroupId)
+        showSuccess("Member is now an admin")
+      } catch (err) {
+        console.error("[GroupChat] Exception updating role:", err)
+        showToastError("Failed to update role")
+      }
+    },
+    [activeGroupId, fetchGroupMembers, isCurrentUserAdmin, showSuccess, showToastError]
+  )
+
   const handleCopyMessage = useCallback(
     async (message) => {
       const text = message?.content || ""
@@ -844,11 +1444,519 @@ export default function GroupChat() {
     showSuccess("Reaction picker coming soon")
   }, [showSuccess])
 
+  const logGroupInteraction = useCallback((type, messageId) => {
+    if (import.meta.env.DEV) {
+      console.log("[GroupInteraction]", { type, messageId })
+    }
+  }, [])
+
+  const handleReplyMessage = useCallback(
+    (message) => {
+      if (!message) return
+      if (import.meta.env.DEV) {
+        console.log("[GroupReply]", { messageId: message.id })
+      }
+      logGroupInteraction("reply", message.id)
+      setReplyTarget(message)
+      requestAnimationFrame(() => inputRef.current?.focus())
+    },
+    [logGroupInteraction]
+  )
+
+  const handleReactMessage = useCallback(
+    (message) => {
+      if (!message) return
+      if (import.meta.env.DEV) {
+        console.log("[GroupReaction]", { messageId: message.id })
+      }
+      logGroupInteraction("react", message.id)
+      handleReactToMessage()
+    },
+    [handleReactToMessage, logGroupInteraction]
+  )
+
+  const handleCopyMessageAction = useCallback(
+    (message) => {
+      logGroupInteraction("copy", message?.id)
+      handleCopyMessage(message)
+    },
+    [handleCopyMessage, logGroupInteraction]
+  )
+
+  const handleForwardMessageAction = useCallback(
+    (message) => {
+      logGroupInteraction("forward", message?.id)
+      handleForwardMessage(message)
+    },
+    [handleForwardMessage, logGroupInteraction]
+  )
+
+  const handleDeleteMessageAction = useCallback(
+    (message) => {
+      logGroupInteraction("delete", message?.id)
+      handleDeleteMessage(message)
+    },
+    [handleDeleteMessage, logGroupInteraction]
+  )
+
+  const handleMessageInfoAction = useCallback(
+    (message) => {
+      logGroupInteraction("info", message?.id)
+      setMessageInfoMessageId(message?.id || null)
+    },
+    [logGroupInteraction]
+  )
+
+  useEffect(() => {
+    actionsRef.current = {
+      onReply: handleReplyMessage,
+      onCopy: handleCopyMessageAction,
+      onForward: handleForwardMessageAction,
+      onReact: handleReactMessage,
+      onDelete: handleDeleteMessageAction,
+      onInfo: handleMessageInfoAction
+    }
+  }, [
+    handleCopyMessageAction,
+    handleDeleteMessageAction,
+    handleForwardMessageAction,
+    handleMessageInfoAction,
+    handleReactMessage,
+    handleReplyMessage
+  ])
+
+  /* const UnusedGroupMessageRow = useMemo(
+    () =>
+      memo(function GroupMessageRow({
+        message,
+        isOwn,
+        sender,
+        seenCount,
+        onReply,
+        onCopy,
+        onForward,
+        onReact,
+        onDelete,
+        onInfo
+      }) {
+        const [menuOpen, setMenuOpen] = useState(false)
+        const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
+
+        const handleOpenMenu = (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const x = event.clientX || (event.touches && event.touches[0]?.clientX) || 0
+          const y = event.clientY || (event.touches && event.touches[0]?.clientY) || 0
+          setMenuPosition({ x, y })
+          setMenuOpen(true)
+          if (import.meta.env.DEV) {
+            console.log("[GroupMenuOpen]", { messageId: message.id })
+          }
+        }
+
+        return (
+          <div
+            className={`group relative flex min-w-0 gap-2 ${isOwn ? "justify-end" : "justify-start"}`}
+          >
+            {!isOwn && (
+              <>
+                {sender?.avatar_url ? (
+                  <img
+                    src={sender.avatar_url}
+                    alt={getDisplayName(sender)}
+                    className="h-6 w-6 shrink-0 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+                    {getDisplayName(sender).charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className={`relative flex min-w-0 max-w-[75%] md:max-w-[65%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
+              {!isOwn && (
+                <p className="mb-1 text-xs font-semibold text-slate-600">{getDisplayName(sender)}</p>
+              )}
+
+              <div className="relative w-fit max-w-sm">
+                <div
+                  className={`rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
+                    isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
+                  }`}
+                >
+                  {message.type === "post" ? (
+                    <PostPreview post_id={message.post_id} isMine={isOwn} />
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onPointerDown={handleOpenMenu}
+                  onClick={(event) => event.preventDefault()}
+                  className="absolute right-0 -top-8 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 opacity-70 group-hover:opacity-100"
+                  title="More options"
+                  aria-label="Open message options"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+
+                {menuOpen && (
+                  <DropdownMenu
+                    x={menuPosition.x}
+                    y={menuPosition.y}
+                    onClose={() => setMenuOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onReply(message)
+                        setMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <Reply className="h-3.5 w-3.5" />
+                      Reply
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCopy(message)
+                        setMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Copy
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onForward(message)
+                        setMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <Forward className="h-3.5 w-3.5" />
+                      Forward
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onReact(message)
+                        setMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <SmilePlus className="h-3.5 w-3.5" />
+                      React
+                    </button>
+
+                    {isOwn && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onDelete(message)
+                          setMenuOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onInfo(message)
+                        setMenuOpen(false)
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                      Message info
+                    </button>
+                  </DropdownMenu>
+                )}
+              </div>
+
+              <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+                <span>{dayjs(message.created_at).format("HH:mm")}</span>
+                {isOwn && (
+                  <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400" title="Delivered">
+                    <span className="font-semibold tracking-[-0.08em]">✓✓</span>
+                    {seenCount > 0 && (
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                        {seenCount}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      }),
+    [getDisplayName]
+  ) */
+
+  const clearGroupSelection = useCallback(
+    (groupId, reason) => {
+      if (import.meta.env.DEV) {
+        console.log("[GroupSelectionClear]", { groupId, reason })
+      }
+
+      setActiveGroupId((prev) => (prev === groupId ? null : prev))
+      setMessages([])
+      setMessagePage(0)
+      setHasMoreMessages(true)
+      setLoadingOlderMessages(false)
+      setMessageReadsById({})
+      setDraft("")
+      setReplyTarget(null)
+      setMessageInfoMessageId(null)
+      setGroupMembers([])
+      setGroupKey(null)
+
+      if (groupId) {
+        setGroupMessagesCache(groupId, [])
+      }
+    },
+    [setGroupMessagesCache]
+  )
+
+  const removeGroupFromState = useCallback(
+    (groupId, reason) => {
+      if (!groupId) return
+      if (import.meta.env.DEV) {
+        console.log("[GroupSidebarSync]", { groupId, reason })
+      }
+
+      setGroups((prev) => {
+        const next = prev.filter((group) => group.id !== groupId)
+        setGroupConversationsCache(next)
+        return next
+      })
+    },
+    [setGroupConversationsCache]
+  )
+
+  const handleHideGroup = useCallback(
+    async (groupId) => {
+      if (!groupId) return
+
+      if (import.meta.env.DEV) {
+        console.log("[GroupHide]", { groupId })
+      }
+
+      const updated = await upsertGroupPreference(groupId, { is_deleted: true, is_archived: false })
+      if (!updated) {
+        showToastError("Failed to remove group")
+        return
+      }
+
+      if (activeGroupId === groupId) {
+        clearGroupSelection(groupId, "hidden")
+      }
+
+      setOpenGroupOptionsId(null)
+      setGroupActionsOpen(false)
+      showSuccess("Group removed")
+    },
+    [activeGroupId, clearGroupSelection, showSuccess, showToastError, upsertGroupPreference]
+  )
+
+  const handleDeleteConversation = useCallback(
+    async (groupId) => {
+      if (!groupId) return
+
+      const deletedBeforeTimestamp = new Date().toISOString()
+      deletedBeforeTimestampByGroupIdRef.current = {
+        ...deletedBeforeTimestampByGroupIdRef.current,
+        [groupId]: deletedBeforeTimestamp
+      }
+
+      if (import.meta.env.DEV) {
+        console.log("[GroupSoftDelete]", { groupId, deletedBeforeTimestamp })
+      }
+
+      const updated = await upsertGroupPreference(groupId, { is_deleted: true })
+      if (!updated) {
+        const nextDeletedBefore = { ...deletedBeforeTimestampByGroupIdRef.current }
+        delete nextDeletedBefore[groupId]
+        deletedBeforeTimestampByGroupIdRef.current = nextDeletedBefore
+        showToastError("Failed to delete conversation")
+        return
+      }
+
+      if (activeGroupId === groupId) {
+        clearGroupSelection(groupId, "conversation_deleted")
+      }
+
+      setOpenGroupOptionsId(null)
+      setGroupActionsOpen(false)
+      showSuccess("Conversation deleted")
+    },
+    [activeGroupId, clearGroupSelection, showSuccess, showToastError, upsertGroupPreference]
+  )
+
+  const handleLeaveGroup = useCallback(
+    async (groupId) => {
+      if (!contextUser?.id || !groupId) return
+
+      if (import.meta.env.DEV) {
+        console.log("[GroupLeave]", { groupId, userId: contextUser.id })
+      }
+
+      try {
+        const { error } = await supabase
+          .from("group_members")
+          .delete()
+          .eq("group_id", groupId)
+          .eq("user_id", contextUser.id)
+
+        if (error) {
+          console.error("[GroupChat] Failed to leave group:", error)
+          showToastError("Failed to leave group")
+          return
+        }
+
+        await supabase
+          .from("conversation_preferences")
+          .delete()
+          .eq("user_id", contextUser.id)
+          .eq("group_id", groupId)
+
+        setGroupPreferencesById((prev) => {
+          const next = { ...prev }
+          delete next[groupId]
+          return next
+        })
+
+        clearGroupSelection(groupId, "left")
+        removeGroupFromState(groupId, "left")
+        setOpenGroupOptionsId(null)
+        setGroupActionsOpen(false)
+        showSuccess("Left group")
+      } catch (err) {
+        console.error("[GroupChat] Exception leaving group:", err)
+        showToastError("Failed to leave group")
+      }
+    },
+    [contextUser?.id, clearGroupSelection, removeGroupFromState, showSuccess, showToastError]
+  )
+
+  const handleDeleteGroup = useCallback(
+    async (groupId) => {
+      if (!contextUser?.id || !groupId) return
+      if (!isCurrentUserAdmin) {
+        showToastError("Only admins can delete groups")
+        return
+      }
+
+      if (import.meta.env.DEV) {
+        console.log("[GroupDelete]", { groupId, userId: contextUser.id })
+      }
+
+      try {
+        const { error: messagesError } = await supabase
+          .from("group_messages")
+          .delete()
+          .eq("group_id", groupId)
+
+        if (messagesError) {
+          console.error("[GroupChat] Failed to delete group messages:", messagesError)
+          showToastError("Failed to delete group")
+          return
+        }
+
+        const { error: membersError } = await supabase
+          .from("group_members")
+          .delete()
+          .eq("group_id", groupId)
+
+        if (membersError) {
+          console.error("[GroupChat] Failed to delete group members:", membersError)
+          showToastError("Failed to delete group")
+          return
+        }
+
+        const { error: groupError } = await supabase
+          .from("group_conversations")
+          .delete()
+          .eq("id", groupId)
+
+        if (groupError) {
+          console.error("[GroupChat] Failed to delete group:", groupError)
+          showToastError("Failed to delete group")
+          return
+        }
+
+        clearGroupSelection(groupId, "deleted")
+        removeGroupFromState(groupId, "deleted")
+        setGroupPreferencesById((prev) => {
+          const next = { ...prev }
+          delete next[groupId]
+          return next
+        })
+        setOpenGroupOptionsId(null)
+        setGroupActionsOpen(false)
+        showSuccess("Group deleted")
+      } catch (err) {
+        console.error("[GroupChat] Exception deleting group:", err)
+        showToastError("Failed to delete group")
+      }
+    },
+    [contextUser?.id, isCurrentUserAdmin, clearGroupSelection, removeGroupFromState, showSuccess, showToastError]
+  )
+
   useEffect(() => {
     if (!contextUser?.id) return
 
     fetchGroups({ silent: groups.length > 0 })
   }, [contextUser?.id, fetchGroups, groups.length])
+
+  useEffect(() => {
+    if (!contextUser?.id) return
+
+    const groupIds = groups.map((group) => group.id).filter(Boolean)
+    if (groupIds.length === 0) {
+      setGroupPreferencesById({})
+      return
+    }
+
+    fetchGroupPreferences(contextUser.id, groupIds)
+  }, [contextUser?.id, fetchGroupPreferences, groups])
+
+  useEffect(() => {
+    if (!contextUser?.id) return
+
+    groups.forEach((group) => {
+      const preference = groupPreferencesById[group.id]
+      if (!preference?.is_deleted || !preference?.updated_at || !group.last_message_at) {
+        return
+      }
+
+      const hiddenAt = new Date(preference.updated_at).getTime()
+      const lastMessageAt = new Date(group.last_message_at).getTime()
+      if (!Number.isFinite(hiddenAt) || !Number.isFinite(lastMessageAt)) {
+        return
+      }
+
+      if (lastMessageAt > hiddenAt) {
+        if (import.meta.env.DEV) {
+          console.log("[GroupSidebarSync]", { groupId: group.id, reason: "refresh_unhide" })
+        }
+        void upsertGroupPreference(group.id, { is_deleted: false, is_archived: false })
+      }
+    })
+  }, [contextUser?.id, groupPreferencesById, groups, upsertGroupPreference])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -928,6 +2036,57 @@ export default function GroupChat() {
   }, [contextUser?.id, newGroupSelectedUsers, newGroupUserSearch])
 
   useEffect(() => {
+    if (!memberSearchQuery.trim() || !activeGroupId || !isCurrentUserAdmin) {
+      setMemberSearchResults([])
+      setMemberSearchLoading(false)
+      return
+    }
+
+    let canceled = false
+    const timeoutId = setTimeout(async () => {
+      try {
+        setMemberSearchLoading(true)
+
+        const existingIds = groupMembers.map((member) => member.user_id).filter(Boolean)
+        const excludedIds = [...existingIds, contextUser?.id].filter(Boolean)
+
+        let query = supabase
+          .from("profiles")
+          .select("id, username, name, avatar_url")
+          .or(`username.ilike.%${memberSearchQuery}%,name.ilike.%${memberSearchQuery}%`)
+          .limit(6)
+
+        if (excludedIds.length > 0) {
+          query = query.not("id", "in", `(${excludedIds.join(",")})`)
+        }
+
+        const { data, error: searchError } = await query
+
+        if (searchError) {
+          console.error("[GroupChat] Error searching users:", searchError)
+          if (!canceled) setMemberSearchResults([])
+          return
+        }
+
+        if (!canceled) {
+          setMemberSearchResults(data || [])
+        }
+      } catch (err) {
+        console.error("[GroupChat] Exception searching users:", err)
+      } finally {
+        if (!canceled) {
+          setMemberSearchLoading(false)
+        }
+      }
+    }, 250)
+
+    return () => {
+      canceled = true
+      clearTimeout(timeoutId)
+    }
+  }, [activeGroupId, contextUser?.id, groupMembers, isCurrentUserAdmin, memberSearchQuery])
+
+  useEffect(() => {
     if (!activeGroupId) {
       applyMessages([])
       setMessagePage(0)
@@ -944,6 +2103,13 @@ export default function GroupChat() {
   }, [activeGroupId, fetchGroupKey, fetchGroupMembers, applyMessages])
 
   useEffect(() => {
+    if (!activeGroupId) return
+    if (!groups.some((group) => group.id === activeGroupId)) {
+      clearGroupSelection(activeGroupId, "missing")
+    }
+  }, [activeGroupId, clearGroupSelection, groups])
+
+  useEffect(() => {
     if (!activeGroupId || !groupKey) return
     const cachedMessages = useChatStore.getState().groupMessagesByGroupId[activeGroupId] || []
     isRestoringMessageScrollRef.current = true
@@ -953,11 +2119,190 @@ export default function GroupChat() {
   useEffect(() => {
     const container = groupListRef.current
     if (!container) return
+
     const restoreTop = useNavigationStore.getState().scrollPositions["groupchat-group-list"] || 0
     if (restoreTop > 0) {
       container.scrollTop = restoreTop
     }
   }, [])
+
+  useEffect(() => {
+    if (!contextUser?.id || !groupIdsKey) return
+
+    if (groupListChannelRef.current) {
+      supabase.removeChannel(groupListChannelRef.current)
+      groupListChannelRef.current = null
+    }
+
+    const channel = supabase
+      .channel(`group-list-${contextUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "group_conversations",
+          filter: `id=in.(${groupIdsKey})`
+        },
+        (payload) => {
+          const updated = payload.new
+          if (!updated?.id) return
+
+          let shouldUnhide = false
+
+          setGroups((prev) => {
+            const existing = prev.find((group) => group.id === updated.id)
+            const hasNewMessage = Boolean(updated.last_message_at) && updated.last_message_at !== existing?.last_message_at
+            if (hasNewMessage && isPreferenceDeleted(groupPreferencesById[updated.id])) {
+              shouldUnhide = true
+            }
+
+            const nextEntry = {
+              ...(existing || {}),
+              ...updated
+            }
+
+            const nextList = existing
+              ? prev.map((group) => (group.id === updated.id ? nextEntry : group))
+              : [...prev, nextEntry]
+
+            const sorted = sortGroupsByLatest(nextList)
+            setGroupConversationsCache(sorted)
+            return sorted
+          })
+
+          if (shouldUnhide) {
+            if (import.meta.env.DEV) {
+              console.log("[GroupSidebarSync]", { groupId: updated.id, reason: "new_message_unhide" })
+            }
+            void upsertGroupPreference(updated.id, { is_deleted: false, is_archived: false })
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "group_conversations",
+          filter: `id=in.(${groupIdsKey})`
+        },
+        (payload) => {
+          const removedId = payload.old?.id
+          if (!removedId) return
+
+          removeGroupFromState(removedId, "deleted")
+          if (activeGroupId === removedId) {
+            clearGroupSelection(removedId, "deleted")
+          }
+        }
+      )
+      .subscribe()
+
+    groupListChannelRef.current = channel
+
+    return () => {
+      supabase.removeChannel(channel)
+      if (groupListChannelRef.current === channel) {
+        groupListChannelRef.current = null
+      }
+    }
+  }, [activeGroupId, clearGroupSelection, contextUser?.id, groupIdsKey, groupPreferencesById, isPreferenceDeleted, removeGroupFromState, setGroupConversationsCache, sortGroupsByLatest, upsertGroupPreference])
+
+  useEffect(() => {
+    if (!contextUser?.id) return
+
+    if (groupMembershipChannelRef.current) {
+      supabase.removeChannel(groupMembershipChannelRef.current)
+      groupMembershipChannelRef.current = null
+    }
+
+    const channel = supabase
+      .channel(`group-members-${contextUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "group_members",
+          filter: `user_id=eq.${contextUser.id}`
+        },
+        async (payload) => {
+          const row = payload.new
+          if (!row?.group_id) return
+
+          const { data, error } = await supabase
+            .from("group_conversations")
+            .select("id, name, last_message, last_message_at")
+            .eq("id", row.group_id)
+            .maybeSingle()
+
+          if (error || !data) {
+            console.error("[GroupChat] Failed to fetch added group:", error)
+            return
+          }
+
+          setGroups((prev) => {
+            if (prev.some((group) => group.id === data.id)) {
+              return prev
+            }
+            const next = sortGroupsByLatest([...prev, data])
+            setGroupConversationsCache(next)
+            return next
+          })
+
+          if (import.meta.env.DEV) {
+            console.log("[GroupSidebarSync]", { groupId: row.group_id, reason: "member_added" })
+          }
+
+          void upsertGroupPreference(row.group_id, { is_deleted: false, is_archived: false })
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "group_members",
+          filter: `user_id=eq.${contextUser.id}`
+        },
+        (payload) => {
+          const row = payload.old
+          if (!row?.group_id) return
+
+          if (import.meta.env.DEV) {
+            console.log("[GroupMemberRemove]", { groupId: row.group_id, userId: contextUser.id })
+          }
+
+          clearGroupSelection(row.group_id, "member_removed")
+          removeGroupFromState(row.group_id, "member_removed")
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "group_members",
+          filter: `user_id=eq.${contextUser.id}`
+        },
+        (payload) => {
+          if (payload.new?.group_id === activeGroupId) {
+            fetchGroupMembers(activeGroupId)
+          }
+        }
+      )
+      .subscribe()
+
+    groupMembershipChannelRef.current = channel
+
+    return () => {
+      supabase.removeChannel(channel)
+      if (groupMembershipChannelRef.current === channel) {
+        groupMembershipChannelRef.current = null
+      }
+    }
+  }, [activeGroupId, clearGroupSelection, contextUser?.id, fetchGroupMembers, removeGroupFromState, setGroupConversationsCache, sortGroupsByLatest, upsertGroupPreference])
 
   useEffect(() => {
     if (!activeGroupId || !groupKey) return
@@ -982,15 +2327,20 @@ export default function GroupChat() {
             const row = payload.new
             if (!row?.id) return
 
-            let content = row.content || ""
-            if (row.is_encrypted && row.encrypted_content && row.iv) {
-              try {
-                content = await decrypt(row.encrypted_content, row.iv, groupKey)
-              } catch (decryptError) {
-                console.warn("[GroupChat] Failed to decrypt realtime message:", decryptError)
-                content = "[Unable to decrypt]"
-              }
+            if (filterMessagesAfterDeletedBefore(row.group_id, [row]).length === 0) {
+              return
             }
+
+            if (groupPreferencesByIdRef.current[row.group_id]?.is_deleted === true) {
+              if (import.meta.env.DEV) {
+                console.log("[GroupSidebarSync]", { groupId: row.group_id, reason: "new_message_unhide" })
+              }
+              void upsertGroupPreference(row.group_id, { is_deleted: false, is_archived: false })
+            }
+
+            const placeholderContent = row.is_encrypted && row.encrypted_content && row.iv
+              ? "..."
+              : row.content || ""
 
             applyMessages((prev) => {
               if (prev.some((item) => item.id === row.id)) {
@@ -1001,13 +2351,36 @@ export default function GroupChat() {
                 ...prev,
                 {
                   ...row,
-                  content,
+                  content: placeholderContent,
                   profiles: getMemberProfileById(row.sender_id)
                 }
               ]
             })
 
             messageIdsRef.current.add(row.id)
+
+            if (row.is_encrypted && row.encrypted_content && row.iv) {
+              void (async () => {
+                let content = ""
+                try {
+                  content = await decrypt(row.encrypted_content, row.iv, groupKey)
+                } catch (decryptError) {
+                  console.warn("[GroupChat] Failed to decrypt realtime message:", decryptError)
+                  content = "[Unable to decrypt]"
+                }
+
+                applyMessages((prev) =>
+                  prev.map((item) =>
+                    item.id === row.id
+                      ? {
+                          ...item,
+                          content
+                        }
+                      : item
+                  )
+                )
+              })()
+            }
 
             if (row.sender_id !== contextUser?.id) {
               await markGroupMessagesAsRead([row])
@@ -1075,9 +2448,11 @@ export default function GroupChat() {
     applyMessages,
     contextUser?.id,
     fetchGroupMessageReads,
+    filterMessagesAfterDeletedBefore,
     getMemberProfileById,
     groupKey,
-    markGroupMessagesAsRead
+    markGroupMessagesAsRead,
+    upsertGroupPreference
   ])
 
   useEffect(() => {
@@ -1157,7 +2532,7 @@ export default function GroupChat() {
     }
 
     requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+      bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" })
     })
   }, [activeGroupId, messages.length])
 
@@ -1175,7 +2550,42 @@ export default function GroupChat() {
   }, [membersDropdownOpen])
 
   useEffect(() => {
-    setActiveMenuId(null)
+    if (!openGroupOptionsId) return undefined
+
+    const handleClickOutside = (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest("[data-group-options-trigger]") || target.closest("[data-group-options-menu]")) {
+        return
+      }
+      setOpenGroupOptionsId(null)
+    }
+
+    document.addEventListener("click", handleClickOutside)
+    return () => document.removeEventListener("click", handleClickOutside)
+  }, [openGroupOptionsId])
+
+  useEffect(() => {
+    if (!groupActionsOpen) return undefined
+
+    const handleClickOutside = (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest("[data-group-actions-trigger]") || target.closest("[data-group-actions-menu]")) {
+        return
+      }
+      setGroupActionsOpen(false)
+    }
+
+    document.addEventListener("click", handleClickOutside)
+    return () => document.removeEventListener("click", handleClickOutside)
+  }, [groupActionsOpen])
+
+  useEffect(() => {
+    setOpenGroupOptionsId(null)
+    setGroupActionsOpen(false)
+    setMemberSearchQuery("")
+    setMemberSearchResults([])
   }, [activeGroupId])
 
   const postCache = usePostCacheStore((state) => state.posts)
@@ -1195,17 +2605,23 @@ export default function GroupChat() {
     setActiveGroupIdCache(activeGroupId)
   }, [activeGroupId, setActiveGroupIdCache])
 
-  const handleOpenMenu = (e, messageId) => {
-    e.stopPropagation();
-    e.preventDefault();
-    
-    // Support both mouse and touch events
-    const x = e.clientX || (e.touches && e.touches[0].clientX) || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-    const y = e.clientY || (e.touches && e.touches[0].clientY) || (e.changedTouches && e.changedTouches[0].clientY) || 0;
+  const renderedMessages = useMemo(() => {
+    return messages.map((message) => {
+      const isOwn = message.sender_id === contextUser?.id
+      const sender = message.profiles || getMemberProfileById(message.sender_id)
 
-    setMenuPosition({ x, y });
-    setActiveMenuId(messageId);
-  };
+      return (
+        <GroupMessageRow
+          key={message.id}
+          message={message}
+          isOwn={isOwn}
+          sender={sender}
+          messageReadsByIdRef={messageReadsByIdRef}
+          actionsRef={actionsRef}
+        />
+      )
+    })
+  }, [contextUser?.id, getMemberProfileById, messages])
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-144px)] min-w-0 w-full max-w-[1300px] flex-col overflow-hidden px-2 pt-1 md:px-3 dark:text-slate-100">
@@ -1261,27 +2677,85 @@ export default function GroupChat() {
                 const lastMessageTime = group.last_message_at ? dayjs(group.last_message_at).fromNow() : ""
 
                 return (
-                  <button
-                    key={group.id}
-                    type="button"
-                    onClick={() => setActiveGroupId(group.id)}
-                    className={`w-full border-b border-slate-200 dark:border-slate-700 px-3 py-2.5 text-left transition-all duration-200 ${
-                      isActive ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-200 text-sm font-semibold text-yellow-700">
-                        {group.name.charAt(0).toUpperCase()}
-                      </div>
+                  <div key={group.id} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setActiveGroupId(group.id)}
+                      className={`w-full border-b border-slate-200 dark:border-slate-700 px-3 py-2.5 pr-10 text-left transition-all duration-200 ${
+                        isActive ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-200 text-sm font-semibold text-yellow-700">
+                          {group.name.charAt(0).toUpperCase()}
+                        </div>
 
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{group.name}</p>
-                        <p className="mt-1 truncate text-[0.8125rem] text-slate-400">{lastMessagePreview}</p>
-                      </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{group.name}</p>
+                          <p className="mt-1 truncate text-[0.8125rem] text-slate-400">{lastMessagePreview}</p>
+                        </div>
 
-                      <p className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{lastMessageTime}</p>
-                    </div>
-                  </button>
+                        <p className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{lastMessageTime}</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-group-options-trigger="true"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setGroupMenuPosition({
+                          x: event.clientX || 0,
+                          y: event.clientY || 0
+                        })
+                        setOpenGroupOptionsId((prev) => (prev === group.id ? null : group.id))
+                      }}
+                      className="absolute right-2 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                      aria-label="Group options"
+                    >
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </button>
+
+                    {openGroupOptionsId === group.id && (
+                      <DropdownMenu
+                        x={groupMenuPosition.x}
+                        y={groupMenuPosition.y}
+                        onClose={() => setOpenGroupOptionsId(null)}
+                        className="text-slate-700"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleHideGroup(group.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                        >
+                          Remove from conversations
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteConversation(group.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+                        >
+                          Delete conversation
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleLeaveGroup(group.id)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                        >
+                          Leave group
+                        </button>
+                        {group.id === activeGroupId && isCurrentUserAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGroup(group.id)}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+                          >
+                            Delete group
+                          </button>
+                        )}
+                      </DropdownMenu>
+                    )}
+                  </div>
                 )
               })
             )}
@@ -1304,12 +2778,75 @@ export default function GroupChat() {
                     </p>
                   </div>
 
-                  <div className="relative">
+                  <div className="relative flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-group-actions-trigger="true"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setGroupActionsPosition({
+                          x: event.clientX || 0,
+                          y: event.clientY || 0
+                        })
+                        setGroupActionsOpen((prev) => !prev)
+                      }}
+                      className="rounded-lg px-2 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                      aria-label="Group actions"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+
+                    {groupActionsOpen && (
+                      <DropdownMenu
+                        x={groupActionsPosition.x}
+                        y={groupActionsPosition.y}
+                        onClose={() => setGroupActionsOpen(false)}
+                        className="text-slate-700"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleHideGroup(activeGroupId)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                        >
+                          Remove from conversations
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteConversation(activeGroupId)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+                        >
+                          Delete conversation
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleLeaveGroup(activeGroupId)}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100"
+                        >
+                          Leave group
+                        </button>
+                        {isCurrentUserAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteGroup(activeGroupId)}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+                          >
+                            Delete group
+                          </button>
+                        )}
+                      </DropdownMenu>
+                    )}
+
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation()
-                        setMembersDropdownOpen((prev) => !prev)
+                        setMembersDropdownOpen((prev) => {
+                          const next = !prev
+                          if (import.meta.env.DEV && next) {
+                            console.log("[GroupMembersOpen]", { groupId: activeGroupId })
+                          }
+                          return next
+                        })
                       }}
                       className="rounded-lg px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
@@ -1318,41 +2855,57 @@ export default function GroupChat() {
 
                     {membersDropdownOpen && (
                       <div
-                        className="absolute right-0 top-full z-20 mt-2 w-56 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
+                        className="absolute right-0 top-full z-20 mt-2 w-64 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
                         onClick={(event) => event.stopPropagation()}
                       >
                         <div className="max-h-64 overflow-y-auto">
-                          {groupMembers.map((member) => (
-                            <div
-                              key={member.user_id}
-                              className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 px-3 py-2 last:border-b-0"
-                            >
-                              {member.profiles?.avatar_url ? (
-                                <img
-                                  src={member.profiles.avatar_url}
-                                  alt={getDisplayName(member.profiles)}
-                                  className="h-6 w-6 rounded-full object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
-                                  {getDisplayName(member.profiles).charAt(0).toUpperCase()}
-                                </div>
-                              )}
-
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                                  {getDisplayName(member.profiles)}
-                                </p>
-                              </div>
-
-                              {member.role === "admin" && (
-                                <span className="rounded bg-yellow-50 px-2 py-0.5 text-[10px] font-semibold text-yellow-600">
-                                  Admin
-                                </span>
-                              )}
-                            </div>
-                          ))}
+                          {renderedMembers}
                         </div>
+
+                        {isCurrentUserAdmin && (
+                          <div className="border-t border-slate-200 dark:border-slate-700 px-3 py-2">
+                            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Add people</p>
+                            <input
+                              type="text"
+                              value={memberSearchQuery}
+                              onChange={(event) => setMemberSearchQuery(event.target.value)}
+                              placeholder="Search by username..."
+                              className="mt-2 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f4b400]"
+                            />
+
+                            {memberSearchQuery.trim() && (
+                              <div className="mt-2 max-h-32 overflow-y-auto">
+                                {memberSearchLoading ? (
+                                  <p className="px-2 py-2 text-center text-xs text-slate-500">Searching...</p>
+                                ) : memberSearchResults.length === 0 ? (
+                                  <p className="px-2 py-2 text-center text-xs text-slate-500">No users found.</p>
+                                ) : (
+                                  memberSearchResults.map((user) => (
+                                    <button
+                                      key={user.id}
+                                      type="button"
+                                      onClick={() => handleAddMemberToGroup(user.id)}
+                                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-100"
+                                    >
+                                      {user.avatar_url ? (
+                                        <img
+                                          src={user.avatar_url}
+                                          alt={user.name || user.username}
+                                          className="h-6 w-6 rounded-full object-cover"
+                                        />
+                                      ) : (
+                                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+                                          {(user.name || user.username || "?").charAt(0).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <span className="truncate">{user.name || user.username}</span>
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1362,7 +2915,6 @@ export default function GroupChat() {
               <div
                 ref={messageListRef}
                 onScroll={handleMessageListScroll}
-                onClick={() => setActiveMenuId(null)}
                 className="message-list min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
               >
                 {loadingOlderMessages && (
@@ -1378,169 +2930,7 @@ export default function GroupChat() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {messages.map((message) => {
-                      const isOwn = message.sender_id === contextUser?.id
-                      const sender = message.profiles || getMemberProfileById(message.sender_id)
-                      const reads = messageReadsById[message.id] || []
-                      const seenCount = reads.filter((entry) => entry.user_id !== message.sender_id).length
-
-                      if (isOwn) {
-                        console.log("group seenCount", seenCount, message.id, "reads:", reads.length)
-                      }
-
-                      return (
-                        <div
-                          key={message.id}
-                          className={`group relative flex min-w-0 gap-2 ${isOwn ? "justify-end" : "justify-start"}`}
-                        >
-                          {!isOwn && (
-                            <>
-                              {sender?.avatar_url ? (
-                                <img
-                                  src={sender.avatar_url}
-                                  alt={getDisplayName(sender)}
-                                  className="h-6 w-6 shrink-0 rounded-full object-cover"
-                                />
-                              ) : (
-                                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
-                                  {getDisplayName(sender).charAt(0).toUpperCase()}
-                                </div>
-                              )}
-                            </>
-                          )}
-
-                          <div className={`relative flex min-w-0 max-w-[75%] md:max-w-[65%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
-                            {!isOwn && (
-                              <p className="mb-1 text-xs font-semibold text-slate-600">{getDisplayName(sender)}</p>
-                            )}
-
-                            <div className="relative w-fit max-w-sm">
-                              <div
-                                className={`rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
-                                  isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
-                                }`}
-                              >
-                                {message.type === "post" ? (
-                                  <PostPreview post_id={message.post_id} isMine={isOwn} />
-                                ) : (
-                                  <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
-                                )}
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={(e) => handleOpenMenu(e, message.id)}
-                                className={`absolute right-0 -top-8 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 ${
-                                  activeMenuId === message.id ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                                }`}
-                                title="More options"
-                                aria-label="Open message options"
-                              >
-                                <MoreHorizontal className="h-3.5 w-3.5" />
-                              </button>
-
-                              {activeMenuId === message.id && (
-                                <DropdownMenu
-                                  x={menuPosition.x}
-                                  y={menuPosition.y}
-                                  onClose={() => setActiveMenuId(null)}
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setReplyTarget(message)
-                                      setActiveMenuId(null)
-                                      requestAnimationFrame(() => inputRef.current?.focus())
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                                  >
-                                    <Reply className="h-3.5 w-3.5" />
-                                    Reply
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleCopyMessage(message)
-                                      setActiveMenuId(null)
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                                  >
-                                    <Copy className="h-3.5 w-3.5" />
-                                    Copy
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleForwardMessage(message)
-                                      setActiveMenuId(null)
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                                  >
-                                    <Forward className="h-3.5 w-3.5" />
-                                    Forward
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleReactToMessage()
-                                      setActiveMenuId(null)
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                                  >
-                                    <SmilePlus className="h-3.5 w-3.5" />
-                                    React
-                                  </button>
-
-                                  {isOwn && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleDeleteMessage(message)
-                                        setActiveMenuId(null)
-                                      }}
-                                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                      Delete
-                                    </button>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setMessageInfoMessageId(message.id)
-                                      setActiveMenuId(null)
-                                    }}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                                  >
-                                    <Info className="h-3.5 w-3.5" />
-                                    Message info
-                                  </button>
-                                </DropdownMenu>
-                              )}
-                            </div>
-
-                            <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-                              <span>{dayjs(message.created_at).format("HH:mm")}</span>
-                              {isOwn && (
-                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400" title="Delivered">
-                                  <span className="font-semibold tracking-[-0.08em]">✓✓</span>
-                                  {seenCount > 0 && (
-                                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                                      {seenCount}
-                                    </span>
-                                  )}
-                                </span>
-                              )}
-                            </div>
-
-                          </div>
-                        </div>
-                      )
-                    })}
+                    {renderedMessages}
                   </div>
                 )}
 
