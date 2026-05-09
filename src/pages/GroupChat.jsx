@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import dayjs from "dayjs"
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
@@ -7,7 +8,6 @@ import { useAuth } from "../hooks/useAuth"
 import { useToast } from "../hooks/useToast"
 import { decrypt, encrypt, exportKey, generateKey, importKey } from "../utils/encryption"
 import { Copy, Forward, Info, MoreHorizontal, MoreVertical, Reply, SmilePlus, Trash2 } from "lucide-react"
-import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
 import { useNavigationStore } from "../stores/navigationStore"
 import { useChatStore } from "../stores/chatStore"
 import { usePostCacheStore } from "../stores/postCacheStore"
@@ -18,6 +18,7 @@ dayjs.extend(relativeTime)
 dayjs.extend(utc)
 
 const MESSAGE_BATCH_SIZE = 20
+const REACTION_EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F621}"]
 const GROUP_BATCH_SIZE = 15
 
 const getProfileDisplayName = (profile) => {
@@ -29,25 +30,29 @@ const GroupMessageRow = memo(function GroupMessageRow({
   message,
   isOwn,
   sender,
-  messageReadsByIdRef,
-  actionsRef
+  reads,
+  reactionSummary,
+  activeReactionPickerMessageId,
+  actions, // { onReply, onCopy, onForward, onReact, onAddReaction, onDelete, onInfo }
+  contextUserId
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
-  const reads = messageReadsByIdRef.current[message.id] || []
-  const seenCount = reads.filter((entry) => entry.user_id !== message.sender_id).length
+
+  if (import.meta.env.DEV) {
+    console.log("[GroupRowRender]", message.id)
+  }
 
   const handleOpenMenu = (event) => {
     event.preventDefault()
     event.stopPropagation()
-    const x = event.clientX || (event.touches && event.touches[0]?.clientX) || 0
-    const y = event.clientY || (event.touches && event.touches[0]?.clientY) || 0
+    const x = event.clientX
+    const y = event.clientY
     setMenuPosition({ x, y })
     setMenuOpen(true)
-    if (import.meta.env.DEV) {
-      console.log("[GroupMenuOpen]", { messageId: message.id })
-    }
   }
+
+  const seenCount = reads.filter((entry) => entry.user_id !== message.sender_id).length
 
   return (
     <div
@@ -76,116 +81,83 @@ const GroupMessageRow = memo(function GroupMessageRow({
 
         <div className="relative w-fit max-w-sm">
           <div
-            className={`rounded-2xl px-3 py-2.5 text-sm shadow-sm ${
-              isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
-            }`}
+            className={`rounded-2xl px-3 py-2.5 text-sm shadow-sm ${isOwn ? "bg-yellow-400 text-yellow-900" : "bg-slate-100 text-slate-900 dark:text-slate-100"
+              }`}
           >
             {message.type === "post" ? (
-              <PostPreview post_id={message.post_id} isMine={isOwn} />
+              <div className="min-h-[140px] min-w-[240px]">
+                <PostPreview post_id={message.post_id} isMine={isOwn} />
+              </div>
             ) : (
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
             )}
           </div>
 
+          {/* Reaction Summary Overlay */}
+          {reactionSummary && Object.keys(reactionSummary).length > 0 && (
+            <div className={`mt-1 flex flex-wrap gap-1 ${isOwn ? "justify-end" : "justify-start"}`}>
+              {Object.entries(reactionSummary).map(([emoji, count]) => {
+                const hasReacted = reactions?.some(r => r.user_id === contextUserId && r.emoji === emoji)
+                // Build a simple tooltip for the group chat file
+                const userNames = reactions?.filter(r => r.emoji === emoji).map(r => r.user_id === contextUserId ? "You" : (r.profile?.name || r.profile?.username || "Someone")).join(", ")
+
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => actions.onAddReaction?.(message.id, emoji)}
+                    title={userNames}
+                    className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] transition-all duration-200 ${hasReacted
+                      ? "border-[var(--chat-accent)] bg-[var(--chat-accent-soft)] text-[var(--chat-accent)] shadow-sm font-medium"
+                      : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      }`}
+                  >
+                    <span>{emoji}</span>
+                    <span className={hasReacted ? "text-[var(--chat-accent)]" : ""}>{count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Emoji Picker Overlay */}
+          {activeReactionPickerMessageId === message.id && (
+            <div className={`absolute z-30 ${isOwn ? "right-0" : "left-0"} -top-12 flex items-center gap-1 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 shadow-lg`}>
+              {REACTION_EMOJIS.map((emoji) => {
+                const hasReacted = reactions?.some(r => r.user_id === contextUserId && r.emoji === emoji)
+                return (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      actions.onAddReaction?.(message.id, emoji)
+                      actions.onReact?.(message) // Toggles picker off
+                    }}
+                    className={`rounded-full p-1 text-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 ${hasReacted ? "bg-yellow-100 dark:bg-yellow-900/30" : ""}`}
+                  >
+                    {emoji}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           <button
             type="button"
-            onPointerDown={handleOpenMenu}
-            onClick={(event) => event.preventDefault()}
+            onMouseDown={handleOpenMenu}
             className="absolute right-0 -top-8 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 opacity-70 group-hover:opacity-100"
             title="More options"
             aria-label="Open message options"
           >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </button>
-
-          {menuOpen && (
-            <DropdownMenu
-              x={menuPosition.x}
-              y={menuPosition.y}
-              onClose={() => setMenuOpen(false)}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  actionsRef.current.onReply?.(message)
-                  setMenuOpen(false)
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <Reply className="h-3.5 w-3.5" />
-                Reply
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  actionsRef.current.onCopy?.(message)
-                  setMenuOpen(false)
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Copy
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  actionsRef.current.onForward?.(message)
-                  setMenuOpen(false)
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <Forward className="h-3.5 w-3.5" />
-                Forward
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  actionsRef.current.onReact?.(message)
-                  setMenuOpen(false)
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <SmilePlus className="h-3.5 w-3.5" />
-                React
-              </button>
-
-              {isOwn && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    actionsRef.current.onDelete?.(message)
-                    setMenuOpen(false)
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  actionsRef.current.onInfo?.(message)
-                  setMenuOpen(false)
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <Info className="h-3.5 w-3.5" />
-                Message info
-              </button>
-            </DropdownMenu>
-          )}
         </div>
 
         <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
           <span>{dayjs(message.created_at).format("HH:mm")}</span>
           {isOwn && (
             <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400" title="Delivered">
-              <span className="font-semibold tracking-[-0.08em]">âœ“âœ“</span>
+              <span className="font-semibold tracking-[-0.08em]">✓✓</span>
               {seenCount > 0 && (
                 <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
                   {seenCount}
@@ -194,6 +166,167 @@ const GroupMessageRow = memo(function GroupMessageRow({
             </span>
           )}
         </div>
+      </div>
+
+      {menuOpen && createPortal(
+        <div
+          style={{ position: "fixed", top: menuPosition.y, left: menuPosition.x, zIndex: 99999 }}
+          className="min-w-[160px] rounded-xl border border-slate-200 bg-white dark:bg-slate-900 p-1 text-slate-900 dark:text-slate-100 shadow-lg"
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="space-y-0.5">
+            <button
+              type="button"
+              onMouseDown={() => {
+                actions.onReply?.(message)
+                setMenuOpen(false)
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Reply className="h-3.5 w-3.5" />
+              Reply
+            </button>
+
+            <button
+              type="button"
+              onMouseDown={() => {
+                actions.onCopy?.(message)
+                setMenuOpen(false)
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Copy
+            </button>
+
+            <button
+              type="button"
+              onMouseDown={() => {
+                actions.onForward?.(message)
+                setMenuOpen(false)
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Forward className="h-3.5 w-3.5" />
+              Forward
+            </button>
+
+            <button
+              type="button"
+              onMouseDown={() => {
+                actions.onReact?.(message)
+                setMenuOpen(false)
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <SmilePlus className="h-3.5 w-3.5" />
+              React
+            </button>
+
+            {message.sender_id === contextUserId && (
+              <button
+                type="button"
+                onMouseDown={() => {
+                  actions.onDelete?.(message)
+                  setMenuOpen(false)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-red-600 transition hover:bg-red-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+            )}
+
+            <button
+              type="button"
+              onMouseDown={() => {
+                actions.onInfo?.(message)
+                setMenuOpen(false)
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
+            >
+              <Info className="h-3.5 w-3.5" />
+              Message info
+            </button>
+          </div>
+          <button
+            type="button"
+            className="hidden"
+            id={`close-menu-${message.id}`}
+            onClick={() => setMenuOpen(false)}
+          />
+        </div>,
+        document.body
+      )}
+
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-[99998]"
+          onMouseDown={() => setMenuOpen(false)}
+        />
+      )}
+    </div>
+  )
+})
+
+const GroupMessageList = memo(function GroupMessageList({
+  messages,
+  loadingMessages,
+  loadingOlderMessages,
+  messageListRef,
+  onScroll,
+  bottomRef,
+  isMessageListReady,
+  contextUser,
+  getMemberProfileById,
+  messageReadsById,
+  summarizedReactionsByMessageId,
+  activeReactionPickerMessageId,
+  actions
+}) {
+  if (import.meta.env.DEV) {
+    console.log("[GroupListRender]")
+  }
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {loadingMessages && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/30 dark:bg-slate-900/30 backdrop-blur-[1px]">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-yellow-400 border-t-transparent"></div>
+        </div>
+      )}
+      <div
+        ref={messageListRef}
+        onScroll={onScroll}
+        className="message-list min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
+        style={{ visibility: isMessageListReady ? "visible" : "hidden" }}
+      >
+        {loadingOlderMessages && (
+          <div className="mb-2 text-center text-xs text-slate-500 dark:text-slate-400">Loading older messages...</div>
+        )}
+        {messages.length === 0 && !loadingMessages ? (
+          <div className="flex h-full items-center justify-center">
+            <p className="text-slate-500 dark:text-slate-400">No messages yet. Start the conversation!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {messages.map((message) => (
+              <GroupMessageRow
+                key={message.id}
+                message={message}
+                isOwn={message.sender_id === contextUser?.id}
+                sender={message.profiles || getMemberProfileById(message.sender_id)}
+                reads={messageReadsById[message.id] || []}
+                reactionSummary={summarizedReactionsByMessageId[message.id] || {}}
+                activeReactionPickerMessageId={activeReactionPickerMessageId}
+                actions={actions}
+                contextUserId={contextUser?.id}
+              />
+            ))}
+          </div>
+        )}
+
+        <div ref={bottomRef} />
       </div>
     </div>
   )
@@ -293,8 +426,11 @@ export default function GroupChat() {
   const [memberSearchLoading, setMemberSearchLoading] = useState(false)
 
   const [messageReadsById, setMessageReadsById] = useState({})
+  const [groupMessageReactions, setGroupMessageReactions] = useState({})
+  const [activeReactionPickerMessageId, setActiveReactionPickerMessageId] = useState(null)
   const [messageInfoMessageId, setMessageInfoMessageId] = useState(null)
   const [replyTarget, setReplyTarget] = useState(null)
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
 
   const [newGroupModalOpen, setNewGroupModalOpen] = useState(false)
   const [newGroupName, setNewGroupName] = useState("")
@@ -305,6 +441,7 @@ export default function GroupChat() {
   const [creatingGroup, setCreatingGroup] = useState(false)
 
   const messageListRef = useRef(null)
+  const menuRef = useRef(null)
   const groupListRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -312,32 +449,50 @@ export default function GroupChat() {
   const readReceiptsChannelRef = useRef(null)
   const groupListChannelRef = useRef(null)
   const groupMembershipChannelRef = useRef(null)
+  const groupsRef = useRef(groups)
+  const hasFetchedGroupsRef = useRef(false)
   const groupMembersCacheRef = useRef(new Map())
   const groupMembersProfileMapRef = useRef(new Map())
   const groupPreferencesByIdRef = useRef({})
   const messageReadsByIdRef = useRef({})
+  const groupMessageReactionsRef = useRef({})
+  const handleReactionInsertRef = useRef(null)
+  const handleReactionDeleteRef = useRef(null)
   const messagesRef = useRef([])
   const activeGroupIdRef = useRef(activeGroupId)
   const groupKeyRef = useRef(null)
+  const messagePageRef = useRef(0)
+  const hasMoreMessagesRef = useRef(true)
+  const loadingMessagesRef = useRef(false)
+  const loadingOlderMessagesRef = useRef(false)
   const actionsRef = useRef({})
   const messageIdsRef = useRef(new Set())
+  const processedGroupUnhideRef = useRef(new Set())
   const deletedBeforeTimestampByGroupIdRef = useRef({})
   const groupListScrollRafRef = useRef(null)
   const messageListScrollRafRef = useRef(null)
   const isPrependingOlderRef = useRef(false)
-  const isRestoringMessageScrollRef = useRef(true)
-  useRouteScrollRestoration("group-chat-page")
+  const isInitialScrollDoneRef = useRef(false)
+  const pendingScrollToBottomRef = useRef(false)
+  const wasAtBottomRef = useRef(true)
+
+  useEffect(() => {
+    groupMessageReactionsRef.current = groupMessageReactions
+  })
+  const visibilityRafRef = useRef(null)
+  const [isMessageListReady, setIsMessageListReady] = useState(false)
 
   useEffect(() => {
     return () => {
-      if (groupListScrollRafRef.current) {
-        cancelAnimationFrame(groupListScrollRafRef.current)
-      }
-      if (messageListScrollRafRef.current) {
-        cancelAnimationFrame(messageListScrollRafRef.current)
-      }
+      if (groupListScrollRafRef.current) cancelAnimationFrame(groupListScrollRafRef.current)
+      if (messageListScrollRafRef.current) cancelAnimationFrame(messageListScrollRafRef.current)
+      if (visibilityRafRef.current) cancelAnimationFrame(visibilityRafRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    groupsRef.current = groups
+  }, [groups])
 
   useEffect(() => {
     messagesRef.current = messages
@@ -350,6 +505,22 @@ export default function GroupChat() {
   useEffect(() => {
     groupKeyRef.current = groupKey
   }, [groupKey])
+
+  useEffect(() => {
+    messagePageRef.current = messagePage
+  }, [messagePage])
+
+  useEffect(() => {
+    hasMoreMessagesRef.current = hasMoreMessages
+  }, [hasMoreMessages])
+
+  useEffect(() => {
+    loadingMessagesRef.current = loadingMessages
+  }, [loadingMessages])
+
+  useEffect(() => {
+    loadingOlderMessagesRef.current = loadingOlderMessages
+  }, [loadingOlderMessages])
 
   const applyMessages = useCallback((nextValue) => {
     setMessages((prev) => {
@@ -437,9 +608,71 @@ export default function GroupChat() {
   useEffect(() => {
     messageReadsByIdRef.current = messageReadsById
   }, [messageReadsById])
+  
+  useEffect(() => {
+    groupMessageReactionsRef.current = groupMessageReactions
+  }, [groupMessageReactions])
+
+  const summarizedReactionsByMessageId = useMemo(() => {
+    const map = {}
+    let totalMessagesWithReactions = 0
+    Object.entries(groupMessageReactions).forEach(([messageId, reactions]) => {
+      if (reactions && reactions.length > 0) {
+        totalMessagesWithReactions++
+        const summary = {}
+        reactions.forEach((r) => {
+          summary[r.emoji] = (summary[r.emoji] || 0) + 1
+        })
+        map[messageId] = summary
+      }
+    })
+    if (import.meta.env.DEV) console.log("[ReactionSummaryBuilt]", totalMessagesWithReactions)
+    return map
+  }, [groupMessageReactions])
 
   const getMemberProfileById = useCallback((userId) => {
     return groupMembersProfileMapRef.current.get(userId) || null
+  }, [])
+
+  const fetchGroupMessageReactions = useCallback(async (messageIds) => {
+    if (!messageIds || messageIds.length === 0) return
+
+    if (import.meta.env.DEV) {
+      console.log("[GroupReactionFetch] Fetching for group_message_ids:", messageIds)
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("message_reactions")
+        .select("id, group_message_id, user_id, emoji")
+        .in("group_message_id", messageIds)
+
+      if (error) {
+        console.error("[GroupReactionFetch] Error fetching reactions:", error)
+        return
+      }
+
+      if (import.meta.env.DEV) {
+        console.log(`[GroupReactionFetch] Fetched ${data?.length || 0} reactions for ${messageIds.length} group messages`, data)
+      }
+
+      const reactionsMap = {}
+      data?.forEach((r) => {
+        // Key on group_message_id for group reactions
+        if (!r.group_message_id) return
+        if (!reactionsMap[r.group_message_id]) {
+          reactionsMap[r.group_message_id] = []
+        }
+        reactionsMap[r.group_message_id].push(r)
+      })
+
+      setGroupMessageReactions((prev) => ({
+        ...prev,
+        ...reactionsMap
+      }))
+    } catch (err) {
+      console.error("[GroupReactionFetch] Exception fetching reactions:", err)
+    }
   }, [])
 
   const sortGroupsByLatest = useCallback((list) => {
@@ -474,7 +707,7 @@ export default function GroupChat() {
   const fetchGroups = useCallback(async ({ force = false, silent = false } = {}) => {
     if (!contextUser?.id) return
 
-    if (!force && groups.length > 0 && !shouldFetchGroupConversations()) {
+    if (!force && groupsRef.current.length > 0 && !shouldFetchGroupConversations()) {
       setLoadingGroups(false)
       return
     }
@@ -515,6 +748,8 @@ export default function GroupChat() {
       }))
       setGroups(list)
       setGroupConversationsCache(list)
+      hasFetchedGroupsRef.current = true
+      processedGroupUnhideRef.current.clear()
 
       if (list.length < GROUP_BATCH_SIZE) {
         setHasMoreGroups(false)
@@ -525,7 +760,8 @@ export default function GroupChat() {
           return prev
         }
 
-        const firstVisible = list.find((group) => !isPreferenceDeleted(groupPreferencesById[group.id]))
+        const preferences = groupPreferencesByIdRef.current
+        const firstVisible = list.find((group) => !isPreferenceDeleted(preferences[group.id]))
         return firstVisible?.id || null
       })
     } catch (err) {
@@ -536,7 +772,7 @@ export default function GroupChat() {
         setLoadingGroups(false)
       }
     }
-  }, [contextUser?.id, groups.length, groupPreferencesById, isPreferenceDeleted, setGroupConversationsCache, shouldFetchGroupConversations])
+  }, [contextUser?.id, isPreferenceDeleted, setGroupConversationsCache, shouldFetchGroupConversations])
 
   const fetchGroupPreferences = useCallback(async (userId, groupIds = []) => {
     if (!userId || groupIds.length === 0) {
@@ -558,14 +794,14 @@ export default function GroupChat() {
       }
 
       const mapped = {}
-      ;(data || []).forEach((row) => {
-        if (!row?.group_id) return
-        mapped[row.group_id] = {
-          is_archived: row.is_archived === true,
-          is_deleted: row.is_deleted === true,
-          updated_at: row.updated_at || null
-        }
-      })
+        ; (data || []).forEach((row) => {
+          if (!row?.group_id) return
+          mapped[row.group_id] = {
+            is_archived: row.is_archived === true,
+            is_deleted: row.is_deleted === true,
+            updated_at: row.updated_at || null
+          }
+        })
 
       setGroupPreferencesById(mapped)
       return mapped
@@ -778,6 +1014,10 @@ export default function GroupChat() {
       ? ids.filter((id) => !Object.prototype.hasOwnProperty.call(messageReadsByIdRef.current, id))
       : ids
 
+    if (import.meta.env.DEV) {
+      console.log(`[GroupReadReceiptsFetch] Fetching for ${idsToFetch.length} messages (requested: ${ids.length})`)
+    }
+
     if (idsToFetch.length === 0) {
       return {}
     }
@@ -797,16 +1037,16 @@ export default function GroupChat() {
         acc[id] = []
         return acc
       }, {})
-      ;(data || []).forEach((row) => {
-        if (!row?.message_id) return
-        if (!mapped[row.message_id]) mapped[row.message_id] = []
+        ; (data || []).forEach((row) => {
+          if (!row?.message_id) return
+          if (!mapped[row.message_id]) mapped[row.message_id] = []
 
-        mapped[row.message_id].push({
-          user_id: row.user_id,
-          read_at: row.read_at,
-          profile: row.profiles || null
+          mapped[row.message_id].push({
+            user_id: row.user_id,
+            read_at: row.read_at,
+            profile: row.profiles || null
+          })
         })
-      })
 
       setMessageReadsById((prev) => ({
         ...prev,
@@ -913,15 +1153,26 @@ export default function GroupChat() {
       const decrypted = await hydrateMessages(rows)
       if (expectedGroupId && activeGroupIdRef.current !== expectedGroupId) return
 
-      setMessages(decrypted)
+      // Use applyMessages instead of setMessages to keep Zustand cache in sync
+      applyMessages(decrypted)
       messageIdsRef.current = new Set(decrypted.map((msg) => msg.id))
 
       const ids = decrypted.map((msg) => msg.id)
-      await fetchGroupMessageReads(ids)
+      const recentIds = ids.slice(-MESSAGE_BATCH_SIZE)
+
+      await Promise.all([
+        fetchGroupMessageReads(recentIds),
+        fetchGroupMessageReactions(recentIds)
+      ])
+      
       if (expectedGroupId && activeGroupIdRef.current !== expectedGroupId) return
       await markGroupMessagesAsRead(decrypted)
+
+      if (import.meta.env.DEV) {
+        console.log(`[GroupRenderComplete] Rendered ${decrypted.length} messages`)
+      }
     },
-    [fetchGroupMessageReads, hydrateMessages, markGroupMessagesAsRead]
+    [applyMessages, fetchGroupMessageReads, hydrateMessages, markGroupMessagesAsRead]
   )
 
   const filterMessagesAfterDeletedBefore = useCallback((groupId, rows) => {
@@ -942,9 +1193,29 @@ export default function GroupChat() {
     const groupIdAtStart = activeGroupId
 
     const cachedMessages = useChatStore.getState().groupMessagesByGroupId[groupIdAtStart] || []
+
+    // Always show cache immediately to prevent initial flicker before DB fetch
+    if (cachedMessages.length > 0 && messagesRef.current.length === 0) {
+      const filtered = filterMessagesAfterDeletedBefore(groupIdAtStart, cachedMessages)
+      const capped = filtered.slice(-MESSAGE_BATCH_SIZE)
+      applyMessages(capped)
+    }
+
     if (!force && cachedMessages.length > 0 && !shouldFetchGroupMessages(groupIdAtStart)) {
       if (activeGroupIdRef.current !== groupIdAtStart) return
-      applyMessages(filterMessagesAfterDeletedBefore(groupIdAtStart, cachedMessages))
+      const filtered = filterMessagesAfterDeletedBefore(groupIdAtStart, cachedMessages)
+      const capped = filtered.slice(-MESSAGE_BATCH_SIZE)
+
+      if (import.meta.env.DEV) {
+        console.log(`[GroupInitialBatch] Using cache: ${capped.length} messages (capped from ${filtered.length})`)
+      }
+
+      applyMessages(capped)
+
+      // Still need to fetch receipts for the capped batch when using cache
+      const cappedIds = capped.map(m => m.id)
+      fetchGroupMessageReads(cappedIds)
+      markGroupMessagesAsRead(capped)
       return
     }
 
@@ -984,6 +1255,11 @@ export default function GroupChat() {
 
       const fetchedRows = data || []
       const orderedMessages = filterMessagesAfterDeletedBefore(groupIdAtStart, [...fetchedRows].reverse())
+
+      if (import.meta.env.DEV) {
+        console.log(`[GroupInitialBatch] Fetched from DB: ${orderedMessages.length} messages`)
+      }
+
       await hydrateAndSetMessages(orderedMessages, groupIdAtStart)
 
       if (activeGroupIdRef.current !== groupIdAtStart) return
@@ -1004,7 +1280,7 @@ export default function GroupChat() {
   }, [activeGroupId, applyMessages, filterMessagesAfterDeletedBefore, hydrateAndSetMessages, shouldFetchGroupMessages])
 
   const loadOlderMessages = useCallback(async () => {
-    if (!activeGroupId || loadingOlderMessages || loadingMessages || !hasMoreMessages) {
+    if (!activeGroupId || loadingOlderMessagesRef.current || loadingMessagesRef.current || !hasMoreMessagesRef.current) {
       return
     }
     const groupIdAtStart = activeGroupId
@@ -1018,7 +1294,7 @@ export default function GroupChat() {
       setLoadingOlderMessages(true)
 
       const previousHeight = container.scrollHeight
-      const nextPage = messagePage + 1
+      const nextPage = messagePageRef.current + 1
       const offset = nextPage * MESSAGE_BATCH_SIZE
 
       const { data, error: fetchError } = await supabase
@@ -1066,10 +1342,16 @@ export default function GroupChat() {
       })
 
       if (prependedMessages.length > 0) {
-        prependedMessages.forEach((item) => messageIdsRef.current.add(item.id))
+        if (import.meta.env.DEV) {
+          console.log(`[GroupPagination] Loaded ${prependedMessages.length} older messages`)
+        }
 
-        const combinedIds = [...new Set([...messagesRef.current.map((item) => item.id), ...prependedMessages.map((item) => item.id)])]
-        await fetchGroupMessageReads(combinedIds)
+        const ids = prependedMessages.map(m => m.id)
+        await Promise.all([
+          fetchGroupMessageReads(ids),
+          fetchGroupMessageReactions(ids)
+        ])
+        
         if (activeGroupIdRef.current !== groupIdAtStart) {
           isPrependingOlderRef.current = false
           return
@@ -1112,12 +1394,8 @@ export default function GroupChat() {
     applyMessages,
     fetchGroupMessageReads,
     filterMessagesAfterDeletedBefore,
-    hasMoreMessages,
     hydrateMessages,
-    loadingMessages,
-    loadingOlderMessages,
     markGroupMessagesAsRead,
-    messagePage
   ])
 
   const handleMessageListScroll = useCallback(() => {
@@ -1132,6 +1410,10 @@ export default function GroupChat() {
       if (activeGroupId) {
         setScrollPosition(`groupchat-messages-${activeGroupId}`, container.scrollTop)
       }
+
+      // Track scroll position BEFORE next message arrives (for realtime autoscroll decision)
+      wasAtBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 120
 
       if (container.scrollTop < 50) {
         void loadOlderMessages()
@@ -1440,9 +1722,139 @@ export default function GroupChat() {
     [contextUser?.id, showSuccess, showToastError, applyMessages]
   )
 
-  const handleReactToMessage = useCallback(() => {
-    showSuccess("Reaction picker coming soon")
-  }, [showSuccess])
+  const updateReactionInState = useCallback((messageId, reactionData, isDelete = false) => {
+    setGroupMessageReactions((prev) => {
+      const existing = prev[messageId] || []
+      let next
+      if (isDelete) {
+        next = existing.filter((r) => !(r.user_id === reactionData.user_id && r.emoji === reactionData.emoji))
+      } else {
+        const alreadyExists = existing.some((r) => r.user_id === reactionData.user_id && r.emoji === reactionData.emoji)
+        if (alreadyExists) return prev
+        next = [...existing, reactionData]
+      }
+      return { ...prev, [messageId]: next.length > 0 ? next : undefined }
+    })
+  }, [])
+
+  const handleReactionInsert = useCallback((payload) => {
+    // Group reactions use group_message_id; direct chat reactions use message_id
+    const msgId = payload.group_message_id || payload.message_id
+    const { user_id, emoji } = payload
+    if (import.meta.env.DEV) {
+      console.log("[GroupReactionRealtime] INSERT", { group_message_id: payload.group_message_id, user_id, emoji })
+    }
+    if (!msgId) return
+    updateReactionInState(msgId, { group_message_id: payload.group_message_id, message_id: payload.message_id, user_id, emoji })
+  }, [updateReactionInState])
+
+  const handleReactionDelete = useCallback((payload) => {
+    // Group reactions use group_message_id; direct chat reactions use message_id
+    const msgId = payload.group_message_id || payload.message_id
+    const { user_id, emoji } = payload
+    if (import.meta.env.DEV) {
+      console.log("[GroupReactionRealtime] DELETE", { group_message_id: payload.group_message_id, user_id, emoji })
+    }
+    if (!msgId) return
+    updateReactionInState(msgId, { user_id, emoji }, true)
+  }, [updateReactionInState])
+
+  useEffect(() => {
+    handleReactionInsertRef.current = handleReactionInsert
+    handleReactionDeleteRef.current = handleReactionDelete
+  }, [handleReactionInsert, handleReactionDelete])
+
+  const handleReactionSelect = useCallback(async (messageId, emoji) => {
+    if (!contextUser?.id || !activeGroupId) return
+
+    if (import.meta.env.DEV) {
+      console.log("[GroupReactionInsert] Selecting emoji", { group_message_id: messageId, emoji, user_id: contextUser.id })
+    }
+
+    try {
+      // 1. Check local state first to avoid a round-trip DB query (avoids 409 conflicts)
+      const localReactions = groupMessageReactionsRef.current[messageId] || []
+      const localExisting = localReactions.find(
+        (r) => r.user_id === contextUser.id
+      )
+
+      if (localExisting) {
+        const oldEmoji = localExisting.emoji
+
+        // Optimistically remove old reaction from state
+        handleReactionDelete({ group_message_id: messageId, user_id: contextUser.id, emoji: oldEmoji })
+
+        if (import.meta.env.DEV) {
+          console.log("[GroupReactionDelete] Removing old reaction", { group_message_id: messageId, emoji: oldEmoji, user_id: contextUser.id })
+        }
+
+        // Blind delete — use group_message_id FK
+        const { error: deleteError } = await supabase
+          .from("message_reactions")
+          .delete()
+          .eq("group_message_id", messageId)
+          .eq("user_id", contextUser.id)
+          .eq("emoji", oldEmoji)
+
+        if (deleteError) {
+          // Rollback optimistic delete
+          handleReactionInsert({ group_message_id: messageId, user_id: contextUser.id, emoji: oldEmoji })
+          showToastError("Failed to update reaction")
+          return
+        }
+
+        // Toggle OFF — same emoji, we're done
+        if (oldEmoji === emoji) return
+      }
+
+      // 2. Insert new reaction using group_message_id (NOT message_id)
+      const optimistic = {
+        id: `temp-${Date.now()}`,
+        group_message_id: messageId,
+        user_id: contextUser.id,
+        emoji
+      }
+
+      handleReactionInsert(optimistic)
+
+      if (import.meta.env.DEV) {
+        console.log("[GroupReactionInsert] Inserting", { group_message_id: messageId, emoji, user_id: contextUser.id })
+      }
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("message_reactions")
+        .insert({ group_message_id: messageId, user_id: contextUser.id, emoji })
+        .select()
+        .single()
+
+      if (insertError) {
+        // Rollback optimistic insert
+        handleReactionDelete(optimistic)
+        if (insertError.code === '23505') {
+          // Conflict: reaction already exists, fetch fresh state
+          console.warn("[GroupReactionInsert] Conflict — re-fetching reactions", { group_message_id: messageId })
+          await fetchGroupMessageReactions([messageId])
+        } else {
+          console.error("[GroupReactionInsert] Insert failed:", insertError)
+          showToastError("Failed to add reaction")
+        }
+      } else {
+        // Replace temp optimistic with real DB row
+        handleReactionDelete(optimistic)
+        handleReactionInsert(inserted)
+        if (import.meta.env.DEV) {
+          console.log("[GroupReactionInsert] Inserted OK", { group_message_id: inserted.group_message_id, emoji: inserted.emoji, user_id: inserted.user_id })
+        }
+      }
+    } catch (err) {
+      console.error("[GroupReactionInsert] Exception:", err)
+      showToastError("Failed to update reaction")
+    }
+  }, [contextUser?.id, activeGroupId, fetchGroupMessageReactions, handleReactionDelete, handleReactionInsert, showToastError])
+
+  const handleReactToMessage = useCallback((message) => {
+    setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
+  }, [])
 
   const logGroupInteraction = useCallback((type, messageId) => {
     if (import.meta.env.DEV) {
@@ -1470,7 +1882,7 @@ export default function GroupChat() {
         console.log("[GroupReaction]", { messageId: message.id })
       }
       logGroupInteraction("react", message.id)
-      handleReactToMessage()
+      handleReactToMessage(message)
     },
     [handleReactToMessage, logGroupInteraction]
   )
@@ -1507,21 +1919,21 @@ export default function GroupChat() {
     [logGroupInteraction]
   )
 
-  useEffect(() => {
-    actionsRef.current = {
-      onReply: handleReplyMessage,
-      onCopy: handleCopyMessageAction,
-      onForward: handleForwardMessageAction,
-      onReact: handleReactMessage,
-      onDelete: handleDeleteMessageAction,
-      onInfo: handleMessageInfoAction
-    }
-  }, [
+  const actions = useMemo(() => ({
+    onReply: handleReplyMessage,
+    onCopy: handleCopyMessageAction,
+    onForward: handleForwardMessageAction,
+    onReact: handleReactMessage,
+    onAddReaction: handleReactionSelect,
+    onDelete: handleDeleteMessageAction,
+    onInfo: handleMessageInfoAction
+  }), [
     handleCopyMessageAction,
     handleDeleteMessageAction,
     handleForwardMessageAction,
     handleMessageInfoAction,
     handleReactMessage,
+    handleReactionSelect,
     handleReplyMessage
   ])
 
@@ -1540,15 +1952,22 @@ export default function GroupChat() {
         onInfo
       }) {
         const [menuOpen, setMenuOpen] = useState(false)
-        const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 })
+        const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0, anchorHeight: 0 })
 
         const handleOpenMenu = (event) => {
           event.preventDefault()
           event.stopPropagation()
-          const x = event.clientX || (event.touches && event.touches[0]?.clientX) || 0
-          const y = event.clientY || (event.touches && event.touches[0]?.clientY) || 0
-          setMenuPosition({ x, y })
+          const rect = event.currentTarget.getBoundingClientRect();
+          const isOnRightHalf = rect.left > window.innerWidth / 2;
+          const x = isOnRightHalf ? rect.right - 90 : rect.left + 90;
+          const y = rect.bottom + 5;
+          const anchorHeight = rect.height;
+          setMenuPosition({ x, y, anchorHeight })
           setMenuOpen(true)
+
+          // Ensure the message and its new menu are visible in the chat area
+          event.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
           if (import.meta.env.DEV) {
             console.log("[GroupMenuOpen]", { messageId: message.id })
           }
@@ -1594,8 +2013,7 @@ export default function GroupChat() {
 
                 <button
                   type="button"
-                  onPointerDown={handleOpenMenu}
-                  onClick={(event) => event.preventDefault()}
+                  onClick={handleOpenMenu}
                   className="absolute right-0 -top-8 z-20 inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100 dark:hover:bg-slate-800 opacity-70 group-hover:opacity-100"
                   title="More options"
                   aria-label="Open message options"
@@ -1607,19 +2025,9 @@ export default function GroupChat() {
                   <DropdownMenu
                     x={menuPosition.x}
                     y={menuPosition.y}
+                    anchorHeight={menuPosition.anchorHeight}
                     onClose={() => setMenuOpen(false)}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onReply(message)
-                        setMenuOpen(false)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <Reply className="h-3.5 w-3.5" />
-                      Reply
-                    </button>
 
                     <button
                       type="button"
@@ -1645,17 +2053,6 @@ export default function GroupChat() {
                       Forward
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onReact(message)
-                        setMenuOpen(false)
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                    >
-                      <SmilePlus className="h-3.5 w-3.5" />
-                      React
-                    </button>
 
                     {isOwn && (
                       <button
@@ -1919,8 +2316,8 @@ export default function GroupChat() {
   useEffect(() => {
     if (!contextUser?.id) return
 
-    fetchGroups({ silent: groups.length > 0 })
-  }, [contextUser?.id, fetchGroups, groups.length])
+    fetchGroups({ silent: groupsRef.current.length > 0 || hasFetchedGroupsRef.current })
+  }, [contextUser?.id, fetchGroups])
 
   useEffect(() => {
     if (!contextUser?.id) return
@@ -1950,6 +2347,10 @@ export default function GroupChat() {
       }
 
       if (lastMessageAt > hiddenAt) {
+        if (processedGroupUnhideRef.current.has(group.id)) {
+          return
+        }
+        processedGroupUnhideRef.current.add(group.id)
         if (import.meta.env.DEV) {
           console.log("[GroupSidebarSync]", { groupId: group.id, reason: "refresh_unhide" })
         }
@@ -2108,11 +2509,23 @@ export default function GroupChat() {
       clearGroupSelection(activeGroupId, "missing")
     }
   }, [activeGroupId, clearGroupSelection, groups])
-
   useEffect(() => {
     if (!activeGroupId || !groupKey) return
+
+    // Immediately clear messages and read receipts to ensure a fresh, instant render of the newest batch
+    setMessages([])
+    setMessageReadsById({})
+    setGroupMessageReactions({})
+    setActiveReactionPickerMessageId(null)
+    setMessagePage(0)
+    setHasMoreMessages(true)
+    isInitialScrollDoneRef.current = false
+    pendingScrollToBottomRef.current = false
+    wasAtBottomRef.current = true
+    if (visibilityRafRef.current) cancelAnimationFrame(visibilityRafRef.current)
+    setIsMessageListReady(false)
+
     const cachedMessages = useChatStore.getState().groupMessagesByGroupId[activeGroupId] || []
-    isRestoringMessageScrollRef.current = true
     fetchGroupMessages({ silent: cachedMessages.length > 0 })
   }, [activeGroupId, fetchGroupMessages, groupKey])
 
@@ -2332,15 +2745,22 @@ export default function GroupChat() {
             }
 
             if (groupPreferencesByIdRef.current[row.group_id]?.is_deleted === true) {
-              if (import.meta.env.DEV) {
-                console.log("[GroupSidebarSync]", { groupId: row.group_id, reason: "new_message_unhide" })
-              }
               void upsertGroupPreference(row.group_id, { is_deleted: false, is_archived: false })
             }
 
-            const placeholderContent = row.is_encrypted && row.encrypted_content && row.iv
-              ? "..."
-              : row.content || ""
+            // Hydrate BEFORE applying to state to prevent bubble size jitter
+            let finalContent = row.content || ""
+            if (row.is_encrypted && row.encrypted_content && row.iv && groupKey) {
+              try {
+                finalContent = await decrypt(row.encrypted_content, row.iv, groupKey)
+                if (import.meta.env.DEV) {
+                  console.log("[GroupRealtimeHydrated]", { id: row.id })
+                }
+              } catch (decryptError) {
+                console.warn("[GroupChat] Failed to decrypt realtime message:", decryptError)
+                finalContent = "[Unable to decrypt]"
+              }
+            }
 
             applyMessages((prev) => {
               if (prev.some((item) => item.id === row.id)) {
@@ -2351,36 +2771,13 @@ export default function GroupChat() {
                 ...prev,
                 {
                   ...row,
-                  content: placeholderContent,
+                  content: finalContent,
                   profiles: getMemberProfileById(row.sender_id)
                 }
               ]
             })
 
             messageIdsRef.current.add(row.id)
-
-            if (row.is_encrypted && row.encrypted_content && row.iv) {
-              void (async () => {
-                let content = ""
-                try {
-                  content = await decrypt(row.encrypted_content, row.iv, groupKey)
-                } catch (decryptError) {
-                  console.warn("[GroupChat] Failed to decrypt realtime message:", decryptError)
-                  content = "[Unable to decrypt]"
-                }
-
-                applyMessages((prev) =>
-                  prev.map((item) =>
-                    item.id === row.id
-                      ? {
-                          ...item,
-                          content
-                        }
-                      : item
-                  )
-                )
-              })()
-            }
 
             if (row.sender_id !== contextUser?.id) {
               await markGroupMessagesAsRead([row])
@@ -2422,14 +2819,66 @@ export default function GroupChat() {
               prev.map((item) =>
                 item.id === updated.id
                   ? {
-                      ...item,
-                      ...updated,
-                      content,
-                      profiles: item.profiles || getMemberProfileById(updated.sender_id)
-                    }
+                    ...item,
+                    ...updated,
+                    content,
+                    profiles: item.profiles || getMemberProfileById(updated.sender_id)
+                  }
                   : item
               )
             )
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "message_reactions",
+          // Listen for rows where group_message_id matches tracked group messages
+          filter: `group_message_id=in.(${[...messageIdsRef.current].join(",")})`
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const row = payload.new
+            if (!row?.group_message_id) return
+            if (import.meta.env.DEV) {
+              console.log("[GroupReactionRealtime] INSERT", { group_message_id: row.group_message_id, emoji: row.emoji, user_id: row.user_id })
+            }
+            handleReactionInsertRef.current?.(row)
+          } else if (payload.eventType === "DELETE") {
+            const row = payload.old
+            // Supabase DELETE events only return the PK (id) unless REPLICA IDENTITY FULL is set.
+            // If group_message_id is present, use it directly.
+            // Otherwise, look up the reaction in local state by id.
+            if (row?.group_message_id) {
+              if (import.meta.env.DEV) {
+                console.log("[GroupReactionRealtime] DELETE (full)", { group_message_id: row.group_message_id, emoji: row.emoji, user_id: row.user_id })
+              }
+              handleReactionDeleteRef.current?.(row)
+            } else if (row?.id) {
+              // Find the reaction in local state by its id
+              const reactionsMap = groupMessageReactionsRef.current
+              let found = null
+              let foundMsgId = null
+              for (const [msgId, reactions] of Object.entries(reactionsMap)) {
+                const match = reactions.find((r) => r.id === row.id)
+                if (match) {
+                  found = match
+                  foundMsgId = msgId
+                  break
+                }
+              }
+              if (found && foundMsgId) {
+                if (import.meta.env.DEV) {
+                  console.log("[GroupReactionRealtime] DELETE (id-lookup)", { group_message_id: foundMsgId, emoji: found.emoji, user_id: found.user_id })
+                }
+                handleReactionDeleteRef.current?.({ group_message_id: foundMsgId, user_id: found.user_id, emoji: found.emoji })
+              } else if (import.meta.env.DEV) {
+                console.log("[GroupReactionRealtime] DELETE — reaction not found in local state for id:", row.id)
+              }
+            }
           }
         }
       )
@@ -2472,9 +2921,13 @@ export default function GroupChat() {
         },
         (payload) => {
           const row = payload.new
-          console.log("[GroupChat] group_message_reads INSERT:", row)
+          if (import.meta.env.DEV) {
+            console.log("[GroupChat] group_message_reads INSERT:", row)
+          }
           if (!row?.message_id || !messageIdsRef.current.has(row.message_id)) {
-            console.log("[GroupChat] message_id not tracked, ignoring")
+            if (import.meta.env.DEV) {
+              console.log("[GroupChat] message_id not tracked, ignoring")
+            }
             return
           }
 
@@ -2482,12 +2935,16 @@ export default function GroupChat() {
             const current = prev[row.message_id] || []
             const hasExisting = current.some((entry) => entry.user_id === row.user_id)
             if (hasExisting) {
-              console.log("[GroupChat] user already read this message")
+              if (import.meta.env.DEV) {
+                console.log("[GroupChat] user already read this message")
+              }
               return prev
             }
 
             const profile = getMemberProfileById(row.user_id)
-            console.log("[GroupChat] Adding read entry for message", row.message_id, "user", row.user_id)
+            if (import.meta.env.DEV) {
+              console.log("[GroupChat] Adding read entry for message", row.message_id, "user", row.user_id)
+            }
             return {
               ...prev,
               [row.message_id]: [
@@ -2512,28 +2969,42 @@ export default function GroupChat() {
         readReceiptsChannelRef.current = null
       }
     }
-  }, [getMemberProfileById])
+  }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!activeGroupId) return
+    if (isPrependingOlderRef.current) return
 
-    if (isRestoringMessageScrollRef.current) {
-      const restoreKey = `groupchat-messages-${activeGroupId}`
-      const restoreTop = useNavigationStore.getState().scrollPositions[restoreKey] || 0
-      if (restoreTop > 0 && messageListRef.current) {
-        messageListRef.current.scrollTop = restoreTop
-      }
-      isRestoringMessageScrollRef.current = false
+    const container = messageListRef.current
+    if (!container) return
+
+    if (messages.length === 0) {
+      setIsMessageListReady(false)
       return
     }
 
-    if (isPrependingOlderRef.current) {
+    if (!isInitialScrollDoneRef.current) {
+      // Position scroll at bottom BEFORE making visible — user never sees the top
+      container.scrollTop = container.scrollHeight
+      bottomRef.current?.scrollIntoView({ block: "end" })
+      isInitialScrollDoneRef.current = true
+      wasAtBottomRef.current = true
+
+      // Delay visibility by 1 RAF so browser can stabilize dynamic heights
+      // (PostPreview, images, decrypted content) before first paint
+      if (visibilityRafRef.current) cancelAnimationFrame(visibilityRafRef.current)
+      visibilityRafRef.current = requestAnimationFrame(() => {
+        visibilityRafRef.current = null
+        setIsMessageListReady(true)
+      })
       return
     }
 
-    requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "instant", block: "end" })
-    })
+    // Use wasAtBottomRef (tracked BEFORE this render) so height change doesn't fool the check
+    if (wasAtBottomRef.current || pendingScrollToBottomRef.current) {
+      container.scrollTop = container.scrollHeight
+      pendingScrollToBottomRef.current = false
+    }
   }, [activeGroupId, messages.length])
 
   useEffect(() => {
@@ -2586,7 +3057,25 @@ export default function GroupChat() {
     setGroupActionsOpen(false)
     setMemberSearchQuery("")
     setMemberSearchResults([])
+    isInitialScrollDoneRef.current = false
+    pendingScrollToBottomRef.current = false
+    wasAtBottomRef.current = true
+    if (visibilityRafRef.current) cancelAnimationFrame(visibilityRafRef.current)
+    setIsMessageListReady(false)
   }, [activeGroupId])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setActiveMenuMessage(null)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   const postCache = usePostCacheStore((state) => state.posts)
 
@@ -2605,23 +3094,10 @@ export default function GroupChat() {
     setActiveGroupIdCache(activeGroupId)
   }, [activeGroupId, setActiveGroupIdCache])
 
-  const renderedMessages = useMemo(() => {
-    return messages.map((message) => {
-      const isOwn = message.sender_id === contextUser?.id
-      const sender = message.profiles || getMemberProfileById(message.sender_id)
+  if (import.meta.env.DEV) {
+    console.log("[GroupParentRender]")
+  }
 
-      return (
-        <GroupMessageRow
-          key={message.id}
-          message={message}
-          isOwn={isOwn}
-          sender={sender}
-          messageReadsByIdRef={messageReadsByIdRef}
-          actionsRef={actionsRef}
-        />
-      )
-    })
-  }, [contextUser?.id, getMemberProfileById, messages])
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-144px)] min-w-0 w-full max-w-[1300px] flex-col overflow-hidden px-2 pt-1 md:px-3 dark:text-slate-100">
@@ -2681,9 +3157,8 @@ export default function GroupChat() {
                     <button
                       type="button"
                       onClick={() => setActiveGroupId(group.id)}
-                      className={`w-full border-b border-slate-200 dark:border-slate-700 px-3 py-2.5 pr-10 text-left transition-all duration-200 ${
-                        isActive ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"
-                      }`}
+                      className={`w-full border-b border-slate-200 dark:border-slate-700 px-3 py-2.5 pr-10 text-left transition-all duration-200 ${isActive ? "bg-slate-100 dark:bg-slate-800" : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                        }`}
                     >
                       <div className="flex items-center gap-2.5">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-200 text-sm font-semibold text-yellow-700">
@@ -2912,30 +3387,21 @@ export default function GroupChat() {
                 </div>
               </div>
 
-              <div
-                ref={messageListRef}
+              <GroupMessageList
+                messages={messages}
+                loadingMessages={loadingMessages}
+                loadingOlderMessages={loadingOlderMessages}
+                messageListRef={messageListRef}
                 onScroll={handleMessageListScroll}
-                className="message-list min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-4 py-4"
-              >
-                {loadingOlderMessages && (
-                  <div className="mb-2 text-center text-xs text-slate-500 dark:text-slate-400">Loading older messages...</div>
-                )}
-                {loadingMessages ? (
-                  <div className="flex h-full items-center justify-center">
-                    <p className="text-slate-500 dark:text-slate-400">Loading messages...</p>
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div className="flex h-full items-center justify-center">
-                    <p className="text-slate-500 dark:text-slate-400">No messages yet. Start the conversation!</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {renderedMessages}
-                  </div>
-                )}
-
-                <div ref={bottomRef} />
-              </div>
+                bottomRef={bottomRef}
+                isMessageListReady={isMessageListReady}
+                contextUser={contextUser}
+                getMemberProfileById={getMemberProfileById}
+                messageReadsById={messageReadsById}
+                groupMessageReactions={groupMessageReactions}
+                activeReactionPickerMessageId={activeReactionPickerMessageId}
+                actions={actions}
+              />
 
               <div className="sticky bottom-0 z-10 shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
                 {replyTarget && (
@@ -2946,8 +3412,8 @@ export default function GroupChat() {
                           Replying to {getDisplayName(replyTarget.profiles || getMemberProfileById(replyTarget.sender_id))}
                         </p>
                         <p className="truncate text-xs text-slate-500 dark:text-slate-400 opacity-70">
-                          {replyTarget.type === "post" 
-                            ? getPostPreview(replyTarget.post || postCache[replyTarget.post_id]) 
+                          {replyTarget.type === "post"
+                            ? getPostPreview(replyTarget.post || postCache[replyTarget.post_id])
                             : (replyTarget.content || "[message]")}
                         </p>
                       </div>
@@ -2992,6 +3458,7 @@ export default function GroupChat() {
                   </button>
                 </div>
               </div>
+
             </>
           ) : (
             <div className="flex h-full items-center justify-center">
@@ -3116,22 +3583,22 @@ export default function GroupChat() {
       {messageInfoMessageId && (() => {
         const msg = messages.find((m) => m.id === messageInfoMessageId)
         if (!msg) return null
-        
+
         // Only show delivery/read details for sender's own messages
         const isOwnMessage = msg.sender_id === contextUser?.id
         const reads = messageReadsById[msg.id] || []
         const readUserIds = new Set(reads.map(r => r.user_id))
-        
+
         // Get members who haven't read (excluding sender)
         const deliveredMembers = isOwnMessage
           ? groupMembers.filter(m => m.user_id !== contextUser?.id && !readUserIds.has(m.user_id))
           : []
-        
+
         // Get members who have read (excluding sender)
         const readMembers = isOwnMessage
           ? reads.filter(r => r.user_id !== contextUser?.id)
           : []
-        
+
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-backdrop)] p-4">
             <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 p-6 shadow-xl">
@@ -3176,7 +3643,7 @@ export default function GroupChat() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Read By Section */}
                     {readMembers.length > 0 && (
                       <div>
@@ -3209,7 +3676,7 @@ export default function GroupChat() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* No reads yet message */}
                     {deliveredMembers.length === 0 && readMembers.length === 0 && (
                       <p className="text-slate-500 dark:text-slate-400 text-sm">No members yet in this group.</p>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, memo } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { supabase } from "../lib/supabase"
@@ -45,6 +45,30 @@ const devWarn = (...args) => {
   }
 }
 
+const ReactionPill = memo(({ item, messageId, onOpenModal }) => {
+  const { emoji, count, reactedByCurrentUser, users } = item
+
+  // Tooltip showing names
+  const tooltipText = users.slice(0, 5).map(u => u.isCurrentUser ? "You" : u.name).join(", ") + (users.length > 5 ? ` and ${users.length - 5} others` : "")
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onOpenModal(messageId)
+      }}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] transition-all duration-200 ${reactedByCurrentUser
+        ? "border-[var(--chat-accent)] bg-[var(--chat-accent-soft)] text-[var(--chat-accent)] shadow-sm font-medium"
+        : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)] hover:border-[var(--chat-text-muted)]"
+        }`}
+      title={tooltipText}
+    >
+      <span>{emoji}</span>
+      <span className={reactedByCurrentUser ? "text-[var(--chat-accent)]" : "text-[var(--chat-text)]"}>{count}</span>
+    </button>
+  )
+})
 
 export default function Chat() {
   const REACTION_EMOJIS = ["\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F62E}", "\u{1F622}", "\u{1F621}"]
@@ -168,13 +192,70 @@ export default function Chat() {
   const [groupSelectedImageComposerUrl, setGroupSelectedImageComposerUrl] = useState('')
   const [displayGroupImagePreviewUrl, setDisplayGroupImagePreviewUrl] = useState(null) // For viewing image modal
   const [groupLoadedImageUrls, setGroupLoadedImageUrls] = useState({}) // Cache: messageId -> signed URL
-  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0, anchorHeight: 0 });
 
   // Group chat features: message actions menu
 
   const [activeGroupEmojiPickerMessageId, setActiveGroupEmojiPickerMessageId] = useState(null)
   const [groupMessageInfoModalId, setGroupMessageInfoModalId] = useState(null)
   const [groupTypingIndicators, setGroupTypingIndicators] = useState({}) // userId -> timestamp
+
+  const reactionsByMessageId = useMemo(() => {
+    const map = { direct: {}, group: {} }
+    let totalMessagesWithReactions = 0
+
+    const buildSummary = (rows) => {
+      if (!rows || rows.length === 0) return []
+      const byEmoji = new Map()
+
+      rows.forEach((row) => {
+        const emoji = row.emoji
+        if (!byEmoji.has(emoji)) {
+          byEmoji.set(emoji, { emoji, count: 0, users: [], reactedByCurrentUser: false })
+        }
+        const group = byEmoji.get(emoji)
+
+        const profile = row.profiles || profilesById[row.user_id] || null
+        const name = profile?.name || profile?.username || "Unknown"
+
+        group.count++
+        group.users.push({
+          reactionId: row.id,
+          userId: row.user_id,
+          name: name,
+          avatarUrl: profile?.avatar_url || null,
+          isCurrentUser: row.user_id === contextUser?.id
+        })
+        if (row.user_id === contextUser?.id) {
+          group.reactedByCurrentUser = true
+        }
+      })
+
+      return Array.from(byEmoji.values())
+    }
+
+    // Direct Messages
+    messages.forEach((msg) => {
+      const summary = buildSummary(msg.reactions)
+      if (summary.length > 0) {
+        map.direct[msg.id] = summary
+        totalMessagesWithReactions++
+      }
+    })
+
+    // Group Messages
+    Object.entries(groupMessageReactions).forEach(([msgId, rows]) => {
+      const summary = buildSummary(rows)
+      if (summary.length > 0) {
+        map.group[msgId] = summary
+        totalMessagesWithReactions++
+      }
+    })
+
+    if (import.meta.env.DEV) console.log("[ReactionSummaryBuilt]", totalMessagesWithReactions)
+    return map
+  }, [messages, groupMessageReactions, profilesById, contextUser?.id])
+
   const [isMobileView, setIsMobileView] = useState(() => window.matchMedia("(max-width: 767px)").matches)
 
   const bottomRef = useRef(null)
@@ -223,6 +304,17 @@ export default function Chat() {
     startY: 0,
     triggered: false,
     element: null,
+  })
+
+  // Refs for stable state access in callbacks
+  const messagesRef = useRef([])
+  const groupMessageReactionsRef = useRef({})
+  const chatModeRef = useRef('direct')
+
+  useEffect(() => {
+    messagesRef.current = messages
+    groupMessageReactionsRef.current = groupMessageReactions
+    chatModeRef.current = chatMode
   })
 
   const requestedConversationId = routeConversationId || searchParams.get("conversation")
@@ -1072,25 +1164,31 @@ export default function Chat() {
     setActiveConversationId(conversationId || null)
   }, [navigate])
 
-  const handleOpenMenu = (e, messageId) => {
+  const handleOpenMenu = (e, messageId, isSentOverride = null) => {
     e.stopPropagation();
     e.preventDefault();
 
-    // Support both mouse and touch events
-    const x = e.clientX || (e.touches && e.touches[0].clientX) || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-    const y = e.clientY || (e.touches && e.touches[0].clientY) || (e.changedTouches && e.changedTouches[0].clientY) || 0;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isSent = isSentOverride !== null ? isSentOverride : e.currentTarget.closest('.justify-end') !== null;
+    
+    const x = isSent ? rect.right - 90 : rect.left + 90;
+    const y = rect.bottom + 5;
+    const anchorHeight = rect.height;
 
-    setMenuPosition({ x, y });
+    setMenuPosition({ x, y, anchorHeight });
     setActiveMenuId(messageId);
+    
+    // Ensure the message and its new menu are visible in the chat area
+    e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
-  const handleOpenMessageMenu = (e, messageId) => {
-    handleOpenMenu(e, messageId);
+  const handleOpenMessageMenu = (e, messageId, isSent) => {
+    handleOpenMenu(e, messageId, isSent);
     setActiveReactionPickerMessageId(null)
   }
 
-  const handleOpenGroupMessageMenu = (e, messageId) => {
-    handleOpenMenu(e, messageId);
+  const handleOpenGroupMessageMenu = (e, messageId, isSent) => {
+    handleOpenMenu(e, messageId, isSent);
     setActiveGroupEmojiPickerMessageId(null)
   }
 
@@ -1104,11 +1202,14 @@ export default function Chat() {
         clearTimeout(directLongPressTimeoutRef.current)
       }
 
-      const x = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-      const y = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const isOnRightHalf = rect.left > window.innerWidth / 2;
+      const x = isOnRightHalf ? rect.right - 90 : rect.left + 90;
+      const y = rect.bottom + 5;
+      const anchorHeight = rect.height;
 
       directLongPressTimeoutRef.current = setTimeout(() => {
-        setMenuPosition({ x, y })
+        setMenuPosition({ x, y, anchorHeight })
         setActiveMenuId(messageId)
         setActiveReactionPickerMessageId(null)
       }, 400)
@@ -1133,11 +1234,14 @@ export default function Chat() {
         clearTimeout(groupLongPressTimeoutRef.current)
       }
 
-      const x = e.clientX || (e.touches && e.touches[0].clientX) || 0;
-      const y = e.clientY || (e.touches && e.touches[0].clientY) || 0;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const isOnRightHalf = rect.left > window.innerWidth / 2;
+      const x = isOnRightHalf ? rect.right - 90 : rect.left + 90;
+      const y = rect.bottom + 5;
+      const anchorHeight = rect.height;
 
       groupLongPressTimeoutRef.current = setTimeout(() => {
-        setMenuPosition({ x, y })
+        setMenuPosition({ x, y, anchorHeight })
         setActiveMenuId(messageId)
         setActiveGroupEmojiPickerMessageId(null)
       }, 400)
@@ -1413,21 +1517,69 @@ export default function Chat() {
     )
   }, [])
 
-  const handleReactionInsert = useCallback((newData) => {
-    if (!newData?.message_id) {
-      devWarn("[Chat] Invalid insert data, missing message_id:", newData)
-      return
-    }
-    addReactionToState(newData)
-  }, [addReactionToState])
-
   const handleReactionDelete = useCallback((oldData) => {
-    if (!oldData?.message_id) {
-      devWarn("[Chat] Invalid delete data, missing message_id:", oldData)
+    if (import.meta.env.DEV) console.log("[ReactionRealtime] DELETE", oldData)
+    const { message_id, group_message_id, user_id, emoji } = oldData
+
+    if (group_message_id) {
+      // GROUP reaction — update groupMessageReactions state
+      setGroupMessageReactions((prev) => {
+        const existing = prev[group_message_id] || []
+        const updated = existing.filter((r) => !(r.user_id === user_id && r.emoji === emoji))
+        if (existing.length === updated.length) return prev
+        return { ...prev, [group_message_id]: updated.length > 0 ? updated : undefined }
+      })
       return
     }
-    removeReactionFromState(oldData)
+
+    if (!message_id) return
+
+    // DIRECT reaction — update messages state
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) => {
+        if (msg.id !== message_id) return msg
+        return {
+          ...msg,
+          reactions: (msg.reactions || []).filter(
+            (r) => !(r.user_id === user_id && r.emoji === emoji)
+          )
+        }
+      })
+    )
   }, [])
+
+  const handleReactionInsert = useCallback((newData) => {
+    if (import.meta.env.DEV) console.log("[ReactionRealtime] INSERT", newData)
+    const { message_id, group_message_id, user_id, emoji } = newData
+
+    if (group_message_id) {
+      // GROUP reaction — update groupMessageReactions state
+      setGroupMessageReactions((prev) => {
+        const existing = prev[group_message_id] || []
+        const alreadyHas = existing.some((r) => r.user_id === user_id && r.emoji === emoji)
+        if (alreadyHas) return prev
+        return { ...prev, [group_message_id]: [...existing, newData] }
+      })
+      return
+    }
+
+    if (!message_id) return
+
+    // DIRECT reaction — update messages state
+    setMessages((prevMessages) =>
+      prevMessages.map((msg) => {
+        if (msg.id !== message_id) return msg
+        const existing = msg.reactions || []
+        const alreadyHas = existing.some((r) => r.user_id === user_id && r.emoji === emoji)
+        if (alreadyHas) return msg
+        const profiles = user_id === contextUser?.id ? currentUserProfile : null
+        return {
+          ...msg,
+          reactions: [...existing, { ...newData, profiles }]
+        }
+      })
+    )
+  }, [contextUser?.id, currentUserProfile])
 
   const updateReactionInState = useCallback((updatedReaction) => {
     if (!updatedReaction?.message_id || !updatedReaction?.id) {
@@ -2252,6 +2404,7 @@ export default function Chat() {
           table: "message_reactions"
         },
         (payload) => {
+          console.log("[ReactionRealtimeReceived]", payload)
           const { eventType, new: newData, old: oldData } = payload
 
           if (eventType === "INSERT") {
@@ -2259,7 +2412,9 @@ export default function Chat() {
           } else if (eventType === "DELETE") {
             handleReactionDelete(oldData)
           } else if (eventType === "UPDATE") {
-            updateReactionInState(newData)
+            // Unify updates to just re-insert/delete flow for simplicity if needed,
+            // or handle as update. Standard field is 'emoji'.
+            handleReactionInsert(newData)
           }
         }
       )
@@ -3372,126 +3527,130 @@ export default function Chat() {
     }
   }
 
-  const handleReactionSelect = async (messageId, emoji) => {
-    if (!messageId || !emoji || !contextUser?.id) {
-      return
+  const handleReactionSelect = useCallback(async (messageId, emoji, source = "unknown") => {
+    if (!messageId || !emoji || !contextUser?.id) return
+
+    const isGroupMode = chatModeRef.current === 'group' || chatModeRef.current === 'groups'
+
+    if (import.meta.env.DEV) {
+      console.log("[ReactionMutationStart]", { 
+        messageId, 
+        emoji, 
+        source,
+        userId: contextUser.id,
+        chatMode: chatModeRef.current,
+        isGroupMode
+      })
     }
 
     try {
-      const { data: existingReaction, error: existingError } = await supabase
-        .from("message_reactions")
-        .select("id, message_id, user_id, emoji")
-        .eq("message_id", messageId)
-        .eq("user_id", contextUser.id)
-        .maybeSingle()
+      // 1. Identify existing reaction from LOCAL STATE via Ref
+      const currentReactions = !isGroupMode
+        ? (messagesRef.current.find(m => m.id === messageId)?.reactions || [])
+        : (groupMessageReactionsRef.current[messageId] || [])
 
-      if (existingError) {
-        console.error("[Chat] Failed to check existing reaction:", existingError)
-        setError("Failed to add reaction")
-        return
+      const existing = currentReactions.find(r => r.user_id === contextUser.id)
+
+      if (isGroupMode && import.meta.env.DEV) {
+        console.log("[GroupReactionExisting]", { messageId, currentReactions, existing })
       }
 
-      if (existingReaction) {
-        updateReactionInState({
-          ...existingReaction,
-          emoji
-        })
+      if (existing) {
+        const oldEmoji = existing.emoji
+        if (import.meta.env.DEV) console.log("[ReactionMutation][ExistingFound]", { oldEmoji, newEmoji: emoji, isGroupMode })
 
-        const { error: updateError } = await supabase
-          .from("message_reactions")
-          .update({ emoji })
-          .eq("id", existingReaction.id)
-
-        if (updateError) {
-          console.error("[Chat] Failed to update reaction:", updateError)
-          setError("Failed to update reaction")
-          updateReactionInState(existingReaction)
-          return
+        if (isGroupMode) {
+          // GROUP: state + DB both use group_message_id
+          handleReactionDelete({ group_message_id: messageId, user_id: contextUser.id, emoji: oldEmoji })
+          await supabase
+            .from("message_reactions")
+            .delete()
+            .eq("group_message_id", messageId)
+            .eq("user_id", contextUser.id)
+            .eq("emoji", oldEmoji)
+        } else {
+          // DIRECT: unchanged — uses message_id
+          handleReactionDelete({ message_id: messageId, user_id: contextUser.id, emoji: oldEmoji })
+          await supabase
+            .from("message_reactions")
+            .delete()
+            .match({ message_id: messageId, user_id: contextUser.id })
         }
 
-        await broadcastReactionEvent("UPDATE", {
-          ...existingReaction,
-          emoji
-        })
-      } else {
-        const optimisticReaction = {
-          id: `temp-${contextUser.id}-${messageId}-${Date.now()}`,
-          message_id: messageId,
+        if (oldEmoji === emoji) {
+          setActiveReactionPickerMessageId(null)
+          setActiveGroupEmojiPickerMessageId(null)
+          return
+        }
+      }
+
+      // 2. Insert new reaction — payload differs by mode
+      if (isGroupMode) {
+        // GROUP MODE: group_message_id only — no message_id (avoids 23503 FK violation)
+        const optimistic = {
+          id: `temp-${Date.now()}`,
+          group_message_id: messageId,
           user_id: contextUser.id,
           emoji
         }
+        handleReactionInsert(optimistic)
 
-        addReactionToState(optimisticReaction)
+        const groupPayload = { group_message_id: messageId, user_id: contextUser.id, emoji }
+        if (import.meta.env.DEV) console.log("[GroupReactionPayload]", groupPayload)
 
-        const { data: insertedReaction, error: insertError } = await supabase
+        const { data: inserted, error: insertError } = await supabase
           .from("message_reactions")
-          .insert({
-            message_id: messageId,
-            user_id: contextUser.id,
-            emoji
-          })
-          .select("id, message_id, user_id, emoji")
+          .insert(groupPayload)
+          .select()
           .single()
 
         if (insertError) {
-          console.error("[Chat] Failed to add reaction:", insertError)
-          setError("Failed to add reaction")
-          removeReactionFromState(optimisticReaction)
-          return
+          console.error("[ReactionMutation][GroupInsertError]", insertError)
+          handleReactionDelete(optimistic)
+          if (insertError.code !== '23505') {
+            setError("Failed to add reaction")
+          }
+        } else {
+          if (import.meta.env.DEV) console.log("[ReactionMutation][GroupInsertSuccess]", inserted)
+          handleReactionDelete(optimistic)
+          handleReactionInsert(inserted)
         }
+      } else {
+        // DIRECT MODE: message_id only — unchanged
+        const optimistic = { 
+          id: `temp-${Date.now()}`, 
+          message_id: messageId, 
+          user_id: contextUser.id, 
+          emoji 
+        }
+        handleReactionInsert(optimistic)
 
-        removeReactionFromState(optimisticReaction)
-        addReactionToState(insertedReaction || optimisticReaction)
+        const { data: inserted, error: insertError } = await supabase
+          .from("message_reactions")
+          .insert({ message_id: messageId, user_id: contextUser.id, emoji })
+          .select()
+          .single()
 
-        await broadcastReactionEvent("INSERT", insertedReaction || optimisticReaction)
+        if (insertError) {
+          console.error("[ReactionMutation][InsertError]", insertError)
+          handleReactionDelete(optimistic)
+          if (insertError.code !== '23505') {
+            setError("Failed to add reaction")
+          }
+        } else {
+          if (import.meta.env.DEV) console.log("[ReactionMutation][InsertSuccess]", inserted)
+          handleReactionDelete(optimistic)
+          handleReactionInsert(inserted)
+        }
       }
 
       setActiveReactionPickerMessageId(null)
-    } catch (reactionError) {
-      console.error("[Chat] Reaction error:", reactionError)
-      setError("Failed to add reaction")
+      setActiveGroupEmojiPickerMessageId(null)
+    } catch (err) {
+      console.error("[ReactionMutation][Exception]", err)
     }
-  }
+  }, [contextUser?.id, handleReactionDelete, handleReactionInsert, setError])
 
-  const getReactionSummary = useCallback((messageId) => {
-    const message = messages.find((m) => m.id === messageId)
-    const rows = message?.reactions || []
-
-    const byEmoji = new Map()
-
-    rows.forEach((row) => {
-      const current = byEmoji.get(row.emoji) || { count: 0, users: [], reactedByCurrentUser: false }
-
-      const profileFromJoin = row.profiles || null
-      const fallbackProfile = profilesById[row.user_id] || null
-      const userName =
-        profileFromJoin?.name ||
-        profileFromJoin?.username ||
-        fallbackProfile?.name ||
-        fallbackProfile?.username ||
-        "Unknown"
-
-      current.count += 1
-      current.users.push({
-        reactionId: row.id,
-        userId: row.user_id,
-        name: userName,
-        avatarUrl: profileFromJoin?.avatar_url || fallbackProfile?.avatar_url || null,
-        isCurrentUser: row.user_id === contextUser?.id
-      })
-      if (row.user_id === contextUser?.id) {
-        current.reactedByCurrentUser = true
-      }
-      byEmoji.set(row.emoji, current)
-    })
-
-    return Array.from(byEmoji.entries()).map(([emoji, value]) => ({
-      emoji,
-      count: value.count,
-      users: value.users,
-      reactedByCurrentUser: value.reactedByCurrentUser
-    }))
-  }, [contextUser?.id, profilesById, messages])
 
   const handleReply = useCallback((message) => {
     setEditingMessage(null)
@@ -3879,31 +4038,51 @@ export default function Chat() {
     })
 
     try {
-      // Optimistically remove from UI first
-      const optimisticReaction = {
-        message_id: messageId,
-        user_id: userId,
-        emoji,
-        id: reactionId
-      }
+      const isGroupMode = chatModeRef.current === 'group' || chatModeRef.current === 'groups'
 
-      removeReactionFromState(optimisticReaction)
+      // Optimistically remove from UI first
+      const optimisticReaction = isGroupMode 
+        ? { group_message_id: messageId, user_id: userId, emoji, id: reactionId }
+        : { message_id: messageId, user_id: userId, emoji, id: reactionId }
+
+      if (isGroupMode) {
+        // Update group state
+        setGroupMessageReactions((prev) => {
+          const existing = prev[messageId] || []
+          const updated = existing.filter((r) => !(r.id === reactionId || (r.user_id === userId && r.emoji === emoji)))
+          return { ...prev, [messageId]: updated.length > 0 ? updated : undefined }
+        })
+      } else {
+        // Update direct state
+        removeReactionFromState(optimisticReaction)
+      }
 
       // Close modal immediately to show updated badges
       setReactionModalMessageId(null)
 
-      // Delete from Supabase with safe criteria
-      const { error: deleteError } = await supabase
-        .from("message_reactions")
-        .delete()
-        .eq("message_id", messageId)
-        .eq("user_id", userId)
-        .eq("emoji", emoji)
+      // Delete from Supabase
+      const query = supabase.from("message_reactions").delete().eq("user_id", userId).eq("emoji", emoji)
+      
+      if (isGroupMode) {
+        query.eq("group_message_id", messageId)
+      } else {
+        query.eq("message_id", messageId)
+      }
+
+      const { error: deleteError } = await query
 
       if (deleteError) {
         console.error("[Chat] Failed to remove reaction:", deleteError)
         setError("Failed to remove reaction")
-        addReactionToState(optimisticReaction)
+        // Rollback
+        if (isGroupMode) {
+          setGroupMessageReactions((prev) => ({
+            ...prev,
+            [messageId]: [...(prev[messageId] || []), optimisticReaction]
+          }))
+        } else {
+          addReactionToState(optimisticReaction)
+        }
       } else {
         devLog("[Chat] Reaction removed successfully")
         await broadcastReactionEvent("DELETE", optimisticReaction)
@@ -4886,31 +5065,28 @@ export default function Chat() {
       .subscribe()
 
     // Subscribe to message reactions in real-time
-    const reactionsChannel = supabase
+    const groupReactionsChannel = supabase
       .channel(`group-reactions-${group.id}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "group_message_reactions"
+          table: "message_reactions"
         },
         async (payload) => {
-          const { data: curMessages } = await supabase
-            .from('group_messages')
-            .select('id')
-            .eq('group_id', group.id)
-
-          if (curMessages && curMessages.length > 0) {
-            const messageIds = curMessages.map(m => m.id)
-            await fetchGroupMessageReactions(messageIds)
+          console.log("[ReactionRealtimeReceived]", payload)
+          if (payload.eventType === "INSERT") {
+            handleReactionInsert(payload.new)
+          } else if (payload.eventType === "DELETE") {
+            handleReactionDelete(payload.old)
           }
         }
       )
       .subscribe()
 
     groupMessagesChannelRef.current = channel
-    groupReactionsChannelRef.current = reactionsChannel
+    groupReactionsChannelRef.current = groupReactionsChannel
 
     // Subscribe to message reads (seen by) in real-time
     const readsChannel = supabase
@@ -4935,12 +5111,12 @@ export default function Chat() {
       .subscribe()
     return () => {
       supabase.removeChannel(channel)
-      supabase.removeChannel(reactionsChannel)
+      supabase.removeChannel(groupReactionsChannel)
       supabase.removeChannel(readsChannel)
       if (groupMessagesChannelRef.current === channel) {
         groupMessagesChannelRef.current = null
       }
-      if (groupReactionsChannelRef.current === reactionsChannel) {
+      if (groupReactionsChannelRef.current === groupReactionsChannel) {
         groupReactionsChannelRef.current = null
       }
     }
@@ -5416,87 +5592,38 @@ export default function Chat() {
 
   // Fetch reactions for group messages
   const fetchGroupMessageReactions = useCallback(async (messageIds) => {
-    if (messageIds.length === 0) return
+    if (!messageIds || messageIds.length === 0) return
     try {
       const { data: reactions, error } = await supabase
-        .from('group_message_reactions')
-        .select('message_id, user_id, reaction')
-        .in('message_id', messageIds)
+        .from('message_reactions')
+        // Include id so the realtime DELETE id-lookup fallback works
+        .select('id, group_message_id, user_id, emoji')
+        .in('group_message_id', messageIds)  // ← group_message_id, NOT message_id
 
       if (error) {
-        console.error('[GroupChat] Error fetching reactions:', error)
+        console.error('[GroupReactionFetch] Error fetching reactions:', error)
         return
       }
 
+      if (import.meta.env.DEV) console.log('[GroupReactionFetch]', reactions)
+
+      // Group by group_message_id (not message_id which is null for group rows)
       const reactionsMap = {}
-      reactions.forEach((r) => {
-        if (!reactionsMap[r.message_id]) {
-          reactionsMap[r.message_id] = []
+      ;(reactions || []).forEach((r) => {
+        if (!r.group_message_id) return
+        if (!reactionsMap[r.group_message_id]) {
+          reactionsMap[r.group_message_id] = []
         }
-        reactionsMap[r.message_id].push({ user_id: r.user_id, reaction: r.reaction })
+        // Store the full row so id-based lookup in realtime DELETE handler works
+        reactionsMap[r.group_message_id].push({ id: r.id, group_message_id: r.group_message_id, user_id: r.user_id, emoji: r.emoji })
       })
+
+      if (import.meta.env.DEV) console.log('[GroupReactionGrouped]', reactionsMap)
       setGroupMessageReactions(reactionsMap)
     } catch (err) {
-      console.error('[GroupChat] Exception fetching reactions:', err)
+      console.error('[GroupReactionFetch] Exception:', err)
     }
   }, [])
-
-  // Add/toggle group message reaction
-  const handleAddGroupReaction = useCallback(async (messageId, reaction) => {
-    if (!contextUser?.id || !activeGroupId) return
-
-    try {
-      const reactions = groupMessageReactions[messageId] || []
-      const existingReaction = reactions.find(
-        (r) => r.user_id === contextUser.id && r.reaction === reaction
-      )
-
-      if (existingReaction) {
-        // Delete reaction
-        const { error } = await supabase
-          .from('group_message_reactions')
-          .delete()
-          .eq('message_id', messageId)
-          .eq('user_id', contextUser.id)
-          .eq('reaction', reaction)
-
-        if (error) {
-          console.error('[GroupChat] Error removing reaction:', error)
-          showToastError('Failed to remove reaction')
-          return
-        }
-
-        // Update local state
-        const updated = reactions.filter(
-          (r) => !(r.user_id === contextUser.id && r.reaction === reaction)
-        )
-        setGroupMessageReactions((prev) => ({
-          ...prev,
-          [messageId]: updated.length > 0 ? updated : undefined
-        }))
-      } else {
-        // Add reaction
-        const { error } = await supabase
-          .from('group_message_reactions')
-          .insert({ message_id: messageId, user_id: contextUser.id, reaction })
-
-        if (error) {
-          console.error('[GroupChat] Error adding reaction:', error)
-          showToastError('Failed to add reaction')
-          return
-        }
-
-        // Update local state
-        setGroupMessageReactions((prev) => ({
-          ...prev,
-          [messageId]: [...(prev[messageId] || []), { user_id: contextUser.id, reaction }]
-        }))
-      }
-    } catch (err) {
-      console.error('[GroupChat] Exception toggling reaction:', err)
-      showToastError('Failed to update reaction')
-    }
-  }, [contextUser?.id, activeGroupId, groupMessageReactions, showToastError])
 
   // Update group message (edit)
   const handleUpdateGroupMessage = useCallback(async (messageId, newContent) => {
@@ -6111,7 +6238,7 @@ export default function Chat() {
       const isPostMessage = getMessageType(message) === "post"
       const isDeletedMessage = message.is_deleted === true
       const isForwardedMessage = message.is_forwarded === true
-      const reactionSummary = getReactionSummary(message.id)
+      const reactionSummary = reactionsByMessageId.direct[message.id] || []
       const isReactionPickerOpen = activeReactionPickerMessageId === message.id
       const isMessageMenuOpen = activeMenuId === message.id
       const canReplyMessage = !isDeletedMessage && !isPostMessage
@@ -6261,7 +6388,7 @@ export default function Chat() {
                 {canShowActionTrigger && (
                   <button
                     type="button"
-                    onClick={(e) => handleOpenMenu(e, message.id)}
+                    onClick={(e) => handleOpenMessageMenu(e, message.id, message.sender_id === contextUser?.id)}
                     className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md text-[var(--chat-text-muted)] transition-all duration-150 hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--chat-text)]"
                     title="More options"
                     aria-label="Open message options"
@@ -6275,6 +6402,7 @@ export default function Chat() {
                 <DropdownMenu
                   x={menuPosition.x}
                   y={menuPosition.y}
+                  anchorHeight={menuPosition.anchorHeight}
                   onClose={() => setActiveMenuId(null)}
                 >
                   <div className="px-2.5 py-2 border-b border-[var(--chat-border)]/40 mb-1 bg-[var(--chat-elev)]/30">
@@ -6284,18 +6412,6 @@ export default function Chat() {
                   </div>
 
                   <div className="space-y-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleReply(message)
-                        setActiveMenuId(null)
-                      }}
-                      disabled={!canReplyMessage}
-                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
-                    >
-                      <span>Reply</span>
-                      <Reply className="h-3.5 w-3.5 text-[var(--chat-text-muted)] group-hover:text-[var(--chat-text)] transition-colors" />
-                    </button>
 
                     <button
                       type="button"
@@ -6341,18 +6457,6 @@ export default function Chat() {
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveReactionPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                        setActiveMenuId(null)
-                      }}
-                      disabled={!canReactMessage}
-                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
-                    >
-                      <span>React</span>
-                      <SmilePlus className="h-3.5 w-3.5 text-[var(--chat-text-muted)] group-hover:text-[var(--chat-text)] transition-colors" />
-                    </button>
 
                     <div className="h-px bg-[var(--chat-border)]/40 my-1 mx-2" />
 
@@ -6393,11 +6497,17 @@ export default function Chat() {
                     <button
                       key={emoji}
                       type="button"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleReactionSelect(message.id, emoji)
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        console.error("[ReactionEmojiClicked]", {
+                          emoji,
+                          messageId: message.id
+                        });
+                        handleReactionSelect(message.id, emoji, "direct");
                       }}
-                      className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-hover)]"
+                      className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-hover)] relative z-[100] cursor-pointer"
+                      style={{ pointerEvents: 'auto' }}
                     >
                       {emoji}
                     </button>
@@ -6462,18 +6572,12 @@ export default function Chat() {
             {!isDeletedMessage && reactionSummary.length > 0 && (
               <div className="mt-1 flex flex-wrap gap-1">
                 {reactionSummary.map((item) => (
-                  <button
+                  <ReactionPill
                     key={`${message.id}-${item.emoji}`}
-                    type="button"
-                    onClick={() => setReactionModalMessageId(message.id)}
-                    className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] ${item.reactedByCurrentUser
-                      ? "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text)]"
-                      : "border-[var(--chat-border-strong)] bg-[var(--chat-elev)] text-[var(--chat-text-subtle)]"
-                      }`}
-                  >
-                    <span>{item.emoji}</span>
-                    <span>{item.count}</span>
-                  </button>
+                    item={item}
+                    messageId={message.id}
+                    onOpenModal={setReactionModalMessageId}
+                  />
                 ))}
               </div>
             )}
@@ -6522,7 +6626,7 @@ export default function Chat() {
     directMessagesById,
     isMobileView,
     getPrivateMessageTickState,
-    getReactionSummary,
+    reactionsByMessageId,
     renderHighlightedMessageText,
     handleReactionSelect,
     handleReply,
@@ -7533,11 +7637,7 @@ export default function Chat() {
 
                           const isOwn = isMine
                           const sender = message.senderProfile
-                          const messageReactions = groupMessageReactions[message.id] || []
-                          const reactionSummary = {}
-                          messageReactions.forEach((r) => {
-                            reactionSummary[r.reaction] = (reactionSummary[r.reaction] || 0) + 1
-                          })
+                          const reactionSummary = reactionsByMessageId.group[message.id] || []
                           const isDeleted = message.is_deleted
                           const isImage = message.type === 'image'
                           const isPost = message.type === 'post'
@@ -7684,17 +7784,12 @@ export default function Chat() {
                                     )}
                                   </div>
 
-                                  {isMessageMenuOpen && canShowActionTrigger && createPortal(
-                                    <div
-                                      ref={groupMenuRef}
-                                      style={{
-                                        position: "fixed",
-                                        top: menuPosition.top,
-                                        left: menuPosition.left,
-                                        zIndex: 99999
-                                      }}
-                                      className={`min-w-[180px] animate-in fade-in zoom-in-95 duration-150 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-1 text-[var(--chat-text)] shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all overflow-hidden`}
-                                      onClick={(event) => event.stopPropagation()}
+                                  {isMessageMenuOpen && canShowActionTrigger && (
+                                    <DropdownMenu
+                                      x={menuPosition.x}
+                                      y={menuPosition.y}
+                                      anchorHeight={menuPosition.anchorHeight}
+                                      onClose={() => setActiveMenuId(null)}
                                     >
                                       <div className="px-2.5 py-2 border-b border-[var(--chat-border)]/40 mb-1 bg-[var(--chat-elev)]/30">
                                         <p className="text-[9px] text-[var(--chat-text-muted)] font-bold uppercase tracking-widest opacity-80">
@@ -7703,18 +7798,6 @@ export default function Chat() {
                                       </div>
 
                                       <div className="space-y-0.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setGroupReplyTo(message)
-                                            setActiveMenuId(null)
-                                          }}
-                                          disabled={!canReplyMessage}
-                                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
-                                        >
-                                          <span>Reply</span>
-                                          <Reply className="h-3.5 w-3.5 text-[var(--chat-text-muted)] group-hover:text-[var(--chat-text)] transition-colors" />
-                                        </button>
 
                                         <button
                                           type="button"
@@ -7742,18 +7825,6 @@ export default function Chat() {
                                           <Forward className="h-3.5 w-3.5 text-[var(--chat-text-muted)] group-hover:text-[var(--chat-text)] transition-colors" />
                                         </button>
 
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setActiveGroupEmojiPickerMessageId((prev) => (prev === message.id ? null : message.id))
-                                            setActiveMenuId(null)
-                                          }}
-                                          disabled={!canReactMessage}
-                                          className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left font-['DM_Sans'] text-[12px] font-medium transition hover:bg-[var(--chat-elev)] disabled:cursor-not-allowed disabled:opacity-50 group"
-                                        >
-                                          <span>React</span>
-                                          <SmilePlus className="h-3.5 w-3.5 text-[var(--chat-text-muted)] group-hover:text-[var(--chat-text)] transition-colors" />
-                                        </button>
 
                                         <button
                                           type="button"
@@ -7783,8 +7854,7 @@ export default function Chat() {
                                           </button>
                                         )}
                                       </div>
-                                    </div>,
-                                    document.body
+                                    </DropdownMenu>
                                   )}
 
                                   {isReactionPickerOpen && (
@@ -7793,12 +7863,20 @@ export default function Chat() {
                                         <button
                                           key={emoji}
                                           type="button"
-                                          onClick={(event) => {
-                                            event.stopPropagation()
-                                            handleAddGroupReaction(message.id, emoji)
-                                            setActiveGroupEmojiPickerMessageId(null)
+                                          onMouseDown={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            if (import.meta.env.DEV) {
+                                              console.log("[ReactionEmojiClicked]", {
+                                                emoji,
+                                                messageId: message.id
+                                              });
+                                            }
+                                            handleReactionSelect(message.id, emoji, "group");
+                                            setActiveGroupEmojiPickerMessageId(null);
                                           }}
-                                          className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-elev)]"
+                                          className="rounded-full p-1 text-sm transition hover:bg-[var(--chat-elev)] relative z-[100] cursor-pointer"
+                                          style={{ pointerEvents: 'auto' }}
                                           title={emoji}
                                         >
                                           {emoji}
@@ -7853,19 +7931,17 @@ export default function Chat() {
                                 </div>
 
                                 {/* Reactions display */}
-                                {Object.keys(reactionSummary).length > 0 && (
+                                {reactionSummary.length > 0 && (
                                   <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {Object.entries(reactionSummary).map(([emoji, count]) => (
-                                      <button
-                                        key={emoji}
-                                        onClick={() => handleAddGroupReaction(message.id, emoji)}
-                                        type="button"
-                                        className="inline-flex items-center gap-1 rounded-full border border-[var(--chat-border)] bg-[var(--chat-surface)] px-2 py-1 text-xs text-[var(--chat-text)] hover:bg-[var(--chat-elev)] transition whitespace-nowrap"
-                                        title={`${count} ${count === 1 ? 'reaction' : 'reactions'}`}
-                                      >
-                                        <span className="text-sm">{emoji}</span>
-                                        <span className="text-[var(--chat-text-subtle)] font-medium">{count}</span>
-                                      </button>
+                                    {reactionSummary.map((item) => (
+                                      <ReactionPill
+                                        key={item.emoji}
+                                        item={item}
+                                        messageId={message.id}
+                                        onOpenModal={(id) => {
+                                          setReactionModalMessageId(id)
+                                        }}
+                                      />
                                     ))}
                                   </div>
                                 )}
@@ -8554,7 +8630,7 @@ export default function Chat() {
         <ReactionModal
           open={Boolean(reactionModalMessageId)}
           messageId={reactionModalMessageId}
-          groups={reactionModalMessageId ? getReactionSummary(reactionModalMessageId) : []}
+          groups={reactionModalMessageId ? (reactionsByMessageId.direct[reactionModalMessageId] || reactionsByMessageId.group[reactionModalMessageId] || []) : []}
           onClose={() => setReactionModalMessageId(null)}
           onRemoveReaction={handleRemoveReaction}
         />
