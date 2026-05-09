@@ -1552,13 +1552,27 @@ export default function Chat() {
     if (import.meta.env.DEV) console.log("[ReactionRealtime] INSERT", newData)
     const { message_id, group_message_id, user_id, emoji } = newData
 
+    // 1. Resolve profile for this reaction
+    const profile = newData.profiles || (user_id === contextUser?.id ? currentUserProfile : (profilesById[user_id] || null))
+    const reactionWithProfile = { ...newData, profiles: profile }
+
     if (group_message_id) {
       // GROUP reaction — update groupMessageReactions state
       setGroupMessageReactions((prev) => {
         const existing = prev[group_message_id] || []
-        const alreadyHas = existing.some((r) => r.user_id === user_id && r.emoji === emoji)
-        if (alreadyHas) return prev
-        return { ...prev, [group_message_id]: [...existing, newData] }
+        const existingIndex = existing.findIndex((r) => r.user_id === user_id && r.emoji === emoji)
+        
+        if (existingIndex !== -1) {
+          // If we have a temp reaction and this is the real one, replace it
+          if (String(existing[existingIndex].id).startsWith('temp-')) {
+            const updated = [...existing]
+            updated[existingIndex] = reactionWithProfile
+            return { ...prev, [group_message_id]: updated }
+          }
+          return prev // Skip duplicate
+        }
+        
+        return { ...prev, [group_message_id]: [...existing, reactionWithProfile] }
       })
       return
     }
@@ -1570,16 +1584,26 @@ export default function Chat() {
       prevMessages.map((msg) => {
         if (msg.id !== message_id) return msg
         const existing = msg.reactions || []
-        const alreadyHas = existing.some((r) => r.user_id === user_id && r.emoji === emoji)
-        if (alreadyHas) return msg
-        const profiles = user_id === contextUser?.id ? currentUserProfile : null
+        
+        const existingIndex = existing.findIndex((r) => r.user_id === user_id && r.emoji === emoji)
+        
+        if (existingIndex !== -1) {
+          // If we have a temp reaction and this is the real one, replace it
+          if (String(existing[existingIndex].id).startsWith('temp-')) {
+            const updated = [...existing]
+            updated[existingIndex] = reactionWithProfile
+            return { ...msg, reactions: updated }
+          }
+          return msg // Skip duplicate
+        }
+
         return {
           ...msg,
-          reactions: [...existing, { ...newData, profiles }]
+          reactions: [...existing, reactionWithProfile]
         }
       })
     )
-  }, [contextUser?.id, currentUserProfile])
+  }, [contextUser?.id, currentUserProfile, profilesById])
 
   const updateReactionInState = useCallback((updatedReaction) => {
     if (!updatedReaction?.message_id || !updatedReaction?.id) {
@@ -3591,7 +3615,8 @@ export default function Chat() {
           id: `temp-${Date.now()}`,
           group_message_id: messageId,
           user_id: contextUser.id,
-          emoji
+          emoji,
+          profiles: currentUserProfile
         }
         handleReactionInsert(optimistic)
 
@@ -3613,7 +3638,7 @@ export default function Chat() {
         } else {
           if (import.meta.env.DEV) console.log("[ReactionMutation][GroupInsertSuccess]", inserted)
           handleReactionDelete(optimistic)
-          handleReactionInsert(inserted)
+          handleReactionInsert({ ...inserted, profiles: currentUserProfile })
         }
       } else {
         // DIRECT MODE: message_id only — unchanged
@@ -3621,7 +3646,8 @@ export default function Chat() {
           id: `temp-${Date.now()}`, 
           message_id: messageId, 
           user_id: contextUser.id, 
-          emoji 
+          emoji,
+          profiles: currentUserProfile
         }
         handleReactionInsert(optimistic)
 
@@ -3640,7 +3666,9 @@ export default function Chat() {
         } else {
           if (import.meta.env.DEV) console.log("[ReactionMutation][InsertSuccess]", inserted)
           handleReactionDelete(optimistic)
-          handleReactionInsert(inserted)
+          const reactionWithProfile = { ...inserted, profiles: currentUserProfile }
+          handleReactionInsert(reactionWithProfile)
+          await broadcastReactionEvent("INSERT", reactionWithProfile)
         }
       }
 
@@ -3649,7 +3677,7 @@ export default function Chat() {
     } catch (err) {
       console.error("[ReactionMutation][Exception]", err)
     }
-  }, [contextUser?.id, handleReactionDelete, handleReactionInsert, setError])
+  }, [contextUser?.id, currentUserProfile, handleReactionDelete, handleReactionInsert, broadcastReactionEvent, setError])
 
 
   const handleReply = useCallback((message) => {
@@ -4715,10 +4743,13 @@ export default function Chat() {
         console.error("[GroupChat] Error fetching profiles:", profileError)
       }
 
-      const profilesById = {}
-        ; (profiles || []).forEach((p) => {
-          profilesById[p.id] = p
-        })
+      const senderProfiles = profiles || []
+      mergeProfiles(senderProfiles)
+
+      const senderProfilesById = {}
+      senderProfiles.forEach((p) => {
+        senderProfilesById[p.id] = p
+      })
 
       // Decrypt messages
       const decryptedMessages = await Promise.all(
@@ -4736,7 +4767,7 @@ export default function Chat() {
           return {
             ...msg,
             content,
-            senderProfile: profilesById[msg.sender_id]
+            senderProfile: senderProfilesById[msg.sender_id]
           }
         })
       )
@@ -4770,6 +4801,8 @@ export default function Chat() {
       }
 
       setGroupMembers(data || [])
+      const membersProfiles = (data || []).map(m => m.profiles).filter(Boolean)
+      mergeProfiles(membersProfiles)
     } catch (err) {
       console.error("[GroupChat] Exception fetching members:", err)
     }
