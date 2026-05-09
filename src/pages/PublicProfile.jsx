@@ -477,7 +477,7 @@ export default function PublicProfile() {
           .from("comments")
           .select("post_id")
           .eq("id", comment_id)
-          .single()
+          .maybeSingle()
 
         if (fetchError) {
           console.warn("[PublicProfile] Failed to resolve post_id for deleted comment:", fetchError)
@@ -502,6 +502,7 @@ export default function PublicProfile() {
     posts.map((p) => p.id),
     handleLikesRealtime,
     handleCommentsRealtime,
+    null, // onPostsChange
     authReady
   )
   

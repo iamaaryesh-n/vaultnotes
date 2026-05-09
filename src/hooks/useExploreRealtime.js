@@ -128,7 +128,7 @@ export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCo
             .from("comments")
             .select("post_id")
             .eq("id", commentId)
-            .single()
+            .maybeSingle()
 
           if (!fetchError) {
             postId = data?.post_id
@@ -195,6 +195,7 @@ export function useExploreRealtime({ posts, currentUserId, setLikesByPost, setCo
     posts.map((post) => post.id),
     handleLikesRealtime,
     handleCommentsRealtime,
+    null, // onPostsChange
     authReady
   )
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
-import { MoreVertical, Trash2 } from "lucide-react"
+import { MoreVertical, Trash2, X } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { deleteComment } from "../lib/postInteractions"
 import { useToast } from "../hooks/useToast"
 
@@ -26,6 +27,7 @@ export default function CommentItem({
   const { success, error } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   // Permission: comment author OR post owner may delete
   const canDelete =
@@ -42,11 +44,8 @@ export default function CommentItem({
     return () => document.removeEventListener("mousedown", close)
   }, [menuOpen])
 
-  const handleDelete = async () => {
-    setMenuOpen(false)
-    const confirmed = window.confirm("Delete this comment? This cannot be undone.")
-    if (!confirmed) return
-
+  const confirmDelete = async () => {
+    setShowDeleteConfirm(false)
     setDeleting(true)
     const result = await deleteComment(comment.id)
     if (result.success) {
@@ -161,7 +160,10 @@ export default function CommentItem({
                 <button
                   type="button"
                   data-ci-menu
-                  onClick={handleDelete}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setShowDeleteConfirm(true)
+                  }}
                   disabled={deleting}
                   className="flex w-full items-center gap-2 rounded-[8px] px-3 py-[7px] text-left text-[12px] font-semibold text-[#EF4444] transition-colors hover:bg-[rgba(239,68,68,0.08)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -173,6 +175,51 @@ export default function CommentItem({
           </div>
         )}
       </div>
+      
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDeleteConfirm(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-[320px] overflow-hidden rounded-[20px] border border-[var(--profile-border-strong)] bg-[#1A1A1A] p-6 shadow-2xl"
+            >
+              <div className="text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#EF4444]/10 text-[#EF4444]">
+                  <Trash2 className="h-6 w-6" />
+                </div>
+                <h3 className="mb-2 text-lg font-bold text-white">Delete comment?</h3>
+                <p className="mb-6 text-sm text-gray-400">
+                  This action cannot be undone. This comment will be permanently removed.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="flex-1 rounded-[12px] bg-[#2A2A2A] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#333333]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    className="flex-1 rounded-[12px] bg-[#F4B400] px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-[#FFC107] active:scale-[0.98]"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

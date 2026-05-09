@@ -19,6 +19,7 @@ export function useNotifications() {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
   const [unreadCount, setUnreadCount] = useState(0)
+  const fetchControllerRef = useRef(null)
   const isMountedRef = useRef(true)
   const fetchTimeoutRef = useRef(null)
   const activeSubscriptionRef = useRef(null)
@@ -37,6 +38,9 @@ export function useNotifications() {
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current)
       }
+      if (fetchControllerRef.current) {
+        fetchControllerRef.current.abort()
+      }
       // Cleanup realtime subscription on unmount
       if (activeSubscriptionRef.current) {
         activeSubscriptionRef.current.unsubscribe()
@@ -53,13 +57,17 @@ export function useNotifications() {
         return
       }
 
-      // Always fetch fresh data on initialization to ensure we have current state from DB
-      // Don't trust cache on first load after refresh
+      // Always fetch fresh data on initialization
       await fetchNotifications()
 
       // Subscribe after initial fetch
       subscribeToNotifications()
     } catch (err) {
+      const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+      if (isAbort) {
+        if (import.meta.env.DEV) console.log("[FetchCancelled] useNotifications initialization")
+        return
+      }
       console.error('[useNotifications] Exception initializing notifications:', err)
       if (isMountedRef.current) setLoading(false)
     }
@@ -72,8 +80,15 @@ export function useNotifications() {
 
         setLoading(true)
 
+        // Cancel previous fetch if any
+        if (fetchControllerRef.current) {
+          fetchControllerRef.current.abort()
+        }
+
+        const controller = new AbortController()
+        fetchControllerRef.current = controller
+
         // Fetch notifications with explicit field selection
-        // IMPORTANT: Using actor:profiles(...) directly to avoid ID corruption
         const { data, error } = await supabase
           .from('notifications')
           .select(`
@@ -96,8 +111,15 @@ export function useNotifications() {
           .eq('recipient_id', user.id)
           .order('created_at', { ascending: false })
           .limit(50)
+          .abortSignal(controller.signal)
+
+        if (controller.signal.aborted) return
 
         if (error) {
+          if (error.message === 'Fetch is aborted' || controller.signal.aborted) {
+            if (import.meta.env.DEV) console.log("[FetchCancelled] useNotifications Supabase query")
+            return
+          }
           console.error('[useNotifications] Error fetching notifications:', error)
           return
         }
@@ -111,18 +133,24 @@ export function useNotifications() {
         notificationsCache.data = notificationsData
         notificationsCache.timestamp = Date.now()
 
-        if (isMountedRef.current) {
+        if (isMountedRef.current && !controller.signal.aborted) {
           setNotifications(notificationsData)
           setUnreadCount(unreadCount)
           setLoading(false)
         }
       } catch (err) {
+        const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+        if (isAbort) {
+          if (import.meta.env.DEV) console.log("[FetchCancelled] useNotifications.fetchNotifications")
+          return
+        }
         console.error('[useNotifications] Exception fetching notifications:', err)
         if (isMountedRef.current) setLoading(false)
       }
     },
     [user]
   )
+
 
   const subscribeToNotifications = async () => {
     try {

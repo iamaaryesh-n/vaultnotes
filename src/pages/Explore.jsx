@@ -182,13 +182,13 @@ export default function Explore() {
     return date.toLocaleDateString()
   }
 
-  const openPostModal = (post) => {
+  const openPostModal = useCallback((post) => {
     setSelectedPost(post)
     setModalOpen(true)
     // Push a synthetic history entry so the mobile back button pops this
     // entry instead of navigating to the previous route.
     window.history.pushState({ explorePostModal: true }, "")
-  }
+  }, [])
 
   const closePostModal = () => {
     setModalOpen(false)
@@ -200,11 +200,18 @@ export default function Explore() {
     }
   }
 
+  const followedUsersRef = useRef(followedUsers)
+  useEffect(() => {
+    followedUsersRef.current = followedUsers
+  }, [followedUsers])
+
   const handleToggleFollow = useCallback(
     async (userId) => {
       if (!contextUser?.id) return
 
-      if (followedUsers.includes(userId)) {
+      const isCurrentlyFollowed = followedUsersRef.current.includes(userId)
+
+      if (isCurrentlyFollowed) {
         const result = await unfollowUser(contextUser.id, userId)
         if (result.success) {
           setFollowedUsers((prev) => prev.filter((id) => id !== userId))
@@ -216,7 +223,7 @@ export default function Explore() {
         }
       }
     },
-    [contextUser?.id, followedUsers]
+    [contextUser?.id]
   )
 
   return (

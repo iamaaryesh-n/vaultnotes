@@ -6,12 +6,14 @@ import { usePostCacheStore } from "../stores/postCacheStore"
 const BATCH_SIZE = 6
 
 export function useExploreFeed(user, authReady) {
-  const initialCachedPosts = (() => {
+  const initialCachedPostsRef = useRef(null)
+  if (initialCachedPostsRef.current === null) {
     const state = usePostCacheStore.getState()
-    return Object.values(state.posts || {})
+    initialCachedPostsRef.current = Object.values(state.posts || {})
       .filter((post) => state.isCacheValid(post.id))
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-  })()
+  }
+  const initialCachedPosts = initialCachedPostsRef.current
 
   const setCachedPosts = usePostCacheStore((state) => state.setCachedPosts)
   const [posts, setPosts] = useState(initialCachedPosts)
@@ -41,8 +43,10 @@ export function useExploreFeed(user, authReady) {
     setCurrentUserId(uid)
   }, [user, authReady])
 
+  const abortControllerRef = useRef(null)
+
   const fetchPostsBatch = useCallback(
-    async (pageNum) => {
+    async (pageNum, signal) => {
       try {
         const start = pageNum * BATCH_SIZE
         const end = start + BATCH_SIZE - 1
@@ -58,17 +62,25 @@ export function useExploreFeed(user, authReady) {
           })
           .order("created_at", { ascending: false })
           .range(start, end)
+          .abortSignal(signal)
 
         if (fetchError) {
+          // Silent handling for expected aborts
+          if (
+            fetchError.message === "Fetch is aborted" || 
+            fetchError.code === "ABORT" ||
+            signal?.aborted
+          ) {
+            if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed Supabase query")
+            return []
+          }
+
           console.error("[useExploreFeed] Supabase fetch error:", fetchError)
-          console.error("[useExploreFeed] Error code:", fetchError.code)
-          console.error("[useExploreFeed] Error message:", fetchError.message)
-          console.error("[useExploreFeed] Full error object:", JSON.stringify(fetchError, null, 2))
           throw new Error(`Failed to load posts: ${fetchError.message || JSON.stringify(fetchError)}`)
         }
 
         if (import.meta.env.DEV) {
-          console.log("[useExploreFeed] Posts fetched successfully:", { count: data?.length, totalCount: data?.length })
+          console.log("[useExploreFeed] Posts fetched successfully:", { count: data?.length })
         }
 
         const fetchedPosts = data || []
@@ -81,8 +93,8 @@ export function useExploreFeed(user, authReady) {
           setCachedPosts(fetchedPosts)
           const postIds = fetchedPosts.map((post) => post.id)
           const [commentCounts, likeData] = await Promise.all([
-            fetchCommentCountsForPosts(postIds),
-            fetchLikeCountsForPosts(postIds, userIdRef.current)
+            fetchCommentCountsForPosts(postIds, signal),
+            fetchLikeCountsForPosts(postIds, userIdRef.current, signal)
           ])
 
           const comments = {}
@@ -92,14 +104,21 @@ export function useExploreFeed(user, authReady) {
 
           setCommentsByPost((prev) => ({ ...prev, ...comments }))
           setLikesByPost((prev) => ({ ...prev, ...likeData }))
-        } else {
-          if (import.meta.env.DEV) {
-            console.log("[useExploreFeed] No posts found (result was empty)")
-          }
         }
 
         return fetchedPosts
       } catch (err) {
+        const isAbort = 
+          err.name === 'AbortError' || 
+          err.message === 'Fetch is aborted' ||
+          err.message?.includes('signal is aborted') ||
+          signal?.aborted
+
+        if (isAbort) {
+          if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed.fetchPostsBatch")
+          return []
+        }
+
         console.error("[useExploreFeed] fetchPostsBatch error:", err)
         setError(err.message || "Failed to fetch posts")
         return []
@@ -118,15 +137,11 @@ export function useExploreFeed(user, authReady) {
         return
       }
 
-      if (import.meta.env.DEV) {
-        console.log("[BatchLoad] Loading next page:", { pageNumber })
-      }
-
       loadingMoreRef.current = true
       setLoadingMore(true)
 
       try {
-        const newPosts = await fetchPostsBatch(pageNumber)
+        const newPosts = await fetchPostsBatch(pageNumber, abortControllerRef.current?.signal)
 
         if (newPosts.length > 0) {
           loadedPagesRef.current.add(pageNumber)
@@ -165,42 +180,71 @@ export function useExploreFeed(user, authReady) {
   }, [loadMorePosts])
 
   useEffect(() => {
+    if (!authReady) return
+
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     const loadInitialPosts = async () => {
       setLoading(initialCachedPosts.length === 0)
       try {
-        const initialPosts = await fetchPostsBatch(0)
+        const initialPosts = await fetchPostsBatch(0, controller.signal)
+        
+        // If aborted, don't update state
+        if (controller.signal.aborted) return
+
         loadedPagesRef.current = new Set([0])
         if (initialPosts.length > 0) {
           setPosts(initialPosts)
         }
         setPage(0)
       } catch (err) {
+        const isAbort = 
+          err.name === 'AbortError' || 
+          err.message === 'Fetch is aborted' ||
+          err.message?.includes('signal is aborted') ||
+          controller.signal.aborted
+
+        if (isAbort) {
+          if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed initial load")
+          return
+        }
+
         setError(err.message || "Failed to load posts")
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
       }
     }
 
-    if (!authReady) return
-
     loadInitialPosts()
+
+    return () => {
+      controller.abort()
+    }
   }, [fetchPostsBatch, authReady])
 
   // Re-fetch userLiked state when user logs in after posts are already loaded.
-  // This backfills the red heart for posts the user liked in a previous session.
   useEffect(() => {
     if (!currentUserId) return
 
-    setPosts((prevPosts) => {
-      if (prevPosts.length === 0) return prevPosts
-      const postIds = prevPosts.map((p) => p.id)
-      fetchLikeCountsForPosts(postIds, currentUserId).then((freshLikeData) => {
+    const controller = new AbortController()
+
+    const backfillLikes = async () => {
+      if (posts.length === 0) return
+      const postIds = posts.map((p) => p.id)
+      const freshLikeData = await fetchLikeCountsForPosts(postIds, currentUserId, controller.signal)
+      if (!controller.signal.aborted) {
         setLikesByPost((prev) => ({ ...prev, ...freshLikeData }))
-      })
-      return prevPosts
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUserId])
+      }
+    }
+
+    backfillLikes()
+
+    return () => controller.abort()
+  }, [currentUserId, posts.length > 0])
+
 
   const addNewPost = useCallback((newPost) => {
     setPosts((prev) => {

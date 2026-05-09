@@ -24,11 +24,15 @@ export function usePrefetchWorkspaces() {
     
     const prefetchWorkspaces = async () => {
       try {
-        prefetchControllerRef.current = new AbortController()
+        const controller = new AbortController()
+        prefetchControllerRef.current = controller
         setFetching(true)
 
         // Get current user
         const { data: { user }, error: authError } = await supabase.auth.getUser()
+        
+        if (controller.signal.aborted) return
+
         if (authError || !user) {
           console.log('[usePrefetchWorkspaces] User not authenticated, skipping prefetch')
           return
@@ -39,8 +43,15 @@ export function usePrefetchWorkspaces() {
           .from('workspace_members')
           .select('workspace_id, role')
           .eq('user_id', user.id)
+          .abortSignal(controller.signal)
+
+        if (controller.signal.aborted) return
 
         if (userMemberError) {
+          if (userMemberError.message === 'Fetch is aborted' || controller.signal.aborted) {
+            if (import.meta.env.DEV) console.log("[FetchCancelled] usePrefetchWorkspaces memberships query")
+            return
+          }
           console.error('[usePrefetchWorkspaces] Failed to fetch user memberships:', userMemberError)
           return
         }
@@ -65,8 +76,15 @@ export function usePrefetchWorkspaces() {
           .select('id, name, created_at, created_by')
           .in('id', workspaceIds)
           .order('created_at', { ascending: false })
+          .abortSignal(controller.signal)
+
+        if (controller.signal.aborted) return
 
         if (workspaceError) {
+          if (workspaceError.message === 'Fetch is aborted' || controller.signal.aborted) {
+            if (import.meta.env.DEV) console.log("[FetchCancelled] usePrefetchWorkspaces details query")
+            return
+          }
           console.error('[usePrefetchWorkspaces] Failed to fetch workspaces:', workspaceError)
           return
         }
@@ -76,6 +94,9 @@ export function usePrefetchWorkspaces() {
           .from('workspace_members')
           .select('workspace_id, role')
           .in('workspace_id', workspaceIds)
+          .abortSignal(controller.signal)
+
+        if (controller.signal.aborted) return
 
         const ownerCountMap = {}
         if (!memberError && memberData) {
@@ -89,9 +110,22 @@ export function usePrefetchWorkspaces() {
         console.log('[usePrefetchWorkspaces] ✅ Prefetched', workspaceData?.length || 0, 'workspace(s)')
         setCachedWorkspaces(workspaceData || [], userRolesMap, ownerCountMap)
       } catch (err) {
+        const isAbort = 
+          err.name === 'AbortError' || 
+          err.message === 'Fetch is aborted' || 
+          err.message?.includes('signal is aborted') ||
+          prefetchControllerRef.current?.signal.aborted
+
+        if (isAbort) {
+          if (import.meta.env.DEV) console.log("[FetchCancelled] usePrefetchWorkspaces prefetch task")
+          return
+        }
+
         console.error('[usePrefetchWorkspaces] Error prefetching workspaces:', err)
       } finally {
-        setFetching(false)
+        if (prefetchControllerRef.current && !prefetchControllerRef.current.signal.aborted) {
+          setFetching(false)
+        }
       }
     }
 
@@ -101,8 +135,8 @@ export function usePrefetchWorkspaces() {
     return () => {
       if (prefetchControllerRef.current) {
         prefetchControllerRef.current.abort()
-        console.log('[usePrefetchWorkspaces] Cancelled pending prefetch on unmount')
       }
     }
+
   }, [setCachedWorkspaces, setFetching, hasCachedWorkspaces])
 }

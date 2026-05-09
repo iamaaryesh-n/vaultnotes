@@ -24,21 +24,31 @@ export async function fetchUserProfile(userId) {
  * Batch fetch likes for multiple posts in ONE query
  * Returns: { [postId]: { count, userLiked } }
  */
-export async function fetchLikesForPosts(postIds, userId = null) {
+export async function fetchLikesForPosts(postIds, userId = null, signal = null) {
   if (!postIds || postIds.length === 0) {
     return {}
   }
 
   try {
-    // Fetch all likes for these posts
-    const { data: allLikes, error } = await supabase
+    const query = supabase
       .from("likes")
       .select("post_id, user_id")
       .in("post_id", postIds)
 
-    if (error) throw error
+    if (signal) {
+      query.abortSignal(signal)
+    }
 
-    // Build result object with counts and user like status
+    const { data: allLikes, error } = await query
+
+    if (error) {
+      if (error.message === 'Fetch is aborted' || signal?.aborted) {
+        if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchLikesForPosts Supabase query")
+        return {}
+      }
+      throw error
+    }
+
     const result = {}
     postIds.forEach((postId) => {
       result[postId] = {
@@ -47,19 +57,23 @@ export async function fetchLikesForPosts(postIds, userId = null) {
       }
     })
 
-    // Count likes per post and check if user liked
     ;(allLikes || []).forEach((like) => {
-      result[like.post_id].count++
-      if (userId && like.user_id === userId) {
-        result[like.post_id].userLiked = true
+      if (result[like.post_id]) {
+        result[like.post_id].count++
+        if (userId && like.user_id === userId) {
+          result[like.post_id].userLiked = true
+        }
       }
     })
 
-    console.log("[postInteractions] Fetched likes for", Object.keys(result).length, "posts")
     return result
   } catch (err) {
+    const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+    if (isAbort) {
+      if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchLikesForPosts task")
+      return {}
+    }
     console.error("[postInteractions] Error fetching batch likes:", err)
-    // Return empty structure for all posts
     const result = {}
     postIds.forEach((postId) => {
       result[postId] = { count: 0, userLiked: false }
@@ -112,7 +126,7 @@ export async function toggleLike(postId, postOwnerId = null) {
       throw new Error("User not authenticated")
     }
 
-    // Check if user has already liked (array query avoids maybeSingle multiple-row edge case)
+    // Check if user has already liked
     const { data: existingLikes, error: existingLikeError } = await supabase
       .from("likes")
       .select("id")
@@ -121,7 +135,7 @@ export async function toggleLike(postId, postOwnerId = null) {
     if (existingLikeError) throw existingLikeError
 
     if ((existingLikes || []).length > 0) {
-      // Unlike: delete all matching likes for safety
+      // Unlike
       const { error: deleteError } = await supabase
         .from("likes")
         .delete()
@@ -131,13 +145,12 @@ export async function toggleLike(postId, postOwnerId = null) {
       if (deleteError) throw deleteError
       return { success: true, liked: false }
     } else {
-      // Like: insert new like
+      // Like
       const { error: insertError } = await supabase
         .from("likes")
         .insert({ post_id: postId, user_id: user.id })
 
       if (insertError) {
-        // If unique constraint exists and a race inserts first, treat as liked success
         if (insertError.code === "23505") {
           return { success: true, liked: true }
         }
@@ -146,7 +159,6 @@ export async function toggleLike(postId, postOwnerId = null) {
 
       let recipientId = postOwnerId
 
-      // Fallback lookup if caller did not provide post owner
       if (!recipientId) {
         const { data: post } = await supabase
           .from("posts")
@@ -176,77 +188,75 @@ export async function toggleLike(postId, postOwnerId = null) {
 
 /**
  * Batch fetch comments for multiple posts in ONE query
- * Returns object: { [postId]: [comments] }
  */
-export async function fetchCommentsForPosts(postIds) {
-  if (!postIds || postIds.length === 0) {
-    return {}
-  }
+export async function fetchCommentsForPosts(postIds, signal = null) {
+  if (!postIds || postIds.length === 0) return {}
 
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from("comments")
-      .select(
-        `
+      .select(`
         id,
         post_id,
         user_id,
         content,
         created_at,
-        profiles:user_id (
-          username,
-          avatar_url
-        )
-        `
-      )
+        profiles(id, username, avatar_url, name)
+      `)
       .in("post_id", postIds)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: true })
 
-    if (error) {
-      console.error("[postInteractions] Fetch batch comments error:", error)
-      throw error
+    if (signal) {
+      query.abortSignal(signal)
     }
 
-    // Group comments by post_id
+    const { data, error } = await query
+
+    if (error) {
+      if (error.message === 'Fetch is aborted' || signal?.aborted) {
+        if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchCommentsForPosts Supabase query")
+        return {}
+      }
+      console.error("[postInteractions] Fetch batch comments error:", error)
+      return {}
+    }
+
     const groupedComments = {}
     postIds.forEach((postId) => {
       groupedComments[postId] = []
     })
 
     ;(data || []).forEach((comment) => {
-      // Transform profile data to handle both array and object responses
-      const profile = Array.isArray(comment.profiles)
-        ? comment.profiles[0]
-        : comment.profiles
-
       const transformedComment = {
         ...comment,
-        profiles: profile || { username: "unknown", avatar_url: null }
+        profiles: comment.profiles || { username: "unknown", avatar_url: null }
       }
 
-      if (!groupedComments[comment.post_id]) {
-        groupedComments[comment.post_id] = []
+      if (groupedComments[comment.post_id]) {
+        groupedComments[comment.post_id].push(transformedComment)
       }
-      groupedComments[comment.post_id].push(transformedComment)
     })
 
-    console.log("[postInteractions] Fetched comments for", Object.keys(groupedComments).length, "posts")
     return groupedComments
   } catch (err) {
+    const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+    if (isAbort) {
+      if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchCommentsForPosts task")
+      return {}
+    }
     console.error("[postInteractions] Error fetching batch comments:", err)
     return {}
   }
 }
 
 /**
- * Fetch comments for a single post (used when needed)
+ * Fetch comments for a single post
  */
 export async function fetchComments(postId) {
   try {
     const { data, error } = await supabase
       .from("comments")
-      .select(
-        `
+      .select(`
         id,
         user_id,
         content,
@@ -255,8 +265,7 @@ export async function fetchComments(postId) {
           username,
           avatar_url
         )
-        `
-      )
+      `)
       .eq("post_id", postId)
       .order("created_at", { ascending: false })
 
@@ -265,19 +274,10 @@ export async function fetchComments(postId) {
       throw error
     }
 
-    // Transform response to flatten the nested profile data if needed
-    const transformedData = (data || []).map((comment) => {
-      // Supabase joins with ForeignKey can return profiles as: profiles (array) or profiles (object)
-      // Handle both cases
-      const profile = Array.isArray(comment.profiles) ? comment.profiles[0] : comment.profiles
-
-      return {
-        ...comment,
-        profiles: profile || { username: "unknown", avatar_url: null }
-      }
-    })
-
-    return transformedData
+    return (data || []).map((comment) => ({
+      ...comment,
+      profiles: comment.profiles || { username: "unknown", avatar_url: null }
+    }))
   } catch (err) {
     console.error("[postInteractions] Error fetching comments:", err)
     return []
@@ -306,8 +306,7 @@ export async function addComment(postId, content, postOwnerId = null) {
         user_id: user.id,
         content: content.trim()
       })
-      .select(
-        `
+      .select(`
         id,
         user_id,
         content,
@@ -316,8 +315,7 @@ export async function addComment(postId, content, postOwnerId = null) {
           username,
           avatar_url
         )
-        `
-      )
+      `)
       .single()
 
     if (insertError) {
@@ -325,16 +323,13 @@ export async function addComment(postId, content, postOwnerId = null) {
       throw insertError
     }
 
-    // Transform response to handle nested profile
-    const profile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles
     const transformedComment = {
       ...data,
-      profiles: profile || { username: "unknown", avatar_url: null }
+      profiles: data.profiles || { username: "unknown", avatar_url: null }
     }
 
     let recipientId = postOwnerId
 
-    // Fallback lookup if caller did not provide post owner
     if (!recipientId) {
       const { data: post } = await supabase
         .from("posts")
@@ -363,8 +358,7 @@ export async function addComment(postId, content, postOwnerId = null) {
 }
 
 /**
- * Delete a comment (by comment author or post owner).
- * Authorization is enforced server-side via RLS — no client filter needed.
+ * Delete a comment
  */
 export async function deleteComment(commentId) {
   try {
@@ -389,15 +383,12 @@ export async function deleteComment(commentId) {
 }
 
 /**
- * Get the link to share for a post
+ * Share link helpers
  */
 export function getShareLink(username) {
   return `${window.location.origin}/profile/${username}`
 }
 
-/**
- * Copy text to clipboard
- */
 export async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text)
@@ -409,97 +400,89 @@ export async function copyToClipboard(text) {
 }
 
 /**
- * Fetch ONLY comment counts for multiple posts (lightweight)
- * Returns: { [postId]: count }
- * Used for feed display to reduce payload
+ * Lightweight count fetchers
  */
-export async function fetchCommentCountsForPosts(postIds) {
-  if (!postIds || postIds.length === 0) {
-    return {}
-  }
+export async function fetchCommentCountsForPosts(postIds, signal = null) {
+  if (!postIds || postIds.length === 0) return {}
 
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from("comments")
       .select("post_id")
       .in("post_id", postIds)
 
+    if (signal) {
+      query.abortSignal(signal)
+    }
+
+    const { data, error } = await query
+
     if (error) {
-      console.error("[postInteractions] Fetch comment counts error:", error)
+      if (error.message === 'Fetch is aborted' || signal?.aborted) {
+        if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchCommentCountsForPosts Supabase query")
+        return {}
+      }
       throw error
     }
 
-    // Count comments by post_id
     const commentCounts = {}
-    postIds.forEach((postId) => {
-      commentCounts[postId] = 0
+    postIds.forEach((id) => (commentCounts[id] = 0))
+    ;(data || []).forEach((c) => {
+      if (commentCounts[c.post_id] !== undefined) commentCounts[c.post_id]++
     })
 
-    ;(data || []).forEach((comment) => {
-      if (commentCounts[comment.post_id] !== undefined) {
-        commentCounts[comment.post_id]++
-      }
-    })
-
-    console.log("[postInteractions] Fetched comment counts for", postIds.length, "posts")
     return commentCounts
   } catch (err) {
+    const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+    if (isAbort) {
+      if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchCommentCountsForPosts task")
+      return {}
+    }
     console.error("[postInteractions] Error fetching comment counts:", err)
-    const result = {}
-    postIds.forEach((postId) => {
-      result[postId] = 0
-    })
-    return result
+    return {}
   }
 }
 
-/**
- * Fetch ONLY like counts for multiple posts (lightweight)
- * Returns: { [postId]: { count, userLiked } }
- * Used for feed display to reduce payload
- */
-export async function fetchLikeCountsForPosts(postIds, userId = null) {
-  if (!postIds || postIds.length === 0) {
-    return {}
-  }
+export async function fetchLikeCountsForPosts(postIds, userId = null, signal = null) {
+  if (!postIds || postIds.length === 0) return {}
 
   try {
-    // Fetch only post_id and user_id (lightweight query)
-    const { data: allLikes, error } = await supabase
+    const query = supabase
       .from("likes")
       .select("post_id, user_id")
       .in("post_id", postIds)
 
-    if (error) throw error
+    if (signal) {
+      query.abortSignal(signal)
+    }
 
-    // Build result object with counts and user like status
+    const { data, error } = await query
+
+    if (error) {
+      if (error.message === 'Fetch is aborted' || signal?.aborted) {
+        if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchLikeCountsForPosts Supabase query")
+        return {}
+      }
+      throw error
+    }
+
     const result = {}
-    postIds.forEach((postId) => {
-      result[postId] = {
-        count: 0,
-        userLiked: false
+    postIds.forEach((id) => (result[id] = { count: 0, userLiked: false }))
+    ;(data || []).forEach((l) => {
+      if (result[l.post_id]) {
+        result[l.post_id].count++
+        if (userId && l.user_id === userId) result[l.post_id].userLiked = true
       }
     })
 
-    // Count likes per post and check if user liked
-    ;(allLikes || []).forEach((like) => {
-      if (result[like.post_id]) {
-        result[like.post_id].count++
-        if (userId && like.user_id === userId) {
-          result[like.post_id].userLiked = true
-        }
-      }
-    })
-
-    console.log("[postInteractions] Fetched like counts for", postIds.length, "posts")
     return result
   } catch (err) {
+    const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+    if (isAbort) {
+      if (import.meta.env.DEV) console.log("[FetchCancelled] postInteractions.fetchLikeCountsForPosts task")
+      return {}
+    }
     console.error("[postInteractions] Error fetching like counts:", err)
-    // Return empty structure for all posts
-    const result = {}
-    postIds.forEach((postId) => {
-      result[postId] = { count: 0, userLiked: false }
-    })
-    return result
+    return {}
   }
 }

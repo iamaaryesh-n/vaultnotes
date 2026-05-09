@@ -47,22 +47,9 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, onPos
     if (!authReady) return
     const uniquePostIds = postIdsKey ? postIdsKey.split(",") : []
 
-    if (uniquePostIds.length === 0) {
-      if (channelsRef.current) {
-        supabase.removeChannel(channelsRef.current.likes)
-        supabase.removeChannel(channelsRef.current.comments)
-        channelsRef.current = null
-      }
-      return
-    }
+    if (uniquePostIds.length === 0) return
 
     const nextKey = postIdsKey
-
-    if (channelsRef.current) {
-      supabase.removeChannel(channelsRef.current.likes)
-      supabase.removeChannel(channelsRef.current.comments)
-      channelsRef.current = null
-    }
 
     // ============================================
     // LIKES CHANNEL - Handle INSERT and DELETE
@@ -148,14 +135,12 @@ export function usePostsRealtime(postIds, onLikesChange, onCommentsChange, onPos
       posts: postsChannel
     }
 
-    // Cleanup on unmount
+    // Cleanup for this specific subscription run
     return () => {
-      if (channelsRef.current) {
-        supabase.removeChannel(channelsRef.current.likes)
-        supabase.removeChannel(channelsRef.current.comments)
-        supabase.removeChannel(channelsRef.current.posts)
-        channelsRef.current = null
-      }
+      if (likesChannel) supabase.removeChannel(likesChannel)
+      if (commentsChannel) supabase.removeChannel(commentsChannel)
+      if (postsChannel) supabase.removeChannel(postsChannel)
+      channelsRef.current = null
     }
   }, [postIdsKey, authReady])
 }

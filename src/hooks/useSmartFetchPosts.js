@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { usePostCacheStore } from '../stores/postCacheStore'
 import { fetchCommentsForPosts, fetchLikesForPosts } from '../lib/postInteractions'
 import { supabase } from '../lib/supabase'
@@ -15,7 +15,16 @@ import { supabase } from '../lib/supabase'
  * @returns {Object} { posts, comments, likes, loading, error }
  */
 export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, authReady) {
-  const store = usePostCacheStore()
+  const setCachedPosts = usePostCacheStore(s => s.setCachedPosts)
+  const setCachedComments = usePostCacheStore(s => s.setCachedComments)
+  const setCachedLikes = usePostCacheStore(s => s.setCachedLikes)
+  const setFetching = usePostCacheStore(s => s.setFetching)
+  const setStoreError = usePostCacheStore(s => s.setError)
+  const addStoreComment = usePostCacheStore(s => s.addComment)
+  const removeStoreComment = usePostCacheStore(s => s.removeComment)
+  const addStoreLike = usePostCacheStore(s => s.addLike)
+  const removeStoreLike = usePostCacheStore(s => s.removeLike)
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [posts, setPosts] = useState([])
@@ -23,6 +32,8 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
   const [likesByPost, setLikesByPost] = useState({})
   const [currentUserId, setCurrentUserId] = useState(null)
   
+  const fetchControllerRef = useRef(null)
+
   // Store cache key in local storage to track which data is loaded
   useEffect(() => {
     const cacheKeys = JSON.parse(localStorage.getItem('postCacheKeys') || '{}')
@@ -34,47 +45,87 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
   
   useEffect(() => {
     if (!authReady) return;
+    
+    if (import.meta.env.DEV) {
+      console.log("[useSmartFetchPosts] effect triggered for:", cacheKey)
+    }
+
+    const controller = new AbortController()
+    fetchControllerRef.current = controller
+
     const fetchData = async () => {
       try {
         setCurrentUserId(user?.id || null)
         setLoading(true)
         setError(null)
-        store.setFetching(true)
-        const fetchedPosts = await fetchFn()
+        setFetching(true)
+
+        // Pass the signal to fetchFn if it supports it
+        const fetchedPosts = await fetchFn(controller.signal)
+        
+        if (controller.signal.aborted) return
+
         if (!fetchedPosts || fetchedPosts.length === 0) {
           setPosts([])
           setLoading(false)
-          store.setFetching(false)
+          setFetching(false)
           return
         }
-        store.setCachedPosts(fetchedPosts)
+        setCachedPosts(fetchedPosts)
         const postIds = fetchedPosts.map(p => p.id)
         const [comments, likeData] = await Promise.all([
-          fetchCommentsForPosts(postIds),
-          fetchLikesForPosts(postIds, user?.id)
+          fetchCommentsForPosts(postIds, controller.signal),
+          fetchLikesForPosts(postIds, user?.id, controller.signal)
         ])
-        store.setCachedComments(comments)
-        store.setCachedLikes(likeData)
+
+        if (controller.signal.aborted) return
+
+        setCachedComments(comments)
+        setCachedLikes(likeData)
         const postsWithCounts = fetchedPosts.map(post => ({
           ...post,
           likes_count: likeData[post.id]?.count || 0,
           comments_count: (comments[post.id] || []).length
         }))
-        setPosts(postsWithCounts)
-        setCommentsByPost(comments)
-        setLikesByPost(likeData)
-        console.log('[useSmartFetchPosts] Fetched fresh data for', cacheKey)
+
+        if (!controller.signal.aborted) {
+          setPosts(postsWithCounts)
+          setCommentsByPost(comments)
+          setLikesByPost(likeData)
+          console.log('[useSmartFetchPosts] Fetched fresh data for', cacheKey)
+        }
       } catch (err) {
+        const isAbort = 
+          err.name === 'AbortError' || 
+          err.message === 'Fetch is aborted' || 
+          err.message?.includes('signal is aborted') ||
+          controller.signal.aborted
+
+        if (isAbort) {
+          if (import.meta.env.DEV) console.log("[FetchCancelled] useSmartFetchPosts.fetchData")
+          return
+        }
+
         console.error('[useSmartFetchPosts] Error:', err)
-        setError(err.message || 'Failed to fetch posts')
-        store.setError(err.message)
+        if (!controller.signal.aborted) {
+          setError(err.message || 'Failed to fetch posts')
+          setStoreError(err.message)
+        }
       } finally {
-        setLoading(false)
-        store.setFetching(false)
+        if (!controller.signal.aborted) {
+          setLoading(false)
+          setFetching(false)
+        }
       }
     }
+
     fetchData()
-  }, [cacheKey, forceFresh, user, authReady])
+
+    return () => {
+      controller.abort()
+    }
+  }, [cacheKey, forceFresh, user?.id, authReady, setCachedPosts, setCachedComments, setCachedLikes, setFetching, setStoreError])
+
   
   return {
     posts,
@@ -117,7 +168,7 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
       )
 
       // Also update cache
-      store.addComment(postId, newComment)
+      addStoreComment(postId, newComment)
     },
     removeComment: (postId, commentId) => {
       setCommentsByPost(prev => {
@@ -148,7 +199,7 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
         })
       )
 
-      store.removeComment(postId, commentId)
+      removeStoreComment(postId, commentId)
     },
     removeCommentById: (commentId) => {
       const affectedPostIds = Object.keys(commentsByPost).filter(postId =>
@@ -183,7 +234,7 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
       )
 
       affectedPostIds.forEach(postId => {
-        store.removeComment(postId, commentId)
+        removeStoreComment(postId, commentId)
       })
     },
     updateLike: (postId, eventType, eventUserId) => {
@@ -219,9 +270,9 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
 
       // Also update cache
       if (isInsert) {
-        store.addLike(postId, isOwnEvent)
+        addStoreLike(postId, isOwnEvent)
       } else {
-        store.removeLike(postId, isOwnEvent)
+        removeStoreLike(postId, isOwnEvent)
       }
     },
     updatePost: (postId, updatedData) => {
@@ -278,6 +329,11 @@ export async function prefetchPosts(fetchFn, cacheKey) {
       console.log('[prefetchPosts] Prefetched data for:', cacheKey)
     }
   } catch (err) {
+    const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')
+    if (isAbort) {
+      if (import.meta.env.DEV) console.log("[FetchCancelled] prefetchPosts task")
+      return
+    }
     console.error('[prefetchPosts] Error prefetching:', err)
   }
 }
