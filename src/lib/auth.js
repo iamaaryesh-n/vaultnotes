@@ -107,18 +107,22 @@ export async function signUpUser(email, password) {
     // RLS policy requires: auth.uid() = id
     console.log("[signUpUser] Inserting profile for user ID:", user.id)
     
+    // Use UPSERT to handle edge cases:
+    // 1. If profile already exists (from trigger or other sources), update it with username
+    // 2. If profile doesn't exist, create it
+    // 3. Defensive guard: prevents NULL username from being preserved
     const { error: profileError } = await supabase
       .from("profiles")
-      .insert({
+      .upsert({
         id: user.id,              // Must match auth.uid() for RLS policy
         email: user.email,
         username: username,       // Unique username
         name: username,           // Initialize name with username
         avatar_url: null
-      })
+      }, { onConflict: "id" })
 
     if (profileError) {
-      console.error("[signUpUser] Profile insert failed:", profileError.message)
+      console.error("[signUpUser] Profile upsert failed:", profileError.message)
       console.error("[signUpUser] Error details:", profileError)
       // Non-blocking: log the error but don't break signup
       console.warn("[signUpUser] Continuing signup despite profile creation failure")

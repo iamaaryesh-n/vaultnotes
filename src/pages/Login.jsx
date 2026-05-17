@@ -272,9 +272,13 @@ export default function Login({ initialMode = "login" }) {
       cover_photo_url: coverPhotoUrl,
     }
 
+    // UPSERT instead of INSERT to handle edge cases:
+    // 1. If profile already exists (from trigger or other sources), update it with proper username
+    // 2. If profile doesn't exist, create it
+    // 3. Defensive guard: prevents NULL username from being preserved
     const { error } = await supabase
       .from("profiles")
-      .insert(profilePayload)
+      .upsert(profilePayload, { onConflict: "id" })
 
     if (!error) return
 
@@ -283,7 +287,7 @@ export default function Login({ initialMode = "login" }) {
       const { cover_photo_url, ...fallbackPayload } = profilePayload
       const { error: fallbackError } = await supabase
         .from("profiles")
-        .insert(fallbackPayload)
+        .upsert(fallbackPayload, { onConflict: "id" })
 
       if (!fallbackError) return
       throw new Error(fallbackError.message)
@@ -603,10 +607,6 @@ export default function Login({ initialMode = "login" }) {
                   </button>
                 </div>
               </div>
-
-              <p className="rounded-[10px] border border-[var(--profile-border)] bg-[var(--profile-elev)] px-3 py-2 text-[12px] text-[var(--profile-text-subtle)]">
-                Username is mandatory and will be collected in the next step.
-              </p>
             </div>
           ) : (
             <div className="space-y-4 onboard-step">

@@ -282,22 +282,29 @@ export default function Profile() {
         }
 
         // Create default profile if it doesn't exist
+        // This is a safety fallback for users without a profile
         console.log("[Profile] No profile found, creating default profile")
+        
+        // Generate a username from email to prevent NULL username
+        const generatedUsername = authUser.email?.split("@")[0]?.toLowerCase() || "user"
+        
         const { data: newProfile, error: insertError } = await supabase
           .from("profiles")
-          .insert({
+          .upsert({
             id: authUser.id,
             email: authUser.email,
+            username: generatedUsername,    // Include generated username
             name: authUser.email.split("@")[0] || "",
             bio: "",
             avatar_url: null
-          })
+          }, { onConflict: "id" })
           .select()
           .single()
 
         if (!insertError && newProfile) {
           setProfile(newProfile)
           setNameInput(newProfile.name || "")
+          setUsernameInput(newProfile.username || "")
           setBioInput(newProfile.bio || "")
           console.log("[Profile] Created default profile:", newProfile)
           // Posts will be fetched via useSmartFetchPosts hook automatically
@@ -308,10 +315,12 @@ export default function Profile() {
             id: authUser.id,
             email: authUser.email,
             name: authUser.email.split("@")[0] || "",
+            username: generatedUsername,    // Include generated username
             bio: "",
             avatar_url: null
           })
           setNameInput(authUser.email.split("@")[0] || "")
+          setUsernameInput(generatedUsername || "")
           setBioInput("")
           // Posts will be fetched via useSmartFetchPosts hook automatically
         }

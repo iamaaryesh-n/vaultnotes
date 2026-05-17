@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react"
-import { useNavigate, useLocation } from "react-router-dom"
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react"
+import { useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 import { useAuth } from "../hooks/useAuth"
 import { useNotifications } from "../hooks/useNotifications"
 import { SearchDropdown } from "./SearchDropdown"
 import { EditProfileModal } from "./EditProfileModal"
 import Modal from "./Modal"
-import { applyTheme, getStoredTheme, setStoredTheme } from "../utils/theme"
 import vaultNotesLogoMark from "../assets/branding/vaultnotes-logo-mark.png"
 
 const NotificationDropdown = lazy(() =>
@@ -15,13 +14,11 @@ const NotificationDropdown = lazy(() =>
 
 export default function Navbar() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const { user: authUser, authLoading, authReady } = useAuth()
+  const { user: authUser, authReady } = useAuth()
   
   const { notifications, loading: notificationsLoading, unreadCount, markAsRead } = useNotifications()
   
   const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(authLoading)
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false)
   const [notification, setNotification] = useState(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -29,10 +26,7 @@ export default function Navbar() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
-  const [accountMenuAnchor, setAccountMenuAnchor] = useState(null)
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
-  const [selectedTheme, setSelectedTheme] = useState("system")
   const [confirmModal, setConfirmModal] = useState({
     open: false,
     title: "",
@@ -43,7 +37,6 @@ export default function Navbar() {
   })
   const notificationsRef = useRef(null)
   const searchRef = useRef(null)
-  const accountMenuRef = useRef(null)
   const debounceTimer = useRef(null)
 
   useEffect(() => {
@@ -53,53 +46,12 @@ export default function Navbar() {
 
     if (authUser) {
       fetchProfile(authUser.id)
-    } else {
-      setLoading(false)
     }
 
     // Close notification dropdown on mount (e.g., after refresh)
     setNotificationDropdownOpen(false)
     console.log('[Navbar] Component mounted - dropdown closed, fetching user profile')
   }, [authReady, authUser])
-
-  useEffect(() => {
-    setAccountMenuOpen(false)
-    setAccountMenuAnchor(null)
-  }, [location.pathname])
-
-  useEffect(() => {
-    const savedTheme = getStoredTheme()
-    setSelectedTheme(savedTheme)
-    applyTheme(savedTheme)
-  }, [])
-
-  useEffect(() => {
-    const handleBottomNavAccountMenu = (event) => {
-      const rawAnchorX = event?.detail?.anchorX
-      const anchorTop = event?.detail?.anchorTop
-      if (typeof rawAnchorX !== "number" || typeof anchorTop !== "number") {
-        return
-      }
-
-      if (accountMenuOpen) {
-        setAccountMenuOpen(false)
-        return
-      }
-
-      const menuHalfWidth = 112
-      const viewportWidth = window.innerWidth
-      const minX = 16 + menuHalfWidth
-      const maxX = viewportWidth - 16 - menuHalfWidth
-      const safeAnchorX = Math.max(minX, Math.min(rawAnchorX, maxX))
-
-      setSelectedTheme(getStoredTheme())
-      setAccountMenuAnchor({ x: safeAnchorX, y: anchorTop })
-      setAccountMenuOpen(true)
-    }
-
-    window.addEventListener("openAccountMenu", handleBottomNavAccountMenu)
-    return () => window.removeEventListener("openAccountMenu", handleBottomNavAccountMenu)
-  }, [accountMenuOpen])
 
   // Listen for profile updates from other components
   useEffect(() => {
@@ -124,14 +76,6 @@ export default function Navbar() {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         setSearchOpen(false)
-      }
-
-      if (event.target?.closest?.("[data-account-menu-trigger='true']")) {
-        return
-      }
-
-      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target)) {
-        setAccountMenuOpen(false)
       }
     }
 
@@ -182,8 +126,6 @@ export default function Navbar() {
 
   const fetchProfile = async (userId) => {
     try {
-      setLoading(true)
-
       console.log("[Navbar] Fetching profile for user:", userId)
 
       // Fetch user's profile from profiles table
@@ -200,7 +142,7 @@ export default function Navbar() {
           // Expose profile globally so other components can reuse without refetching
           window.__vn_profile = profileData
           window.dispatchEvent(new CustomEvent("profileLoaded", { detail: profileData }))
-        } catch (e) {
+        } catch {
           // ignore
         }
       } else if (profileError && profileError.code !== "PGRST116") {
@@ -208,36 +150,7 @@ export default function Navbar() {
       }
     } catch (err) {
       console.error("[Navbar] Exception:", err.message)
-    } finally {
-      setLoading(false)
     }
-  }
-
-  const getCurrentUsername = () => {
-    if (profile?.username) return profile.username
-    if (authUser?.user_metadata?.username) return authUser.user_metadata.username
-    return ""
-  }
-
-  const handleProfileClick = () => {
-    const username = getCurrentUsername()
-
-    if (username) {
-      navigate(`/profile/${username}`)
-      return
-    }
-
-    navigate("/profile")
-  }
-
-  const handleViewProfile = () => {
-    setAccountMenuOpen(false)
-    handleProfileClick()
-  }
-
-  const handleOpenEditProfile = () => {
-    setAccountMenuOpen(false)
-    setIsEditProfileOpen(true)
   }
 
   const closeConfirmModal = () => {
@@ -264,23 +177,6 @@ export default function Navbar() {
     }
 
     await executeSessionExit()
-  }
-
-  const handleAccountMenuToggle = () => {
-    setSelectedTheme(getStoredTheme())
-    setAccountMenuOpen((prev) => !prev)
-  }
-
-  const handleThemeChange = (theme) => {
-    setStoredTheme(theme)
-    applyTheme(theme)
-    setSelectedTheme(theme)
-    setAccountMenuOpen(false)
-  }
-
-  const handleOpenSettings = () => {
-    setAccountMenuOpen(false)
-    navigate("/settings")
   }
 
   const handleEditProfileSave = async (updateData, mediaChanges = {}) => {
@@ -419,9 +315,7 @@ export default function Navbar() {
     }
   }
 
-  const handleLogout = async () => {
-    setAccountMenuOpen(false)
-
+  const handleLogout = useCallback(async () => {
     setConfirmModal({
       open: true,
       title: "Logout",
@@ -430,18 +324,16 @@ export default function Navbar() {
       cancelText: "Cancel",
       action: "logout",
     })
-  }
+  }, [])
 
-  // Get initials from name
-  const getInitials = (name) => {
-    if (!name) return "?"
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2)
-  }
+  useEffect(() => {
+    window.__vn_openEditProfile = () => setIsEditProfileOpen(true)
+    window.__vn_logout = () => handleLogout()
+    return () => {
+      delete window.__vn_openEditProfile
+      delete window.__vn_logout
+    }
+  }, [handleLogout])
 
   return (
     <>
@@ -449,7 +341,18 @@ export default function Navbar() {
       <nav className="fixed top-0 left-0 right-0 z-[100] h-[56px] border-b border-[var(--chat-border)] bg-[var(--chat-bg)] backdrop-blur-[16px]">
         <div className="px-4 md:px-6 h-full flex items-center gap-3">
           {/* Left: Logo */}
-          <div className="flex-shrink-0">
+          <div className="flex flex-shrink-0 items-center">
+            {/* Hamburger menu - opens settings */}
+            <button
+              onClick={() => navigate("/settings")}
+              className="mr-2 flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)] hover:text-[var(--chat-text)]"
+              aria-label="Open settings"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+
             {/* Logo */}
             <button
               onClick={() => navigate("/")}
@@ -561,47 +464,6 @@ export default function Navbar() {
               )}
             </div>
           </div>
-
-          {/* Account dropdown moved trigger to bottom nav, menu still rendered here */}
-          {accountMenuOpen && accountMenuAnchor && (
-            <div
-              ref={accountMenuRef}
-              className="fixed z-50 w-56 animate-fadeIn rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] py-2 shadow-[0_16px_40px_-20px_rgba(0,0,0,0.75)]"
-              style={{
-                left: `${accountMenuAnchor.x}px`,
-                top: `${accountMenuAnchor.y}px`,
-                transform: "translate(-50%, calc(-100% - 8px))",
-                transformOrigin: "center bottom",
-              }}
-            >
-              <button
-                onClick={handleViewProfile}
-                className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
-              >
-                View Profile
-              </button>
-              <button
-                onClick={handleOpenEditProfile}
-                className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text)] transition-colors hover:bg-[var(--chat-elev)]"
-              >
-                Edit Profile
-              </button>
-              <button
-                onClick={handleOpenSettings}
-                className="w-full px-4 py-2.5 text-left text-sm text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)]"
-              >
-                Settings
-              </button>
-              <div className="my-1 border-t border-[var(--chat-border)]" />
-              <button
-                onClick={handleLogout}
-                disabled={loggingOut}
-                className="w-full px-4 py-2.5 text-left text-sm text-[#EF4444] transition-colors hover:bg-[rgba(239,68,68,0.08)] disabled:opacity-60"
-              >
-                {loggingOut ? "Logging out..." : "Logout"}
-              </button>
-            </div>
-          )}
         </div>
       </nav>
 

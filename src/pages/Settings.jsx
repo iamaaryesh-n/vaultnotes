@@ -73,10 +73,34 @@ export default function Settings() {
             )}
           </section>
 
+          <section className="rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-3">
+            <h2 className="text-sm font-semibold">Account</h2>
+            <p className="mt-1 text-xs text-[var(--chat-text-muted)]">Profile info and account preferences</p>
+            <div className="mt-2 space-y-1 border-t border-[var(--chat-border)] pt-2">
+              <button
+                onClick={() => window.__vn_openEditProfile?.()}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-[var(--chat-text-subtle)] hover:bg-[var(--chat-elev)]"
+              >
+                <span>Edit Profile</span>
+                <svg className="h-4 w-4 text-[var(--chat-text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              <button
+                onClick={() => window.__vn_logout?.()}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-[#EF4444] hover:bg-[rgba(239,68,68,0.08)]"
+              >
+                <span>Logout</span>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </div>
+          </section>
+
           {[
             { title: "Notifications", desc: "Push alerts, mentions, and activity updates" },
             { title: "Privacy", desc: "Profile visibility and data controls" },
-            { title: "Account", desc: "Profile info and account preferences" },
             { title: "Help", desc: "Support, FAQs, and troubleshooting" },
           ].map((section) => (
             <section key={section.title} className="rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] p-3">

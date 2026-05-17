@@ -378,6 +378,24 @@ export default function Chat() {
   }, [])
 
   useEffect(() => {
+    const setVh = () => {
+      const h = window.visualViewport ? window.visualViewport.height : window.innerHeight
+      document.documentElement.style.setProperty("--chat-visual-height", `${h}px`)
+    }
+    setVh()
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", setVh)
+      window.visualViewport.addEventListener("scroll", setVh)
+      return () => {
+        window.visualViewport.removeEventListener("resize", setVh)
+        window.visualViewport.removeEventListener("scroll", setVh)
+      }
+    }
+    window.addEventListener("resize", setVh)
+    return () => window.removeEventListener("resize", setVh)
+  }, [])
+
+  useEffect(() => {
     setHasFetchedGroups(false)
   }, [contextUser?.id])
 
@@ -6678,7 +6696,10 @@ export default function Chat() {
 
 
   return (
-    <div className="chat-theme mx-auto flex h-full max-h-full min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[var(--chat-text)]">
+    <div
+      className="chat-theme mx-auto flex min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[var(--chat-text)]"
+      style={isMobileView ? { height: "var(--chat-visual-height, 100svh)" } : { height: "100%", maxHeight: "100%" }}
+    >
       {error && (
         <div className="mb-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}

@@ -19,6 +19,26 @@ export default function BottomNavigation() {
   })
   const [isUnreadLoaded, setIsUnreadLoaded] = useState(false)
   const avatarSrc = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || null
+  const MotionDiv = motion.div
+
+  async function fetchProfile(userId) {
+    if (!userId) return
+
+    try {
+      console.log("[BottomNav] Fetching profile for user:", userId)
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("id, username, name, avatar_url")
+        .eq("id", userId)
+        .single()
+
+      if (profileData) {
+        setProfile(profileData)
+      }
+    } catch (err) {
+      console.error("[BottomNav] Error fetching profile:", err)
+    }
+  }
 
   useEffect(() => {
     if (!authReady) {
@@ -75,25 +95,6 @@ export default function BottomNavigation() {
   useEffect(() => {
     setAvatarLoadFailed(false)
   }, [avatarSrc])
-
-  const fetchProfile = async (userId) => {
-    if (!userId) return
-
-    try {
-      console.log("[BottomNav] Fetching profile for user:", userId)
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id, username, name, avatar_url")
-        .eq("id", userId)
-        .single()
-
-      if (profileData) {
-        setProfile(profileData)
-      }
-    } catch (err) {
-      console.error("[BottomNav] Error fetching profile:", err)
-    }
-  }
 
   const fetchUnreadChatCount = async (userId) => {
     if (!userId) return
@@ -262,14 +263,13 @@ export default function BottomNavigation() {
     setMenuOpen(!menuOpen)
   }
 
-  const handleProfileNavigation = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const anchorX = rect.left + (rect.width / 2)
-    const anchorTop = rect.top
-
-    window.dispatchEvent(new CustomEvent("openAccountMenu", {
-      detail: { anchorX, anchorTop }
-    }))
+  const handleProfileNavigation = () => {
+    const username = profile?.username
+    if (username) {
+      navigate(`/profile/${username}`)
+    } else {
+      navigate("/profile")
+    }
   }
 
   const getInitials = (name) => {
@@ -371,8 +371,6 @@ export default function BottomNavigation() {
 
           {/* Profile */}
           <button
-            data-account-menu-trigger="true"
-            onMouseDown={(e) => e.stopPropagation()}
             onClick={handleProfileNavigation}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
               isActive("/profile") ? "text-[var(--chat-accent)]" : "text-[var(--chat-text-muted)] hover:text-[var(--chat-text-subtle)]"
@@ -439,7 +437,7 @@ export default function BottomNavigation() {
         {menuOpen && (
           <>
             {/* Backdrop for menu */}
-            <motion.div
+            <MotionDiv
               className="fixed inset-0 z-50 bg-[rgba(26,22,18,0.28)] backdrop-blur-[1px] dark:bg-black/35"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -449,7 +447,7 @@ export default function BottomNavigation() {
             />
 
             {/* Create Menu */}
-            <motion.div
+            <MotionDiv
               className="fixed bottom-[66px] left-1/2 z-[60] w-[244px] overflow-hidden rounded-[16px] border border-[var(--profile-border-strong)] bg-[linear-gradient(180deg,var(--profile-surface)_0%,var(--profile-elev)_100%)] shadow-[0_18px_38px_rgba(26,22,18,0.18),0_0_0_1px_rgba(244,180,0,0.10)] dark:shadow-[0_22px_44px_rgba(0,0,0,0.62),0_0_0_1px_rgba(244,180,0,0.08)]"
               style={{ x: "-50%", transformOrigin: "center bottom" }}
               initial={{ opacity: 0, y: 10, scale: 0.96 }}
@@ -491,7 +489,7 @@ export default function BottomNavigation() {
                 </span>
                 <span>New Vault</span>
               </button>
-            </motion.div>
+            </MotionDiv>
           </>
         )}
       </AnimatePresence>

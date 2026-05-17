@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useAuth } from "../hooks/useAuth"
 import { supabase } from "../lib/supabase"
 import { useNavigate, useParams } from "react-router-dom"
@@ -30,6 +30,8 @@ export default function PublicProfile() {
   const [workspaces, setWorkspaces] = useState([])
   const [workspacesLoading, setWorkspacesLoading] = useState(false)
   const [modalConfig, setModalConfig] = useState({ open: false, title: "", message: "", onConfirm: null })
+
+  const lastFollowStatusFetchRef = useRef({ profileId: null, userId: null })
   
   // Smart fetch posts with caching
   const {
@@ -138,16 +140,17 @@ export default function PublicProfile() {
         setProfile(profileData)
         console.log("[PublicProfile] Fetched profile:", profileData)
         
-        // Load follow status and counts after profile is loaded
+        // Parallelize independent metadata fetches
+        const promises = [
+          fetchFollowersCounts(profileData.id),
+          fetchWorkspaces(profileData.id)
+        ]
+
         if (currentUser) {
-          await fetchFollowStatus(profileData.id)
-          await fetchFollowersCounts(profileData.id)
-          await fetchWorkspaces(profileData.id)
-        } else {
-          // Just fetch counts if user is not logged in
-          await fetchFollowersCounts(profileData.id)
-          await fetchWorkspaces(profileData.id)
+          promises.push(fetchFollowStatus(profileData.id))
         }
+
+        await Promise.all(promises)
       }
     } catch (err) {
       console.error("[PublicProfile] Exception:", err.message)
@@ -166,13 +169,20 @@ export default function PublicProfile() {
   }
 
   const fetchFollowStatus = async (profileId) => {
-    if (!currentUser) return
+    if (!currentUser || !profileId) return
+
+    // Prevent redundant fetches for the same user/profile combo
+    const userId = currentUser.id
+    if (lastFollowStatusFetchRef.current.profileId === profileId && lastFollowStatusFetchRef.current.userId === userId) {
+      return
+    }
+    lastFollowStatusFetchRef.current = { profileId, userId }
 
     try {
       const { data, error } = await supabase
         .from("follows")
         .select("id")
-        .eq("follower_id", currentUser.id)
+        .eq("follower_id", userId)
         .eq("following_id", profileId)
         .maybeSingle()
 
@@ -190,38 +200,28 @@ export default function PublicProfile() {
 
   const fetchFollowersCounts = async (profileId) => {
     try {
-      // Fetch followers count
-      const { count: followersCount, error: followersError } = await supabase
-        .from("follows")
-        .select("*", { count: "exact", head: true })
-        .eq("following_id", profileId)
+      // Parallelize count fetches
+      const [followersRes, followingRes, vaultsRes] = await Promise.all([
+        supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", profileId),
+        supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", profileId),
+        supabase.from("workspaces").select("*", { count: "exact", head: true }).eq("created_by", profileId).eq("is_public", true)
+      ])
 
-      if (!followersError) {
-        setFollowersCount(followersCount || 0)
+      if (!followersRes.error) {
+        setFollowersCount(followersRes.count || 0)
+      }
+      if (!followingRes.error) {
+        setFollowingCount(followingRes.count || 0)
+      }
+      if (!vaultsRes.error) {
+        setVaultsCount(vaultsRes.count || 0)
       }
 
-      // Fetch following count
-      const { count: followingCount, error: followingError } = await supabase
-        .from("follows")
-        .select("*", { count: "exact", head: true })
-        .eq("follower_id", profileId)
-
-      if (!followingError) {
-        setFollowingCount(followingCount || 0)
-      }
-
-      // Fetch public vaults count
-      const { count: vaults, error: vaultsError } = await supabase
-        .from("workspaces")
-        .select("*", { count: "exact", head: true })
-        .eq("created_by", profileId)
-        .eq("is_public", true)
-
-      if (!vaultsError) {
-        setVaultsCount(vaults || 0)
-      }
-
-      console.log("[PublicProfile] Stats:", { followers: followersCount, following: followingCount, vaults })
+      console.log("[PublicProfile] Stats:", { 
+        followers: followersRes.count, 
+        following: followingRes.count, 
+        vaults: vaultsRes.count 
+      })
     } catch (err) {
       console.error("[PublicProfile] Exception fetching counts:", err)
     }
