@@ -12,7 +12,7 @@ const NotificationDropdown = lazy(() =>
   import("./NotificationDropdown").then((module) => ({ default: module.NotificationDropdown }))
 )
 
-export default function Navbar() {
+export default function Navbar({ onOpenSettings }) {
   const navigate = useNavigate()
   const { user: authUser, authReady } = useAuth()
   
@@ -344,7 +344,7 @@ export default function Navbar() {
           <div className="flex flex-shrink-0 items-center">
             {/* Hamburger menu - opens settings */}
             <button
-              onClick={() => navigate("/settings")}
+              onClick={onOpenSettings}
               className="mr-2 flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-[var(--chat-text-subtle)] transition-colors hover:bg-[var(--chat-elev)] hover:text-[var(--chat-text)]"
               aria-label="Open settings"
             >

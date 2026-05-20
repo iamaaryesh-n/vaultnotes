@@ -1,5 +1,6 @@
 import { Routes, Route, useLocation, useNavigate, Navigate, Outlet, useNavigationType } from "react-router-dom"
 import { useEffect, useState, Suspense, lazy, useRef } from "react"
+import { AnimatePresence } from "framer-motion"
 import { useAuth } from "./hooks/useAuth"
 import { ToastProvider } from "./context/ToastContext"
 import { AuthProvider } from "./context/AuthContext"
@@ -94,7 +95,7 @@ function AppLoadingFallback({ label = "Loading VaultNotes..." }) {
   )
 }
 
-function AppShell({ user, createPostOpen, setCreatePostOpen }) {
+function AppShell({ user, createPostOpen, setCreatePostOpen, onOpenSettings }) {
   const location = useLocation()
   const [postDetailFocusMode, setPostDetailFocusMode] = useState(false)
 
@@ -112,7 +113,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen }) {
 
   return (
     <div className={`profile-theme ${isChatRoute ? "h-screen overflow-hidden" : "min-h-screen"} bg-[var(--profile-bg)] text-[var(--profile-text)]`}>
-      {!postDetailFocusMode && <Navbar />}
+      {!postDetailFocusMode && <Navbar onOpenSettings={onOpenSettings} />}
       <ToastContainer />
       <LoadingBar />
       {!postDetailFocusMode && <BottomNavigation />}
@@ -147,6 +148,7 @@ function AppContent() {
   const navigationType = useNavigationType()
   const { user, session, authLoading } = useAuth()
   const [createPostOpen, setCreatePostOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const setActiveRouteMeta = useNavigationStore((state) => state.setActiveRouteMeta)
   const setBackNavigationState = useNavigationStore((state) => state.setBackNavigationState)
   const previousPathRef = useRef(location.pathname)
@@ -250,182 +252,182 @@ function AppContent() {
   }
 
   return (
-    <Routes>
-      <Route path="/login" element={!user ? <Login /> : <Navigate to="/explore" replace />} />
-      <Route path="/" element={<Navigate to={user ? "/explore" : "/login"} replace />} />
+    <>
+      <Routes>
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/explore" replace />} />
+        <Route path="/" element={<Navigate to={user ? "/explore" : "/login"} replace />} />
 
-      <Route
-        element={
-          <ProtectedRoute user={user}>
-            <AppShell user={user} createPostOpen={createPostOpen} setCreatePostOpen={setCreatePostOpen} />
-          </ProtectedRoute>
-        }
-      >
         <Route
-          path="/explore"
           element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<AppLoadingFallback />}>
-                <Explore />
+            <ProtectedRoute user={user}>
+              <AppShell
+                user={user}
+                createPostOpen={createPostOpen}
+                setCreatePostOpen={setCreatePostOpen}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
+            </ProtectedRoute>
+          }
+        >
+          <Route
+            path="/explore"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<AppLoadingFallback />}>
+                  <Explore />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
+
+          <Route
+            path="/workspaces"
+            element={
+              <Suspense fallback={<VaultsRouteFallback />}>
+                <Dashboard session={session} />
               </Suspense>
-            </ErrorBoundary>
-          }
-        />
+            }
+          />
 
-        <Route
-          path="/workspaces"
-          element={
-            <Suspense fallback={<VaultsRouteFallback />}>
-              <Dashboard session={session} />
-            </Suspense>
-          }
-        />
+          <Route
+            path="/profile"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<AppLoadingFallback />}>
+                  <Profile />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
 
-        <Route
-          path="/profile"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<AppLoadingFallback />}>
-                <Profile />
-              </Suspense>
-            </ErrorBoundary>
-          }
-        />
+          <Route
+            path="/profile/:username"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<AppLoadingFallback />}>
+                  <Profile />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
 
-        <Route
-          path="/profile/:username"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<AppLoadingFallback />}>
-                <Profile />
-              </Suspense>
-            </ErrorBoundary>
-          }
-        />
+          <Route
+            path="/chat"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
 
-        <Route
-          path="/settings"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<AppLoadingFallback />}>
-                <Settings />
-              </Suspense>
-            </ErrorBoundary>
-          }
-        />
+          <Route
+            path="/chat/group/:groupId"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
 
-        <Route
-          path="/chat"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
+          <Route
+            path="/chat/direct/:conversationId"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
+
+          <Route
+            path="/chat/:conversationId"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
+                  <Chat />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
+
+          <Route
+            path="/groups"
+            element={
               <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
-                <Chat />
+                <GroupChat />
               </Suspense>
-            </ErrorBoundary>
-          }
-        />
+            }
+          />
 
-        <Route
-          path="/chat/group/:groupId"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
-                <Chat />
-              </Suspense>
-            </ErrorBoundary>
-          }
-        />
+          <Route
+            path="/workspace/:id"
+            element={
+              <ErrorBoundary resetKey={location.pathname}>
+                <Suspense fallback={<AppLoadingFallback />}>
+                  <WorkspaceDetail />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
 
-        <Route
-          path="/chat/direct/:conversationId"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
-                <Chat />
-              </Suspense>
-            </ErrorBoundary>
-          }
-        />
-
-        <Route
-          path="/chat/:conversationId"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
-              <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
-                <Chat />
-              </Suspense>
-            </ErrorBoundary>
-          }
-        />
-
-        <Route
-          path="/groups"
-          element={
-            <Suspense fallback={<div className="h-full overflow-hidden bg-[var(--chat-bg)]" />}>
-              <GroupChat />
-            </Suspense>
-          }
-        />
-
-        <Route
-          path="/workspace/:id"
-          element={
-            <ErrorBoundary resetKey={location.pathname}>
+          <Route
+            path="/workspace-preview/:id"
+            element={
               <Suspense fallback={<AppLoadingFallback />}>
-                <WorkspaceDetail />
+                <PublicWorkspaceLanding />
               </Suspense>
-            </ErrorBoundary>
-          }
-        />
+            }
+          />
 
-        <Route
-          path="/workspace-preview/:id"
-          element={
-            <Suspense fallback={<AppLoadingFallback />}>
-              <PublicWorkspaceLanding />
-            </Suspense>
-          }
-        />
+          <Route path="/discover-workspaces" element={<DiscoverWorkspaces />} />
 
-        <Route path="/discover-workspaces" element={<DiscoverWorkspaces />} />
+          <Route
+            path="/workspace/:id/new"
+            element={
+              <Suspense fallback={<AppLoadingFallback />}>
+                <MemoryEditor />
+              </Suspense>
+            }
+          />
 
-        <Route
-          path="/workspace/:id/new"
-          element={
-            <Suspense fallback={<AppLoadingFallback />}>
-              <MemoryEditor />
-            </Suspense>
-          }
-        />
+          <Route
+            path="/workspace/:id/memory/:memoryId"
+            element={
+              <Suspense fallback={<AppLoadingFallback />}>
+                <MemoryView />
+              </Suspense>
+            }
+          />
 
-        <Route
-          path="/workspace/:id/memory/:memoryId"
-          element={
-            <Suspense fallback={<AppLoadingFallback />}>
-              <MemoryView />
-            </Suspense>
-          }
-        />
+          <Route
+            path="/workspace/:id/memory/:memoryId/edit"
+            element={
+              <Suspense fallback={<AppLoadingFallback />}>
+                <MemoryEditor />
+              </Suspense>
+            }
+          />
 
-        <Route
-          path="/workspace/:id/memory/:memoryId/edit"
-          element={
-            <Suspense fallback={<AppLoadingFallback />}>
-              <MemoryEditor />
-            </Suspense>
-          }
-        />
+          <Route
+            path="/notifications"
+            element={
+              <Suspense fallback={<AppLoadingFallback />}>
+                <Notifications />
+              </Suspense>
+            }
+          />
+        </Route>
+      </Routes>
 
-        <Route
-          path="/notifications"
-          element={
-            <Suspense fallback={<AppLoadingFallback />}>
-              <Notifications />
-            </Suspense>
-          }
-        />
-      </Route>
-    </Routes>
+      <AnimatePresence>
+        {settingsOpen && <Settings key="settings-overlay" onClose={() => setSettingsOpen(false)} />}
+      </AnimatePresence>
+    </>
   )
 }
 
