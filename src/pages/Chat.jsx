@@ -257,6 +257,7 @@ export default function Chat() {
   }, [messages, groupMessageReactions, profilesById, contextUser?.id])
 
   const [isMobileView, setIsMobileView] = useState(() => window.matchMedia("(max-width: 767px)").matches)
+  const [keyboardOpen, setKeyboardOpen] = useState(false)
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -379,8 +380,18 @@ export default function Chat() {
 
   useEffect(() => {
     const setVh = () => {
-      const h = window.visualViewport ? window.visualViewport.height : window.innerHeight
-      document.documentElement.style.setProperty("--chat-visual-height", `${h}px`)
+      if (window.visualViewport) {
+        const h = window.visualViewport.height
+        const t = window.visualViewport.offsetTop
+        const isKeyboardOpen = window.innerHeight - h > 80 // keyboard threshold: >80px shrink
+        document.documentElement.style.setProperty("--chat-visual-height", `${h}px`)
+        document.documentElement.style.setProperty("--chat-visual-top", `${t}px`)
+        setKeyboardOpen(isKeyboardOpen)
+      } else {
+        document.documentElement.style.setProperty("--chat-visual-height", `${window.innerHeight}px`)
+        document.documentElement.style.setProperty("--chat-visual-top", `0px`)
+        setKeyboardOpen(false)
+      }
     }
     setVh()
     if (window.visualViewport) {
@@ -6698,7 +6709,22 @@ export default function Chat() {
   return (
     <div
       className="chat-theme mx-auto flex min-w-0 w-full max-w-[1280px] flex-col overflow-hidden px-1.5 pt-2 pb-1 sm:px-2 md:px-3 text-[var(--chat-text)]"
-      style={isMobileView ? { height: "var(--chat-visual-height, 100svh)" } : { height: "100%", maxHeight: "100%" }}
+      style={
+        isMobileView && keyboardOpen
+          ? {
+              position: "fixed",
+              top: "var(--chat-visual-top, 0px)",
+              left: 0,
+              right: 0,
+              height: "var(--chat-visual-height, 100svh)",
+              zIndex: 0,
+              padding: 0,
+              margin: 0,
+            }
+          : isMobileView
+          ? { height: "100%" }
+          : { height: "100%", maxHeight: "100%" }
+      }
     >
       {error && (
         <div className="mb-2 shrink-0 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -6706,8 +6732,8 @@ export default function Chat() {
         </div>
       )}
 
-      <div className={`grid h-full min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden overscroll-none rounded-2xl bg-[var(--chat-bg)] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] ${isMobileDetailView ? "" : "lg:grid-cols-[268px,minmax(0,1fr)]"}`}>
-        {!isMobileDetailView && <section className="flex h-full min-h-0 w-full lg:w-[268px] flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
+      <div className={`grid min-h-0 min-w-0 flex-1 w-full grid-cols-1 gap-2 overflow-hidden overscroll-none rounded-2xl bg-[var(--chat-bg)] p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] ${isMobileDetailView ? "" : "lg:grid-cols-[268px,minmax(0,1fr)]"}`}>
+        {!isMobileDetailView && <section className="flex min-h-0 w-full lg:w-[268px] flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-[0_8px_24px_rgba(0,0,0,0.45)]">
           {/* Mode Toggle */}
           <div className="border-b border-[var(--chat-border)] px-3.5 pt-4 pb-3">
             <div className="mb-3 font-['Sora'] text-[21px] font-bold tracking-[-0.3px] text-[var(--chat-text)]">Chat</div>
@@ -7136,8 +7162,8 @@ export default function Chat() {
         {/* Direct Chat Window */}
         {chatMode === "direct" && (!isMobileView || isMobileConversationView) && (
           <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-bg)] shadow-[0_8px_28px_rgba(0,0,0,0.45)]">
-            <div className="flex h-full min-h-0 overflow-hidden">
-              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="shrink-0 border-b border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-2.5 sm:px-4 sm:py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-1.5">
@@ -7265,7 +7291,7 @@ export default function Chat() {
                   )}
                 </div>
 
-                <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-[var(--chat-bg)] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4">
+                <div ref={directMessagesContainerRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain bg-[var(--chat-bg)] px-2 py-2 pb-3 sm:px-3 sm:py-2.5 md:px-4" style={{ WebkitOverflowScrolling: "touch" }}>
                   {!activeConversation ? (
                     <div className="flex min-h-full items-center justify-center px-3 py-8">
                       <div className="relative w-full max-w-md overflow-hidden rounded-[24px] border border-[var(--chat-border)] bg-[linear-gradient(145deg,var(--chat-surface)_0%,var(--chat-elev)_100%)] p-6 text-center shadow-[0_24px_70px_rgba(0,0,0,0.36)] sm:p-8">
@@ -7326,7 +7352,7 @@ export default function Chat() {
                 </div>
 
                 {activeConversation && (
-                  <div className="sticky bottom-0 z-10 shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-[10px] pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] sm:px-3">
+                  <div className="shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-bg)] px-3 py-[10px] pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)] sm:px-3">
                     {selectedImageFile && selectedImageComposerUrl && (
                       <div className="mb-2 rounded-xl border border-[var(--chat-border)] bg-[var(--chat-elev)] p-2.5">
                         <div className="mb-2 flex items-start gap-2">
@@ -7502,8 +7528,8 @@ export default function Chat() {
         {/* Group Chat Window */}
         {chatMode === "groups" && (!isMobileView || isMobileGroupDetailView) && (
           <section className="flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)] shadow-[0_6px_24px_rgba(15,23,42,0.06)]">
-            <div className="flex h-full min-h-0 overflow-hidden">
-              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 {activeGroupId ? (
                   <>
                     {/* Header */}
@@ -7664,6 +7690,7 @@ export default function Chat() {
                         setActiveMenuId(null)
                       }}
                       className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3.5 py-2.5 pb-3 md:px-4"
+                      style={{ WebkitOverflowScrolling: "touch" }}
                     >
                       {loadingGroupMessages ? (
                         <div className="flex items-center justify-center h-full">
@@ -8071,7 +8098,7 @@ export default function Chat() {
                       <div ref={groupBottomRef} />
                     </div>
 
-                    <div className="sticky bottom-0 z-10 shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-surface)] px-2.5 py-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]">
+                    <div className="shrink-0 border-t border-[var(--chat-border)] bg-[var(--chat-surface)] px-2.5 py-2 pb-[calc(env(safe-area-inset-bottom,0px)+0.5rem)]">
                       {/* Reply preview */}
                       {groupReplyTo && (
                         <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-[var(--chat-border)] bg-[var(--chat-elev)] px-2.5 py-2">
