@@ -54,6 +54,12 @@
   color: #888;
 }
 
+body.vn-profile-overlay-open .explore-sticky-header,
+body.vn-settings-overlay-open .explore-sticky-header {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Editor base styles */
 .ProseMirror {
   white-space: normal;

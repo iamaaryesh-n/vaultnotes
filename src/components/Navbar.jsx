@@ -12,7 +12,7 @@ const NotificationDropdown = lazy(() =>
   import("./NotificationDropdown").then((module) => ({ default: module.NotificationDropdown }))
 )
 
-export default function Navbar({ onOpenSettings }) {
+export default function Navbar({ onOpenSettings, onRequestOverlayTransition }) {
   const navigate = useNavigate()
   const { user: authUser, authReady } = useAuth()
   
@@ -70,6 +70,14 @@ export default function Navbar({ onOpenSettings }) {
     window.addEventListener("profileUpdated", handleProfileUpdate)
     return () => window.removeEventListener("profileUpdated", handleProfileUpdate)
   }, [authUser])
+
+  useEffect(() => {
+    const overlayOpen = isEditProfileOpen || confirmModal.open
+    document.body.classList.toggle("vn-profile-overlay-open", overlayOpen)
+    return () => {
+      document.body.classList.remove("vn-profile-overlay-open")
+    }
+  }, [isEditProfileOpen, confirmModal.open])
 
   // Close search dropdown when clicking outside
   useEffect(() => {
@@ -316,24 +324,42 @@ export default function Navbar({ onOpenSettings }) {
   }
 
   const handleLogout = useCallback(async () => {
-    setConfirmModal({
-      open: true,
-      title: "Logout",
-      message: "Are you sure you want to logout?",
-      confirmText: "Logout",
-      cancelText: "Cancel",
-      action: "logout",
-    })
-  }, [])
+    const openLogoutConfirm = () => {
+      setConfirmModal({
+        open: true,
+        title: "Logout",
+        message: "Are you sure you want to logout?",
+        confirmText: "Logout",
+        cancelText: "Cancel",
+        action: "logout",
+      })
+    }
+
+    if (onRequestOverlayTransition) {
+      onRequestOverlayTransition(openLogoutConfirm)
+      return
+    }
+
+    openLogoutConfirm()
+  }, [onRequestOverlayTransition])
 
   useEffect(() => {
-    window.__vn_openEditProfile = () => setIsEditProfileOpen(true)
+    window.__vn_openEditProfile = () => {
+      const openEditProfile = () => setIsEditProfileOpen(true)
+
+      if (onRequestOverlayTransition) {
+        onRequestOverlayTransition(openEditProfile)
+        return
+      }
+
+      openEditProfile()
+    }
     window.__vn_logout = () => handleLogout()
     return () => {
       delete window.__vn_openEditProfile
       delete window.__vn_logout
     }
-  }, [handleLogout])
+  }, [handleLogout, onRequestOverlayTransition])
 
   return (
     <>

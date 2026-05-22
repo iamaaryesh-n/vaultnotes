@@ -30,6 +30,22 @@ export default function SharePostModal({ isOpen, onClose, post, currentUser }) {
   const inputRef = useRef(null)
   const abortRef = useRef(null)
 
+  const currentUserProfile = {
+    id: currentUser?.id,
+    name: currentUser?.name || currentUser?.username || "Unknown",
+    username: currentUser?.username || "",
+    avatar_url: currentUser?.avatar_url || null,
+  }
+
+  const hydratedPost = {
+    id: post?.id,
+    content: post?.content || null,
+    image_url: post?.image_url || null,
+    updated_at: post?.updated_at || null,
+    is_edited: post?.is_edited || false,
+    profiles: post?.profiles || post?.profile || null,
+  }
+
   // Focus input when opened
   useEffect(() => {
     if (isOpen) {
@@ -130,6 +146,25 @@ export default function SharePostModal({ isOpen, onClose, post, currentUser }) {
   const isSelected = (item) => selected.some((s) => s.id === item.id)
   const alreadySent = (item) => sentIds.includes(item.id)
 
+  const createOptimisticSharedPostMessage = ({ conversationId = null, groupId = null, receiverId = null }) => ({
+    id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    conversation_id: conversationId,
+    group_id: groupId,
+    sender_id: currentUser.id,
+    receiver_id: receiverId,
+    type: "post",
+    post_id: post.id,
+    senderProfile: currentUserProfile,
+    post: hydratedPost,
+    content: null,
+    encrypted_content: null,
+    iv: null,
+    created_at: new Date().toISOString(),
+    delivery_status: "sending",
+    is_read: false,
+    reactions: [],
+  })
+
   /* ── send ── */
   const handleSend = async () => {
     if (!selected.length || !post?.id || !currentUser?.id || sending) return
@@ -138,6 +173,8 @@ export default function SharePostModal({ isOpen, onClose, post, currentUser }) {
     const errors = []
 
     for (const target of selected) {
+      let optimisticMessage = null
+
       try {
         if (target.type === "direct") {
           // Find or create conversation
@@ -162,8 +199,15 @@ export default function SharePostModal({ isOpen, onClose, post, currentUser }) {
             conversationId = created.id
           }
 
+          optimisticMessage = createOptimisticSharedPostMessage({ conversationId, receiverId: target.partnerId })
+          window.dispatchEvent(
+            new CustomEvent("chat:optimistic-post-message", {
+              detail: optimisticMessage,
+            })
+          )
+
           // Insert post message (no content, no encryption — post_id is the payload)
-          const { error: msgErr } = await supabase.from("messages").insert({
+          const { data: insertedMessage, error: msgErr } = await supabase.from("messages").insert({
             conversation_id: conversationId,
             sender_id: currentUser.id,
             receiver_id: target.partnerId,
@@ -171,8 +215,23 @@ export default function SharePostModal({ isOpen, onClose, post, currentUser }) {
             post_id: post.id,
             content: null,
             delivery_status: "sent",
-          })
+          }).select("id, conversation_id, sender_id, receiver_id, content, encrypted_content, type, is_read, created_at, post_id, delivery_status").single()
           if (msgErr) throw msgErr
+
+          window.dispatchEvent(
+            new CustomEvent("chat:confirm-post-message", {
+              detail: {
+                conversationId,
+                tempMessageId: optimisticMessage.id,
+                message: {
+                  ...insertedMessage,
+                  senderProfile: currentUserProfile,
+                  post: optimisticMessage.post,
+                  reactions: [],
+                },
+              },
+            })
+          )
 
           // Push notification (fire & forget)
           dispatchPushNotification({
@@ -184,18 +243,56 @@ export default function SharePostModal({ isOpen, onClose, post, currentUser }) {
             data: { type: "message" },
           }).catch(() => {})
         } else if (target.type === "group") {
-          const { error: msgErr } = await supabase.from("group_messages").insert({
+          optimisticMessage = createOptimisticSharedPostMessage({ groupId: target.groupId })
+          window.dispatchEvent(
+            new CustomEvent("chat:optimistic-post-message", {
+              detail: optimisticMessage,
+            })
+          )
+
+          const { data: insertedGroupMessage, error: msgErr } = await supabase.from("group_messages").insert({
             group_id: target.groupId,
             sender_id: currentUser.id,
             type: "post",
             post_id: post.id,
             content: null,
-          })
+          }).select("id, group_id, sender_id, type, post_id, content, created_at").single()
           if (msgErr) throw msgErr
+
+          window.dispatchEvent(
+            new CustomEvent("chat:confirm-post-message", {
+              detail: {
+                groupId: target.groupId,
+                tempMessageId: optimisticMessage.id,
+                message: {
+                  ...insertedGroupMessage,
+                  senderProfile: currentUserProfile,
+                  post: optimisticMessage.post,
+                  reactions: [],
+                },
+              },
+            })
+          )
         }
 
         setSentIds((prev) => [...prev, target.id])
       } catch (err) {
+        if (target.type === "direct" || target.type === "group") {
+          const conversationId = optimisticMessage?.conversation_id
+          const groupId = optimisticMessage?.group_id
+          const tempMessageId = optimisticMessage?.id
+          if ((conversationId || groupId) && tempMessageId) {
+            window.dispatchEvent(
+              new CustomEvent("chat:remove-post-message", {
+                detail: {
+                  conversationId,
+                  groupId,
+                  tempMessageId,
+                },
+              })
+            )
+          }
+        }
         console.error("[SharePostModal] Failed to share to:", target.name, err)
         errors.push(target.name)
       }

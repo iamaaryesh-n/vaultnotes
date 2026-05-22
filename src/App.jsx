@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation, useNavigate, Navigate, Outlet, useNavigationType } from "react-router-dom"
-import { useEffect, useState, Suspense, lazy, useRef } from "react"
+import { useEffect, useState, Suspense, lazy, useRef, useCallback } from "react"
 import { AnimatePresence } from "framer-motion"
 import { useAuth } from "./hooks/useAuth"
 import { ToastProvider } from "./context/ToastContext"
@@ -15,6 +15,7 @@ import { initializeTheme } from "./utils/theme"
 import { useNavigationStore } from "./stores/navigationStore"
 import { initializeWebPush } from "./lib/firebaseMessaging"
 import { supabase } from "./lib/supabase"
+import { useViewportScrollLock } from "./hooks/useViewportScrollLock"
 import vaultNotesLogoMark from "./assets/branding/vaultnotes-logo-mark.png"
 
 // Eagerly load lightweight pages
@@ -95,7 +96,7 @@ function AppLoadingFallback({ label = "Loading VaultNotes..." }) {
   )
 }
 
-function AppShell({ user, createPostOpen, setCreatePostOpen, onOpenSettings }) {
+function AppShell({ user, createPostOpen, setCreatePostOpen, onOpenSettings, onRequestOverlayTransition }) {
   const location = useLocation()
   const [postDetailFocusMode, setPostDetailFocusMode] = useState(false)
 
@@ -113,7 +114,7 @@ function AppShell({ user, createPostOpen, setCreatePostOpen, onOpenSettings }) {
 
   return (
     <div className={`profile-theme ${isChatRoute ? "h-screen overflow-hidden" : "min-h-screen"} bg-[var(--profile-bg)] text-[var(--profile-text)]`}>
-      {!postDetailFocusMode && <Navbar onOpenSettings={onOpenSettings} />}
+      {!postDetailFocusMode && <Navbar onOpenSettings={onOpenSettings} onRequestOverlayTransition={onRequestOverlayTransition} />}
       <ToastContainer />
       <LoadingBar />
       {!postDetailFocusMode && <BottomNavigation />}
@@ -149,9 +150,11 @@ function AppContent() {
   const { user, session, authLoading } = useAuth()
   const [createPostOpen, setCreatePostOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [overlayTransitioning, setOverlayTransitioning] = useState(false)
   const setActiveRouteMeta = useNavigationStore((state) => state.setActiveRouteMeta)
   const setBackNavigationState = useNavigationStore((state) => state.setBackNavigationState)
   const previousPathRef = useRef(location.pathname)
+  const overlayTransitionTimerRef = useRef(null)
 
   useEffect(() => initializeTheme(), [])
   // Signal the HTML splash screen to dismiss once auth has resolved
@@ -236,6 +239,49 @@ function AppContent() {
     markRead()
   }, [location.pathname, location.search, navigate, user?.id])
 
+  useEffect(() => {
+    return () => {
+      if (overlayTransitionTimerRef.current) {
+        clearTimeout(overlayTransitionTimerRef.current)
+      }
+    }
+  }, [])
+
+  useViewportScrollLock(settingsOpen || overlayTransitioning)
+
+  useEffect(() => {
+    const overlayOpen = settingsOpen || overlayTransitioning
+    document.body.classList.toggle("vn-settings-overlay-open", overlayOpen)
+    return () => {
+      document.body.classList.remove("vn-settings-overlay-open")
+    }
+  }, [settingsOpen, overlayTransitioning])
+
+  const requestOverlayTransition = useCallback(
+    (openNextOverlay) => {
+      if (!settingsOpen) {
+        openNextOverlay?.()
+        return
+      }
+
+      setOverlayTransitioning(true)
+      setSettingsOpen(false)
+
+      if (overlayTransitionTimerRef.current) {
+        clearTimeout(overlayTransitionTimerRef.current)
+      }
+
+      overlayTransitionTimerRef.current = window.setTimeout(() => {
+        openNextOverlay?.()
+        window.requestAnimationFrame(() => {
+          setOverlayTransitioning(false)
+          overlayTransitionTimerRef.current = null
+        })
+      }, 280)
+    },
+    [settingsOpen],
+  )
+
   // Listen for Create Post event from floating action button
   useEffect(() => {
     const handleOpenCreatePostModal = () => {
@@ -265,6 +311,7 @@ function AppContent() {
                 createPostOpen={createPostOpen}
                 setCreatePostOpen={setCreatePostOpen}
                 onOpenSettings={() => setSettingsOpen(true)}
+                onRequestOverlayTransition={requestOverlayTransition}
               />
             </ProtectedRoute>
           }

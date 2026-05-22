@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useViewportScrollLock } from "../hooks/useViewportScrollLock"
 
 export default function Modal({
   open,
@@ -21,6 +22,8 @@ export default function Modal({
   const [isVisible, setIsVisible] = useState(false)
   const inputRef = useRef(null)
   const wasOpenRef = useRef(false)
+
+  useViewportScrollLock(open)
 
   useEffect(() => {
     if (!open) {
@@ -75,7 +78,7 @@ export default function Modal({
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex items-center justify-center bg-[var(--overlay-backdrop)] p-4 backdrop-blur-[6px] transition-opacity duration-200 ${
+      className={`fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-[var(--overlay-backdrop)] p-4 backdrop-blur-[6px] transition-opacity duration-200 sm:items-center ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}
       onClick={() => {
@@ -85,7 +88,7 @@ export default function Modal({
       }}
     >
       <div
-        className={`w-full max-w-md rounded-2xl border border-[var(--overlay-border)] bg-[var(--overlay-surface)] p-6 shadow-[var(--overlay-shadow)] transition-all duration-200 ${
+        className={`w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-[var(--overlay-border)] bg-[var(--overlay-surface)] p-6 shadow-[var(--overlay-shadow)] transition-all duration-200 ${
           isVisible ? "scale-100 opacity-100" : "scale-95 opacity-0"
         }`}
         onClick={(event) => event.stopPropagation()}

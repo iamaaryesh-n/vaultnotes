@@ -11,13 +11,24 @@ const pendingFetches = new Map()
  * PostPreview — renders a shared post inside a chat bubble.
  * Auto-loads post data on mount with a skeleton UI to prevent layout shifts.
  */
-export default function PostPreview({ post_id, isMine = false }) {
+export default function PostPreview({ post_id, post = null, message = null, isMine = false }) {
   const navigate = useNavigate()
-  const [post, setPost] = useState(() => postCache.get(post_id) || null)
-  const [loading, setLoading] = useState(!postCache.has(post_id))
+  const cachedPost = post_id ? postCache.get(post_id) : null
+  const [resolvedPost, setResolvedPost] = useState(() => post || cachedPost || null)
+  const [loading, setLoading] = useState(!(post || cachedPost))
   const [error, setError] = useState(false)
 
   useEffect(() => {
+    if (post) {
+      if (post_id) {
+        postCache.set(post_id, post)
+      }
+      setResolvedPost(post)
+      setLoading(false)
+      setError(false)
+      return
+    }
+
     if (!post_id || postCache.has(post_id)) return
 
     let isMounted = true
@@ -28,7 +39,7 @@ export default function PostPreview({ post_id, isMine = false }) {
         try {
           const data = await pendingFetches.get(post_id)
           if (isMounted) {
-            setPost(data)
+            setResolvedPost(data)
             setLoading(false)
           }
         } catch {
@@ -56,7 +67,7 @@ export default function PostPreview({ post_id, isMine = false }) {
 
         if (isMounted) {
           postCache.set(post_id, data)
-          setPost(data)
+          setResolvedPost(data)
           setLoading(false)
         }
       } catch (err) {
@@ -73,7 +84,19 @@ export default function PostPreview({ post_id, isMine = false }) {
     return () => {
       isMounted = false
     }
-  }, [post_id])
+  }, [post, post_id])
+
+  useEffect(() => {
+    if (!post) return
+
+    if (post_id) {
+      postCache.set(post_id, post)
+    }
+
+    setResolvedPost(post)
+    setLoading(false)
+    setError(false)
+  }, [post, post_id])
 
   const handleOpenPost = (e) => {
     e.stopPropagation()
@@ -84,7 +107,8 @@ export default function PostPreview({ post_id, isMine = false }) {
 
   const handleProfileClick = (e) => {
     e.stopPropagation()
-    const username = post?.profiles?.username || (Array.isArray(post?.profiles) ? post.profiles[0]?.username : null)
+    const profile = resolvedPost?.profiles ? (Array.isArray(resolvedPost.profiles) ? resolvedPost.profiles[0] : resolvedPost.profiles) : (message?.senderProfile || message?.profile || null)
+    const username = profile?.username || null
     if (username) {
       navigate(`/profile/${username}`)
     }
@@ -103,7 +127,9 @@ export default function PostPreview({ post_id, isMine = false }) {
     )
   }
 
-  const profile = post?.profiles ? (Array.isArray(post.profiles) ? post.profiles[0] : post.profiles) : null
+  const profile = resolvedPost?.profiles
+    ? (Array.isArray(resolvedPost.profiles) ? resolvedPost.profiles[0] : resolvedPost.profiles)
+    : (message?.senderProfile || message?.profile || null)
   const displayName = profile?.name || profile?.username || "Unknown"
   const username = profile?.username || "unknown"
   const avatarUrl = profile?.avatar_url || null
@@ -164,9 +190,9 @@ export default function PostPreview({ post_id, isMine = false }) {
             <div className="h-2.5 w-5/6 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
             <div className="h-2.5 w-4/6 animate-pulse rounded-full bg-[var(--chat-border-strong)]" />
           </div>
-        ) : post?.content && (
+        ) : resolvedPost?.content && (
           <PostContent
-            content={post.content}
+            content={resolvedPost.content}
             className={`line-clamp-4 font-['DM_Sans'] text-[13px] leading-[1.55] ${
               isMine ? "text-[var(--chat-text)]" : "text-[var(--chat-text)]"
             }`}
@@ -177,10 +203,10 @@ export default function PostPreview({ post_id, isMine = false }) {
       {/* Image Thumbnail */}
       {loading ? (
         <div className="h-[120px] w-full animate-pulse bg-[var(--chat-border-strong)]/30" />
-      ) : post?.image_url && (
+      ) : resolvedPost?.image_url && (
         <div className="relative overflow-hidden" style={{ maxHeight: 140 }}>
           <img
-            src={post.image_url}
+            src={resolvedPost.image_url}
             alt="Post"
             className="h-full w-full object-cover"
             loading="lazy"

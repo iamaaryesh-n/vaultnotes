@@ -229,7 +229,7 @@ export default function Explore() {
   return (
     <div className="profile-theme -mt-[64px] min-h-screen bg-[var(--profile-bg)]">
       <div
-        className={`sticky z-[90] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-0 pt-3 transition-transform duration-300 ease-in-out ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}
+        className={`explore-sticky-header sticky z-[90] border-b border-[var(--profile-border)] bg-[var(--profile-bg)] px-4 pb-0 pt-3 transition-transform duration-300 ease-in-out ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}
         style={{ top: "56px" }}
       >
         <div className="mb-[10px] flex items-baseline gap-[10px]">

@@ -7,6 +7,7 @@ import { handleNavigationClick } from "../utils/navigation"
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { useToast } from "../hooks/useToast"
 import { useRouteScrollRestoration } from "../hooks/useRouteScrollRestoration"
+import { fetchAllPublicWorkspaces } from "../lib/globalSearch"
 import Modal from "../components/Modal"
 import { useWorkspaceCacheStore } from "../stores/workspaceCacheStore"
 import { useWorkspaceStore } from "../stores/workspaceStore"
@@ -35,6 +36,9 @@ export default function Dashboard({ session }) {
   const [workspaces, setWorkspaces] = useState(initialWorkspaces || [])
   const [loading, setLoading] = useState(!initialWorkspaces?.length) // Only show loading if no cached data
   const [hasResolvedInitialFetch, setHasResolvedInitialFetch] = useState(false)
+  const [publicWorkspaces, setPublicWorkspaces] = useState([])
+  const [publicLoading, setPublicLoading] = useState(false)
+  const [hasResolvedPublicFetch, setHasResolvedPublicFetch] = useState(false)
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [userRoles, setUserRoles] = useState(cachedData?.userRoles || {}) // {workspaceId: role}
@@ -66,6 +70,7 @@ export default function Dashboard({ session }) {
   const isFetchingRef = useRef(false)
   const workspacesLengthRef = useRef(workspaces.length)
   workspacesLengthRef.current = workspaces.length
+  const isPublicFetchingRef = useRef(false)
 
   const fetchWorkspaces = useCallback(async ({ force = false, silent = false } = {}) => {
     if (isFetchingRef.current) {
@@ -231,6 +236,34 @@ export default function Dashboard({ session }) {
       isFetchingRef.current = false
     }
   }, [setCachedWorkspaces, setWorkspaceListStore, shouldFetchWorkspaceList])
+
+  useEffect(() => {
+    if (activeFilter !== "public") return
+    if (hasResolvedPublicFetch || isPublicFetchingRef.current) return
+
+    const loadPublicWorkspaces = async () => {
+      isPublicFetchingRef.current = true
+      setPublicLoading(true)
+      try {
+        const { workspaces: data, error } = await fetchAllPublicWorkspaces(50)
+        if (error) {
+          console.error("[Dashboard] Failed to fetch public workspaces:", error)
+          setPublicWorkspaces([])
+        } else {
+          setPublicWorkspaces(data || [])
+        }
+      } catch (err) {
+        console.error("[Dashboard] Public workspace fetch exception:", err)
+        setPublicWorkspaces([])
+      } finally {
+        setPublicLoading(false)
+        setHasResolvedPublicFetch(true)
+        isPublicFetchingRef.current = false
+      }
+    }
+
+    loadPublicWorkspaces()
+  }, [activeFilter, hasResolvedPublicFetch])
 
   useEffect(() => {
     let canceled = false
@@ -834,8 +867,11 @@ export default function Dashboard({ session }) {
   }, [editVisibilityId, editVisibilityValue, success, showError, workspaces, currentVisibilityState])
 
   // Show skeleton if loading, or if initial fetch not resolved and no workspaces
-  const shouldShowLoadingSkeleton = loading || (!hasResolvedInitialFetch && workspaces.length === 0)
-  const filteredWorkspaces = workspaces.filter((workspace) => {
+  const activeLoading = activeFilter === "public" ? publicLoading : loading
+  const hasResolvedActiveFetch = activeFilter === "public" ? hasResolvedPublicFetch : hasResolvedInitialFetch
+  const baseWorkspaces = activeFilter === "public" ? publicWorkspaces : workspaces
+  const shouldShowLoadingSkeleton = activeLoading || (!hasResolvedActiveFetch && baseWorkspaces.length === 0)
+  const filteredWorkspaces = baseWorkspaces.filter((workspace) => {
     if (activeFilter === "owned") return workspace.is_public === false
     if (activeFilter === "public") return workspace.is_public === true
     if (activeFilter === "shared") return (memberCounts[workspace.id] || 0) > 1

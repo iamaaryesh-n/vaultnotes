@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { supabase } from "../lib/supabase"
 import { useToast } from "../hooks/useToast"
+import { useViewportScrollLock } from "../hooks/useViewportScrollLock"
 import { IMAGE_TOO_LARGE_MESSAGE, prepareImageForUpload } from "../lib/imageCompression"
 
 export function EditProfileModal({
@@ -36,6 +37,8 @@ export function EditProfileModal({
   const usernameRequestIdRef = useRef(0)
   const dragStartRef = useRef({ x: 0, y: 0, coverX: 50, coverY: 50 })
   const avatarDragStartRef = useRef({ x: 0, y: 0, avatarX: 50, avatarY: 50 })
+
+  useViewportScrollLock(isOpen)
 
   useEffect(() => {
     if (isOpen && profile) {
@@ -307,7 +310,7 @@ export function EditProfileModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleCancel}
-            className="fixed inset-0 z-40 bg-[var(--overlay-backdrop)] backdrop-blur-sm"
+            className="fixed inset-0 z-[140] bg-[var(--overlay-backdrop)] backdrop-blur-sm"
           />
 
           {/* Modal */}
@@ -315,7 +318,7 @@ export function EditProfileModal({
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none"
+            className="fixed inset-0 flex items-center justify-center z-[150] p-4 pointer-events-none"
           >
             <motion.div className="pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[20px] border border-[var(--overlay-border)] bg-[var(--overlay-surface)] shadow-[var(--overlay-shadow)]">
             {/* Header */}

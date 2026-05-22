@@ -318,6 +318,106 @@ export default function Chat() {
     chatModeRef.current = chatMode
   })
 
+  const syncSharedPostMessage = useCallback((target, nextMessage, { replaceMessageId = null, removeMessageId = null } = {}) => {
+    if (!nextMessage?.id) {
+      return
+    }
+
+    const conversationId = target?.conversationId || target?.conversation_id || null
+    const groupId = target?.groupId || target?.group_id || null
+    const isGroupMessage = Boolean(groupId && !conversationId)
+
+    const currentCache = isGroupMessage
+      ? (useChatStore.getState().groupMessagesByGroupId[groupId] || [])
+      : (conversationId ? (useChatStore.getState().messagesByConversationId[conversationId] || []) : [])
+
+    const isTempId = (id) => typeof id === "string" && id.startsWith("temp-")
+
+    const sameSharedPostSignature = (left, right) => {
+      if (!left || !right) return false
+      const leftKey = left.conversation_id || left.group_id || null
+      const rightKey = right.conversation_id || right.group_id || null
+      if (leftKey !== rightKey) return false
+      if (left.sender_id !== right.sender_id) return false
+      if ((left.post_id || left?.post?.id || null) !== (right.post_id || right?.post?.id || null)) return false
+
+      const leftTime = new Date(left.created_at || 0).getTime()
+      const rightTime = new Date(right.created_at || 0).getTime()
+      if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) return true
+
+      return Math.abs(leftTime - rightTime) <= 10_000
+    }
+
+    const buildNextCache = (base) => {
+      if (removeMessageId) {
+        if (!base.some((message) => message?.id === removeMessageId)) return base
+        return base.filter((message) => message?.id !== removeMessageId)
+      }
+
+      if (replaceMessageId) {
+        if (!base.some((message) => message?.id === replaceMessageId)) return base
+        return base.map((message) => (message?.id === replaceMessageId ? nextMessage : message))
+      }
+
+      if (base.some((message) => message?.id === nextMessage.id)) {
+        return base
+      }
+
+      if (isTempId(nextMessage.id)) {
+        return [...base, nextMessage]
+      }
+
+      if (nextMessage?.type === "post") {
+        const tempIndex = base.findIndex((message) => isTempId(message?.id) && sameSharedPostSignature(message, nextMessage))
+
+        if (tempIndex !== -1) {
+          return base.map((message, index) => {
+            if (index !== tempIndex) return message
+            return {
+              ...message,
+              ...nextMessage,
+              post: nextMessage.post || message.post || null,
+              senderProfile: nextMessage.senderProfile || message.senderProfile || null,
+              reactions: nextMessage.reactions || message.reactions || [],
+            }
+          })
+        }
+      }
+
+      return [...base, nextMessage]
+    }
+
+    const nextCache = buildNextCache(currentCache)
+
+    if (isGroupMessage) {
+      if (nextCache !== currentCache) {
+        useChatStore.getState().setGroupMessages(groupId, nextCache)
+      }
+      if (groupId === activeGroupId) {
+        setGroupMessages((prev) => {
+          const next = buildNextCache(prev)
+          return next === prev ? prev : next
+        })
+      }
+      return
+    }
+
+    if (!conversationId) {
+      return
+    }
+
+    if (nextCache !== currentCache) {
+      setMessagesCache(conversationId, nextCache)
+    }
+
+    if (conversationId === activeConversationId) {
+      setMessages((prev) => {
+        const next = buildNextCache(prev)
+        return next === prev ? prev : next
+      })
+    }
+  }, [activeConversationId, activeGroupId, setMessagesCache])
+
   const requestedConversationId = routeConversationId || searchParams.get("conversation")
   const requestedTab = searchParams.get("tab")
 
@@ -1707,12 +1807,12 @@ export default function Chat() {
   const enrichMessagesWithPosts = async (messages) => {
     const updated = await Promise.all(
       messages.map(async (msg) => {
-        if (!msg.post_id) return msg;
+        if (!msg.post_id || msg.post) return msg;
 
         try {
           const { data } = await supabase
             .from("posts")
-            .select("id, content, image_url, updated_at, is_edited")
+            .select("id, content, image_url, updated_at, is_edited, profiles:user_id(name, username, avatar_url)")
             .eq("id", msg.post_id)
             .maybeSingle();
 
@@ -2435,6 +2535,45 @@ export default function Chat() {
   }, [activeConversationId, fetchMessages])
 
   useEffect(() => {
+    const handleOptimisticSharedPost = (event) => {
+      const detail = event?.detail?.message ? event.detail.message : event?.detail
+      const target = {
+        conversationId: detail?.conversation_id || event?.detail?.conversationId || null,
+        groupId: detail?.group_id || event?.detail?.groupId || null,
+      }
+      if ((!target.conversationId && !target.groupId) || !detail?.id) return
+      syncSharedPostMessage(target, detail)
+    }
+
+    const handleConfirmSharedPost = (event) => {
+      const conversationId = event?.detail?.conversationId || event?.detail?.message?.conversation_id || null
+      const groupId = event?.detail?.groupId || event?.detail?.message?.group_id || null
+      const tempMessageId = event?.detail?.tempMessageId
+      const message = event?.detail?.message || event?.detail
+      if ((!conversationId && !groupId) || !tempMessageId || !message?.id) return
+      syncSharedPostMessage({ conversationId, groupId }, message, { replaceMessageId: tempMessageId })
+    }
+
+    const handleRemoveSharedPost = (event) => {
+      const conversationId = event?.detail?.conversationId || event?.detail?.message?.conversation_id || null
+      const groupId = event?.detail?.groupId || event?.detail?.message?.group_id || null
+      const tempMessageId = event?.detail?.tempMessageId
+      if ((!conversationId && !groupId) || !tempMessageId) return
+      syncSharedPostMessage({ conversationId, groupId }, { id: tempMessageId }, { removeMessageId: tempMessageId })
+    }
+
+    window.addEventListener("chat:optimistic-post-message", handleOptimisticSharedPost)
+    window.addEventListener("chat:confirm-post-message", handleConfirmSharedPost)
+    window.addEventListener("chat:remove-post-message", handleRemoveSharedPost)
+
+    return () => {
+      window.removeEventListener("chat:optimistic-post-message", handleOptimisticSharedPost)
+      window.removeEventListener("chat:confirm-post-message", handleConfirmSharedPost)
+      window.removeEventListener("chat:remove-post-message", handleRemoveSharedPost)
+    }
+  }, [syncSharedPostMessage])
+
+  useEffect(() => {
     closeConversationSearch()
   }, [activeConversationId, closeConversationSearch])
 
@@ -2584,15 +2723,24 @@ export default function Chat() {
                 typeof item.id === "string" &&
                 item.id.startsWith("temp-") &&
                 item.sender_id === normalizedNextMessage.sender_id &&
-                item.conversation_id === normalizedNextMessage.conversation_id
+                item.conversation_id === normalizedNextMessage.conversation_id &&
+                item.post_id === normalizedNextMessage.post_id &&
+                Math.abs(new Date(item.created_at || 0).getTime() - new Date(normalizedNextMessage.created_at || 0).getTime()) <= 10_000
             )
 
             let nextMessages
             if (tempIndex !== -1) {
               // Replace the temp message with the real one
+              const tempMessage = prev[tempIndex]
               nextMessages = prev.map((item, index) =>
                 index === tempIndex
-                  ? { ...normalizedNextMessage, reactions: item.reactions || [] }
+                  ? {
+                    ...tempMessage,
+                    ...normalizedNextMessage,
+                    post: tempMessage.post || normalizedNextMessage.post || null,
+                    senderProfile: tempMessage.senderProfile || normalizedNextMessage.senderProfile || null,
+                    reactions: tempMessage.reactions || normalizedNextMessage.reactions || [],
+                  }
                   : item
               )
             } else {
@@ -2620,7 +2768,11 @@ export default function Chat() {
             }
 
             // Update cache with the final deduplicated list
-            appendMessageToCacheRef.current(activeConversationId, normalizedNextMessage)
+            if (getMessageTypeRef.current(nextMessage) === "post") {
+              setMessagesCache(activeConversationId, nextMessages)
+            } else {
+              appendMessageToCacheRef.current(activeConversationId, normalizedNextMessage)
+            }
 
             // Update conversation preview
             setConversations((convPrev) => {
@@ -2661,7 +2813,7 @@ export default function Chat() {
                 })
             }
 
-            return nextMessages
+            return [...nextMessages]
           })
         }
       )
@@ -6582,7 +6734,7 @@ export default function Chat() {
                   This message was unsent
                 </div>
               ) : isPostMessage ? (
-                <PostPreview post_id={message.post_id} isMine={mine} />
+                <PostPreview post_id={message.post_id} post={message.post || null} message={message} isMine={mine} />
               ) : isImageMessage ? (
                 <div className="relative w-fit max-w-sm md:max-w-xs overflow-hidden rounded-2xl border border-[var(--chat-border)] bg-[var(--chat-surface)]">
                   <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
@@ -7972,7 +8124,7 @@ export default function Chat() {
                                       This message was deleted
                                     </div>
                                   ) : isPost ? (
-                                    <PostPreview post_id={message.post_id} isMine={isOwn} />
+                                    <PostPreview post_id={message.post_id} post={message.post || null} message={message} isMine={isOwn} />
                                   ) : isImage && message.storage_path ? (
                                     <div className="relative w-full max-w-full cursor-pointer overflow-hidden rounded-2xl bg-[var(--chat-elev)] shadow-sm">
                                       <div className="absolute right-2 top-2 z-10 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
