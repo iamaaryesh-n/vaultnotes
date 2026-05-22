@@ -20,6 +20,8 @@ export default defineConfig({
     }),
   ],
   build: {
+    target: 'es2020',
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -28,6 +30,10 @@ export default defineConfig({
           if (id.includes('firebase')) return 'firebase'
           if (id.includes('@tiptap') || id.includes('tiptap') || id.includes('prosemirror')) return 'tiptap'
           if (id.includes('framer-motion')) return 'framer-motion'
+          if (id.includes('@supabase') || id.includes('supabase')) return 'supabase'
+          if (id.includes('crypto-js')) return 'crypto'
+          if (id.includes('lucide-react')) return 'lucide'
+          if (id.includes('dompurify')) return 'dompurify'
         },
       },
     },

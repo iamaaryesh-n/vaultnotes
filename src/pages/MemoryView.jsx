@@ -85,8 +85,19 @@ export default function MemoryView() {
       console.log("[MemoryView] Step 1: Fetching fresh memory data...")
 
       console.log("[MemoryView] Step 2: Ensuring encryption key exists...")
-      // OPTIMIZATION: Check localStorage first to avoid DB query if key is cached
-      let storedKey = localStorage.getItem(`workspace_key_${id}`)
+      // OPTIMIZATION: Check sessionStorage (public read key) then localStorage for member key
+      const cachedPublicKey = sessionStorage.getItem(`workspace_public_key_${id}`)
+      const normalizedCachedPublicKey =
+        cachedPublicKey && cachedPublicKey !== "null" && cachedPublicKey !== "undefined"
+          ? cachedPublicKey
+          : null
+
+      if (cachedPublicKey && !normalizedCachedPublicKey) {
+        console.warn("[MemoryView] Clearing stale cached public key")
+        sessionStorage.removeItem(`workspace_public_key_${id}`)
+      }
+
+      let storedKey = normalizedCachedPublicKey || localStorage.getItem(`workspace_key_${id}`)
       
       if (storedKey) {
         console.log("[MemoryView] ✅ Using key from localStorage (cached)")
@@ -109,7 +120,7 @@ export default function MemoryView() {
         // OPTIMIZATION: Try member key first with specific key_scope
         const { data: memberKeyData, error: memberKeyError } = await supabase
           .from("workspace_keys")
-          .select("encrypted_key")
+          .select("id, encrypted_key, key_scope, user_id")
           .eq("workspace_id", id)
           .eq("user_id", user.id)
           .eq("key_scope", "member")
@@ -128,11 +139,20 @@ export default function MemoryView() {
           console.log("[MemoryView] Checking for public_read key...")
           const { data: publicKeyData, error: publicKeyError } = await supabase
             .from("workspace_keys")
-            .select("encrypted_key")
+            .select("id, encrypted_key, key_scope, user_id")
             .eq("workspace_id", id)
             .is("user_id", null)
             .eq("key_scope", "public_read")
             .maybeSingle()
+
+          console.log("[MemoryView] Public key query:", {
+            keyId: publicKeyData?.id || null,
+            keyScope: publicKeyData?.key_scope || null,
+            userId: publicKeyData?.user_id || null,
+            hasKey: !!publicKeyData?.encrypted_key,
+            keyLength: publicKeyData?.encrypted_key?.length || 0,
+            error: publicKeyError || null
+          })
 
           if (publicKeyData?.encrypted_key) {
             console.log("[MemoryView] ✅ Public_read key found")
@@ -145,6 +165,7 @@ export default function MemoryView() {
 
         if (!storedKey) {
           console.error("[MemoryView] ❌ No encryption key found")
+          sessionStorage.removeItem(`workspace_public_key_${id}`)
           showError("No encryption key found for this workspace")
           navigate(`/workspace/${id}`)
           setLoading(false)
@@ -152,7 +173,11 @@ export default function MemoryView() {
         }
 
         // Cache key for future loads in this session
-        localStorage.setItem(`workspace_key_${id}`, storedKey)
+        if (publicKeyFound && !memberKeyFound) {
+          sessionStorage.setItem(`workspace_public_key_${id}`, storedKey)
+        } else {
+          localStorage.setItem(`workspace_key_${id}`, storedKey)
+        }
         console.log("[MemoryView] Key cached in localStorage")
       }
 

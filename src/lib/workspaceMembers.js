@@ -244,15 +244,50 @@ export async function verifyWorkspaceAccess(userId, workspaceId) {
       role
     })
 
-    // Check encryption key
+    // Check member encryption key
     const { data: keyData, error: keyError } = await supabase
       .from("workspace_keys")
-      .select("id")
+      .select("id, key_scope, user_id")
       .eq("user_id", userId)
       .eq("workspace_id", workspaceId)
       .maybeSingle()
 
-    const hasKey = !!keyData
+    const hasMemberKey = !!keyData
+
+    // For public workspaces, also consider public_read keys (user_id is null)
+    let hasPublicReadKey = false
+    if (workspace.is_public) {
+      const { data: publicKeyData, error: publicKeyError } = await supabase
+        .from("workspace_keys")
+        .select("id, key_scope, user_id")
+        .eq("workspace_id", workspaceId)
+        .is("user_id", null)
+        .eq("key_scope", "public_read")
+        .maybeSingle()
+
+      hasPublicReadKey = !!publicKeyData
+
+      console.log("[verifyWorkspaceAccess] Public read key query:", {
+        keyId: publicKeyData?.id || null,
+        keyScope: publicKeyData?.key_scope || null,
+        userId: publicKeyData?.user_id || null,
+        hasPublicReadKey,
+        error: publicKeyError || null
+      })
+    }
+
+    const hasKey = hasMemberKey || (workspace.is_public && hasPublicReadKey)
+
+    console.log("[verifyWorkspaceAccess] Key query result:", {
+      keyId: keyData?.id || null,
+      keyScope: keyData?.key_scope || null,
+      userId: keyData?.user_id || null,
+      hasMemberKey,
+      hasPublicReadKey,
+      isPublic: workspace.is_public,
+      hasKey,
+      error: keyError || null
+    })
 
     // Use centralized access control
     const canAccessKey = canAccessWorkspaceKey(workspace, isMember)

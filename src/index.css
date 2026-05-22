@@ -438,3 +438,10 @@ html.dark .profile-skeleton-shimmer::after {
     animation: none;
   }
 }
+
+/* Improve feed performance by letting the browser skip off-screen posts
+   during initial layout/paint. The intrinsic size prevents layout shift. */
+article[data-post-id] {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 200px;
+}

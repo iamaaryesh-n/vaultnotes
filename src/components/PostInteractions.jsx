@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, memo } from "react"
 import CommentItem from "./CommentItem"
 import SharePostModal from "./SharePostModal"
 import { useToast } from "../hooks/useToast"
@@ -11,7 +11,7 @@ import {
   toggleLike
 } from "../lib/postInteractions"
 
-export default function PostInteractions({ 
+const PostInteractionsComponent = function PostInteractions({ 
   post, 
   initialComments = [], 
   initialLikes = { count: 0, userLiked: false },
@@ -20,14 +20,14 @@ export default function PostInteractions({
   authReady = true,
   commentCount,
   onCommentAdded,
-  onCommentDeleted
+  onCommentDeleted,
+  currentUser = null,
+  currentUserId = null
 }) {
   const { success, error } = useToast()
 
   const [shareModalOpen, setShareModalOpen] = useState(false)
-  const [currentUser, setCurrentUser] = useState(null)
 
-  const [currentUserId, setCurrentUserId] = useState(null)
   const [commentInput, setCommentInput] = useState("")
   const [addingComment, setAddingComment] = useState(false)
   const [likingInProgress, setLikingInProgress] = useState(false)
@@ -41,24 +41,6 @@ export default function PostInteractions({
   const [commentsData, setCommentsData] = useState(null) // null = not yet fetched
   const [commentsLoading, setCommentsLoading] = useState(false)
   const hasFetchedRef = useRef(false)
-
-  // Get current user on mount
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        setCurrentUserId(user.id)
-        // Also fetch profile for SharePostModal
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("id, name, username, avatar_url")
-          .eq("id", user.id)
-          .maybeSingle()
-        setCurrentUser(profile || { id: user.id })
-      }
-    }
-    getCurrentUser()
-  }, [])
 
   useEffect(() => {
     setOptimisticLikeState({
@@ -329,3 +311,15 @@ export default function PostInteractions({
     </div>
   )
 }
+
+const PostInteractionsComparator = (prevProps, nextProps) => {
+  // Return true if props are equal (skip re-render), false if different (re-render)
+  return (
+    prevProps.post?.id === nextProps.post?.id &&
+    prevProps.initialLikes?.count === nextProps.initialLikes?.count &&
+    prevProps.initialLikes?.userLiked === nextProps.initialLikes?.userLiked &&
+    prevProps.commentCount === nextProps.commentCount
+  )
+}
+
+export default memo(PostInteractionsComponent, PostInteractionsComparator)

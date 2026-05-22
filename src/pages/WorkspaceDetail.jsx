@@ -65,6 +65,7 @@ export default function WorkspaceDetail() {
   const [workspaceAttribution, setWorkspaceAttribution] = useState(null) // { invitedBy, invitedAt, invitedByUsername }
   const [members, setMembers] = useState([]) // Phase 1: Workspace members list
   const [recentActivity, setRecentActivity] = useState([]) // Phase 2: Recent activity feed
+  const publicKeyRepairRef = useRef(false)
 
   const applyMemories = useCallback((nextMemories) => {
     const normalized = Array.isArray(nextMemories) ? nextMemories : []
@@ -76,6 +77,69 @@ export default function WorkspaceDetail() {
       }
     })
   }, [id, setWorkspaceMemoriesStore, setDecryptedPreview])
+
+  const ensurePublicReadKey = useCallback(async (workspaceData, role, userId) => {
+    if (!workspaceData?.is_public) return
+    if (!canShare(role)) return
+    if (publicKeyRepairRef.current) return
+
+    publicKeyRepairRef.current = true
+    try {
+      const { data: existingKey, error: existingKeyError } = await supabase
+        .from("workspace_keys")
+        .select("id")
+        .eq("workspace_id", workspaceData.id)
+        .is("user_id", null)
+        .eq("key_scope", "public_read")
+        .maybeSingle()
+
+      if (existingKeyError) {
+        console.error("[WorkspaceDetail] Public read key lookup failed:", existingKeyError)
+        return
+      }
+
+      if (existingKey?.id) {
+        return
+      }
+
+      const { data: memberKeyData, error: memberKeyError } = await supabase
+        .from("workspace_keys")
+        .select("encrypted_key")
+        .eq("workspace_id", workspaceData.id)
+        .eq("user_id", userId)
+        .eq("key_scope", "member")
+        .maybeSingle()
+
+      if (memberKeyError || !memberKeyData?.encrypted_key) {
+        console.error("[WorkspaceDetail] Missing member key for public read repair:", memberKeyError)
+        return
+      }
+
+      await supabase
+        .from("workspace_keys")
+        .delete()
+        .eq("workspace_id", workspaceData.id)
+        .is("user_id", null)
+        .eq("key_scope", "public_read")
+
+      const { error: insertError } = await supabase
+        .from("workspace_keys")
+        .insert({
+          workspace_id: workspaceData.id,
+          user_id: null,
+          encrypted_key: memberKeyData.encrypted_key,
+          key_scope: "public_read"
+        })
+
+      if (insertError) {
+        console.error("[WorkspaceDetail] Failed to recreate public_read key:", insertError)
+      } else {
+        console.log("[WorkspaceDetail] ✅ public_read key self-healed")
+      }
+    } catch (err) {
+      console.error("[WorkspaceDetail] Public read key self-heal exception:", err)
+    }
+  }, [])
 
   // Track initialization to prevent duplicate loads
   const initializeControllerRef = useRef(null)
@@ -254,6 +318,10 @@ export default function WorkspaceDetail() {
       console.log("canViewMemories:", canViewMemories)
       
       debugAccessDecision(workspaceData, accessVerification.isMember, "Step 5 - Memory Access Decision")
+
+      if (workspaceVisibility === "public") {
+        await ensurePublicReadKey(workspaceData, role, user.id)
+      }
       
       // OPTIMIZATION: Defer memory loading to after initial render
       if (canViewMemories && accessVerification.isMember) {
@@ -328,7 +396,7 @@ export default function WorkspaceDetail() {
         // Try to fetch member key first
         const { data: memberKey, error: memberKeyError } = await supabase
           .from("workspace_keys")
-          .select("encrypted_key")
+          .select("id, encrypted_key, key_scope, user_id")
           .eq("workspace_id", id)
           .eq("user_id", user.id)
           .eq("key_scope", "member")
@@ -347,11 +415,20 @@ export default function WorkspaceDetail() {
           console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] Checking for public read key...")
           const { data: publicKey, error: publicKeyError } = await supabase
             .from("workspace_keys")
-            .select("encrypted_key")
+            .select("id, encrypted_key, key_scope, user_id")
             .eq("workspace_id", id)
             .is("user_id", null)
             .eq("key_scope", "public_read")
             .maybeSingle()
+
+          console.log("[WorkspaceDetail/loadWorkspaceKeyDeferred] Public key query:", {
+            keyId: publicKey?.id || null,
+            keyScope: publicKey?.key_scope || null,
+            userId: publicKey?.user_id || null,
+            hasKey: !!publicKey?.encrypted_key,
+            keyLength: publicKey?.encrypted_key?.length || 0,
+            error: publicKeyError || null
+          })
 
           if (publicKey?.encrypted_key) {
             storedKey = publicKey.encrypted_key
@@ -369,7 +446,11 @@ export default function WorkspaceDetail() {
         }
 
         debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKeyDeferred - database")
-        localStorage.setItem(`workspace_key_${id}`, storedKey)
+        if (publicKeyFound && !memberKeyFound) {
+          sessionStorage.setItem(`workspace_public_key_${id}`, storedKey)
+        } else {
+          localStorage.setItem(`workspace_key_${id}`, storedKey)
+        }
       }
 
       // Step 3: Validate the key format
@@ -662,7 +743,7 @@ export default function WorkspaceDetail() {
       // Try to fetch member key first
       const { data: memberKey, error: memberKeyError } = await supabase
         .from("workspace_keys")
-        .select("encrypted_key")
+        .select("id, encrypted_key, key_scope, user_id")
         .eq("workspace_id", id)
         .eq("user_id", user.id)
         .eq("key_scope", "member")
@@ -681,11 +762,20 @@ export default function WorkspaceDetail() {
         console.log("[WorkspaceDetail/loadWorkspaceKey] Not a member, attempting public read key...")
         const { data: publicKey, error: publicKeyError } = await supabase
           .from("workspace_keys")
-          .select("encrypted_key")
+          .select("id, encrypted_key, key_scope, user_id")
           .eq("workspace_id", id)
           .is("user_id", null)
           .eq("key_scope", "public_read")
           .maybeSingle()
+
+        console.log("[WorkspaceDetail/loadWorkspaceKey] Public key query:", {
+          keyId: publicKey?.id || null,
+          keyScope: publicKey?.key_scope || null,
+          userId: publicKey?.user_id || null,
+          hasKey: !!publicKey?.encrypted_key,
+          keyLength: publicKey?.encrypted_key?.length || 0,
+          error: publicKeyError || null
+        })
 
         if (publicKey?.encrypted_key) {
           storedKey = publicKey.encrypted_key
@@ -714,7 +804,11 @@ export default function WorkspaceDetail() {
       debugLogKey(storedKey, "WorkspaceDetail/loadWorkspaceKey - database")
       
       // Cache locally for fast future loads
-      localStorage.setItem(`workspace_key_${id}`, storedKey)
+      if (publicKeyFound && !memberKeyFound) {
+        sessionStorage.setItem(`workspace_public_key_${id}`, storedKey)
+      } else {
+        localStorage.setItem(`workspace_key_${id}`, storedKey)
+      }
     }
 
     // 3️⃣ Validate the key format
@@ -879,22 +973,47 @@ export default function WorkspaceDetail() {
 
     // 1️⃣ Fetch the public read key
     console.log("[WorkspaceDetail/fetchMemoriesPublic] Step 1: Fetching public read encryption key...")
-    const { data: keyData, error: keyError } = await supabase
-      .from("workspace_keys")
-      .select("encrypted_key")
-      .eq("workspace_id", id)
-      .is("user_id", null)
-      .eq("key_scope", "public_read")
-      .maybeSingle()
+    const cachedPublicKey = sessionStorage.getItem(`workspace_public_key_${id}`)
+    const normalizedCachedPublicKey =
+      cachedPublicKey && cachedPublicKey !== "null" && cachedPublicKey !== "undefined"
+        ? cachedPublicKey
+        : null
+
+    if (cachedPublicKey && !normalizedCachedPublicKey) {
+      console.warn("[WorkspaceDetail/fetchMemoriesPublic] Clearing stale cached public key")
+      sessionStorage.removeItem(`workspace_public_key_${id}`)
+    }
+
+    const { data: keyData, error: keyError } = normalizedCachedPublicKey
+      ? { data: { encrypted_key: normalizedCachedPublicKey, key_scope: "public_read", user_id: null }, error: null }
+      : await supabase
+        .from("workspace_keys")
+        .select("id, encrypted_key, key_scope, user_id")
+        .eq("workspace_id", id)
+        .is("user_id", null)
+        .eq("key_scope", "public_read")
+        .maybeSingle()
+
+    console.log("[WorkspaceDetail/fetchMemoriesPublic] Public key query:", {
+      usedCache: !!normalizedCachedPublicKey,
+      keyId: keyData?.id || null,
+      keyScope: keyData?.key_scope || null,
+      userId: keyData?.user_id || null,
+      hasKey: !!keyData?.encrypted_key,
+      keyLength: keyData?.encrypted_key?.length || 0,
+      error: keyError || null
+    })
 
     if (keyError || !keyData?.encrypted_key) {
       console.warn("[WorkspaceDetail/fetchMemoriesPublic] ⚠️  No public key available - showing metadata only")
+      sessionStorage.removeItem(`workspace_public_key_${id}`)
       // Fallback to metadata-only view
       await fetchMemoriesPublicMetadataOnly()
       return
     }
 
     console.log("[WorkspaceDetail/fetchMemoriesPublic] ✅ Public read key fetched")
+    sessionStorage.setItem(`workspace_public_key_${id}`, keyData.encrypted_key)
 
     // 2️⃣ Validate the key
     const keyValidation = validateKey(keyData.encrypted_key)
@@ -1114,7 +1233,7 @@ export default function WorkspaceDetail() {
     try {
       const { data, error } = await supabase
         .from("workspace_members")
-        .select("user_id, role, invited_at, profiles(username, avatar_url, name)")
+        .select("user_id, role, invited_at, profiles!workspace_members_user_id_fkey(username, avatar_url, name)")
         .eq("workspace_id", id)
         .order("invited_at", { ascending: true })
 
@@ -1225,6 +1344,7 @@ export default function WorkspaceDetail() {
           console.warn("[WorkspaceDetail/toggleVisibility] This is non-critical - public viewers simply won't have access")
         } else {
           console.log("[WorkspaceDetail/toggleVisibility] ✅ Public read key deleted")
+          sessionStorage.removeItem(`workspace_public_key_${id}`)
         }
       }
 

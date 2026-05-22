@@ -92,7 +92,9 @@ export function useSmartFetchPosts(fetchFn, cacheKey, forceFresh = false, user, 
           setPosts(postsWithCounts)
           setCommentsByPost(comments)
           setLikesByPost(likeData)
-          console.log('[useSmartFetchPosts] Fetched fresh data for', cacheKey)
+          if (import.meta.env.DEV) {
+            console.log('[useSmartFetchPosts] Fetched fresh data for', cacheKey)
+          }
         }
       } catch (err) {
         const isAbort = 
@@ -306,7 +308,9 @@ export async function prefetchPosts(fetchFn, cacheKey) {
     // Check if already cached and valid
     const cachedPostIds = store.getCachedPostIds()
     if (cachedPostIds.length > 0 && cachedPostIds.every(id => store.isCacheValid(id))) {
-      console.log('[prefetchPosts] Data already cached:', cacheKey)
+      if (import.meta.env.DEV) {
+        console.log('[prefetchPosts] Data already cached:', cacheKey)
+      }
       return
     }
     
@@ -326,7 +330,9 @@ export async function prefetchPosts(fetchFn, cacheKey) {
       
       store.setCachedComments(comments)
       store.setCachedLikes(likeData)
-      console.log('[prefetchPosts] Prefetched data for:', cacheKey)
+      if (import.meta.env.DEV) {
+        console.log('[prefetchPosts] Prefetched data for:', cacheKey)
+      }
     }
   } catch (err) {
     const isAbort = err.name === 'AbortError' || err.message === 'Fetch is aborted' || err.message?.includes('signal is aborted')

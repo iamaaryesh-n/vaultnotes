@@ -39,6 +39,8 @@ export function useExploreFeed(user, authReady) {
   const loadedPagesRef = useRef(new Set([0]))
   const hasMoreRef = useRef(true)
   const loadingMoreRef = useRef(false)
+  const requestSeqRef = useRef(0)
+  const activeRequestIdRef = useRef(0)
   // Always-fresh ref so fetchPostsBatch never closes over a stale userId
   const userIdRef = useRef(user?.id || null)
 
@@ -53,16 +55,20 @@ export function useExploreFeed(user, authReady) {
     setCurrentUserId(uid)
   }, [user, authReady])
 
-  const abortControllerRef = useRef(null)
-
   const fetchPostsBatch = useCallback(
-    async (pageNum, signal) => {
+    async (pageNum, signal, requestId = 0) => {
       try {
         const start = pageNum * BATCH_SIZE
         const end = start + BATCH_SIZE - 1
 
         if (import.meta.env.DEV) {
-          console.log("[ExploreFetch] Fetching posts batch:", { pageNum, start, end, userId: userIdRef.current })
+          console.log("[ExploreFetch] start", {
+            requestId,
+            pageNum,
+            start,
+            end,
+            userId: userIdRef.current
+          })
         }
 
         const { data, error: fetchError } = await supabase
@@ -76,7 +82,13 @@ export function useExploreFeed(user, authReady) {
 
         if (fetchError) {
           if (isAbortError(fetchError, signal)) {
-            if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed Supabase query")
+            if (import.meta.env.DEV) {
+              console.log("[ExploreFetch] cancel", {
+                requestId,
+                stage: "posts-query",
+                reason: signal?.reason || fetchError?.message || "abort"
+              })
+            }
             return ABORTED_BATCH
           }
 
@@ -85,12 +97,14 @@ export function useExploreFeed(user, authReady) {
         }
 
         if (signal?.aborted) {
-          if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed after posts query")
+          if (import.meta.env.DEV) {
+            console.log("[ExploreFetch] cancel", {
+              requestId,
+              stage: "posts-query-post-check",
+              reason: signal?.reason || "abort"
+            })
+          }
           return ABORTED_BATCH
-        }
-
-        if (import.meta.env.DEV) {
-          console.log("[useExploreFeed] Posts fetched successfully:", { count: data?.length })
         }
 
         const fetchedPosts = data || []
@@ -104,7 +118,13 @@ export function useExploreFeed(user, authReady) {
           ])
 
           if (signal?.aborted) {
-            if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed after interaction counts")
+            if (import.meta.env.DEV) {
+              console.log("[ExploreFetch] cancel", {
+                requestId,
+                stage: "interaction-counts",
+                reason: signal?.reason || "abort"
+              })
+            }
             return ABORTED_BATCH
           }
 
@@ -117,10 +137,25 @@ export function useExploreFeed(user, authReady) {
           setLikesByPost((prev) => ({ ...prev, ...likeData }))
         }
 
+        if (import.meta.env.DEV) {
+          console.log("[ExploreFetch] complete", {
+            requestId,
+            pageNum,
+            count: fetchedPosts.length,
+            aborted: signal?.aborted || false
+          })
+        }
+
         return createSuccessBatch(fetchedPosts)
       } catch (err) {
         if (isAbortError(err, signal)) {
-          if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed.fetchPostsBatch")
+          if (import.meta.env.DEV) {
+            console.log("[ExploreFetch] cancel", {
+              requestId,
+              stage: "fetchPostsBatch-catch",
+              reason: signal?.reason || err?.message || err?.name || "abort"
+            })
+          }
           return ABORTED_BATCH
         }
 
@@ -143,12 +178,14 @@ export function useExploreFeed(user, authReady) {
 
       loadingMoreRef.current = true
       setLoadingMore(true)
-      const signal = abortControllerRef.current?.signal
+      const controller = new AbortController()
+      const requestId = ++requestSeqRef.current
+      activeRequestIdRef.current = requestId
 
       try {
-        const result = await fetchPostsBatch(pageNumber, signal)
+        const result = await fetchPostsBatch(pageNumber, controller.signal, requestId)
 
-        if (result.status === "aborted" || signal?.aborted) {
+        if (requestId !== activeRequestIdRef.current || result.status === "aborted" || controller.signal.aborted) {
           return
         }
 
@@ -168,8 +205,14 @@ export function useExploreFeed(user, authReady) {
           setHasMore(false)
         }
       } catch (err) {
-        if (isAbortError(err, signal)) {
-          if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed.loadMorePosts")
+        if (isAbortError(err, controller.signal)) {
+          if (import.meta.env.DEV) {
+            console.log("[ExploreFetch] cancel", {
+              requestId,
+              stage: "loadMorePosts-catch",
+              reason: controller.signal.reason || err?.message || err?.name || "abort"
+            })
+          }
           return
         }
 
@@ -177,6 +220,14 @@ export function useExploreFeed(user, authReady) {
       } finally {
         loadingMoreRef.current = false
         setLoadingMore(false)
+        if (import.meta.env.DEV) {
+          console.log("[ExploreFetch] complete", {
+            requestId,
+            pageNum,
+            stage: "loadMorePosts-finally",
+            aborted: controller.signal.aborted || false
+          })
+        }
       }
     },
     [fetchPostsBatch]
@@ -203,14 +254,15 @@ export function useExploreFeed(user, authReady) {
     if (!authReady) return
 
     const controller = new AbortController()
-    abortControllerRef.current = controller
+    const requestId = ++requestSeqRef.current
+    activeRequestIdRef.current = requestId
 
     const loadInitialPosts = async () => {
       setLoading(initialCachedPosts.length === 0)
       try {
-        const result = await fetchPostsBatch(0, controller.signal)
+        const result = await fetchPostsBatch(0, controller.signal, requestId)
         
-        if (result.status === "aborted" || controller.signal.aborted) {
+        if (requestId !== activeRequestIdRef.current || result.status === "aborted" || controller.signal.aborted) {
           return
         }
 
@@ -228,7 +280,13 @@ export function useExploreFeed(user, authReady) {
         setPage(0)
       } catch (err) {
         if (isAbortError(err, controller.signal)) {
-          if (import.meta.env.DEV) console.log("[FetchCancelled] useExploreFeed initial load")
+          if (import.meta.env.DEV) {
+            console.log("[ExploreFetch] cancel", {
+              requestId,
+              stage: "initial-load-catch",
+              reason: controller.signal.reason || err?.message || err?.name || "abort"
+            })
+          }
           return
         }
 
@@ -237,13 +295,29 @@ export function useExploreFeed(user, authReady) {
         if (!controller.signal.aborted) {
           setLoading(false)
         }
+        if (import.meta.env.DEV) {
+          console.log("[ExploreFetch] complete", {
+            requestId,
+            stage: "initial-load-finally",
+            aborted: controller.signal.aborted || false
+          })
+        }
       }
     }
 
     loadInitialPosts()
 
     return () => {
-      controller.abort()
+      if (!controller.signal.aborted) {
+        if (import.meta.env.DEV) {
+          console.log("[ExploreFetch] cancel", {
+            requestId,
+            stage: "initial-load-cleanup",
+            reason: "effect cleanup"
+          })
+        }
+        controller.abort("effect cleanup")
+      }
     }
   }, [fetchPostsBatch, authReady])
 

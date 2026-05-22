@@ -28,15 +28,17 @@ const PostCard = React.memo(({
   onToggleFollow, 
   onOpenPost, 
   authReady, 
-  index 
+  index,
+  currentUser = null,
+  currentUserId = null
 }) => {
   const navigate = useNavigate()
 
   return (
     <motion.article
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: Math.min(index * 0.02, 0.1) }}
+      initial={index === 0 ? { opacity: 0 } : { opacity: 1 }}
+      animate={{ opacity: 1 }}
+      transition={index === 0 ? { duration: 0.2 } : { duration: 0 }}
       data-post-id={post.id}
       className="group border-b border-[var(--profile-border)] px-4 py-4 transition-colors duration-200 hover:bg-[rgba(255,255,255,0.015)] first:border-t first:border-[var(--profile-border)]"
     >
@@ -61,6 +63,7 @@ const PostCard = React.memo(({
                 width={40}
                 height={40}
                 className="h-[40px] w-[40px] rounded-full object-cover"
+                decoding="async"
                 loading="lazy"
               />
             ) : (
@@ -126,7 +129,9 @@ const PostCard = React.memo(({
             src={getFeedImageUrl(post.image_url, { width: 600, quality: 75 })}
             alt="Post"
             className="h-auto w-full max-h-[80vh] object-contain"
+            decoding="async"
             loading="lazy"
+            fetchpriority="low"
           />
         </div>
       )}
@@ -138,6 +143,8 @@ const PostCard = React.memo(({
           initialLikes={likes}
           commentCount={comments.length}
           authReady={authReady}
+          currentUser={currentUser}
+          currentUserId={currentUserId}
         />
       </div>
     </motion.article>

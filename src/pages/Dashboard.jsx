@@ -74,7 +74,9 @@ export default function Dashboard({ session }) {
 
   const fetchWorkspaces = useCallback(async ({ force = false, silent = false } = {}) => {
     if (isFetchingRef.current) {
-      console.log("[Dashboard] Fetch already in progress, skipping duplicate request")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard] Fetch already in progress, skipping duplicate request")
+      }
       if (!silent && workspacesLengthRef.current === 0) {
         setLoading(true)
       }
@@ -101,7 +103,9 @@ export default function Dashboard({ session }) {
       isFetchingRef.current = true
 
       const startTime = Date.now()
-      console.log("[Dashboard] Starting workspace fetch at", startTime)
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard] Starting workspace fetch at", startTime)
+      }
 
       const { data: { user }, error: authError } = await supabase.auth.getUser()
       if (authError || !user) {
@@ -111,7 +115,9 @@ export default function Dashboard({ session }) {
         return
       }
 
-      console.log("[Dashboard] Step 1: Fetching user's workspace memberships...")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard] Step 1: Fetching user's workspace memberships...")
+      }
 
       // Step 1: Fetch user's workspace memberships
       const { data: userMemberData, error: userMemberError } = await supabase
@@ -145,32 +151,13 @@ export default function Dashboard({ session }) {
         ...new Set((userMemberData || []).map((m) => m.invited_by).filter(Boolean))
       ]
 
-      if (inviterIds.length > 0) {
-        const { data: inviterProfiles, error: inviterError } = await supabase
-          .from("profiles")
-          .select("id, username, name")
-          .in("id", inviterIds)
-
-        if (inviterError) {
-          console.warn("[Dashboard] Failed to fetch inviter profiles:", inviterError)
-        } else {
-          const inviterNameById = {}
-          ;(inviterProfiles || []).forEach((profile) => {
-            inviterNameById[profile.id] = profile.username || profile.name || "unknown"
-          })
-
-          Object.keys(attributionBaseMap).forEach((workspaceId) => {
-            const inviterId = attributionBaseMap[workspaceId]?.invitedBy
-            attributionBaseMap[workspaceId].invitedByUsername = inviterId ? inviterNameById[inviterId] || "unknown" : null
-          })
-        }
-      }
-
       setWorkspaceAttributionById(attributionBaseMap)
 
       // If no workspaces, done loading
       if (workspaceIds.length === 0) {
-        console.log("[Dashboard] User has no workspace memberships")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard] User has no workspace memberships")
+        }
         setWorkspaces([])
         setOwnerCounts({})
         setMemberCounts({})
@@ -180,14 +167,36 @@ export default function Dashboard({ session }) {
         return
       }
 
-      console.log(`[Dashboard] Step 2: Fetching ${workspaceIds.length} workspace(s)...`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard] Step 2-4: Fetching workspace details, member counts, and inviter profiles in parallel...`)
+      }
 
-      // Step 2: Fetch workspace details
-      const { data: workspaceData, error: workspaceError } = await supabase
-        .from("workspaces")
-        .select("id, name, created_at, created_by, is_public")
-        .in("id", workspaceIds)
-        .order("created_at", { ascending: false })
+      // Parallelize fetches for workspace details, member counts, and inviter profiles
+      // These are all independent and only depend on workspaceIds and inviterIds from Step 1
+      const [workspaceDataResult, memberDataResult, inviterProfilesResult] = await Promise.all([
+        // Fetch workspace details
+        supabase
+          .from("workspaces")
+          .select("id, name, created_at, created_by, is_public")
+          .in("id", workspaceIds)
+          .order("created_at", { ascending: false }),
+        // Fetch member counts for each workspace
+        supabase
+          .from("workspace_members")
+          .select("workspace_id, role")
+          .in("workspace_id", workspaceIds),
+        // Fetch inviter profiles (if any inviters exist)
+        inviterIds.length > 0
+          ? supabase
+              .from("profiles")
+              .select("id, username, name")
+              .in("id", inviterIds)
+          : Promise.resolve({ data: [], error: null })
+      ])
+
+      const { data: workspaceData, error: workspaceError } = workspaceDataResult
+      const { data: memberData, error: memberError } = memberDataResult
+      const { data: inviterProfiles, error: inviterError } = inviterProfilesResult
 
       if (workspaceError) {
         console.error("[Dashboard] Failed to fetch workspaces:", workspaceError)
@@ -199,13 +208,21 @@ export default function Dashboard({ session }) {
       setWorkspaces(workspaceData || [])
       setWorkspaceListStore(workspaceData || [])
 
-      console.log(`[Dashboard] Step 3: Counting owners for ${workspaceIds.length} workspace(s)...`)
+      if (inviterError) {
+        console.warn("[Dashboard] Failed to fetch inviter profiles:", inviterError)
+      } else if (inviterProfiles && inviterProfiles.length > 0) {
+        const inviterNameById = {}
+        inviterProfiles.forEach((profile) => {
+          inviterNameById[profile.id] = profile.username || profile.name || "unknown"
+        })
 
-      // Step 3: Count owners for each workspace
-      const { data: memberData, error: memberError } = await supabase
-        .from("workspace_members")
-        .select("workspace_id, role")
-        .in("workspace_id", workspaceIds)
+        Object.keys(attributionBaseMap).forEach((workspaceId) => {
+          const inviterId = attributionBaseMap[workspaceId]?.invitedBy
+          attributionBaseMap[workspaceId].invitedByUsername = inviterId ? inviterNameById[inviterId] || "unknown" : null
+        })
+
+        setWorkspaceAttributionById(attributionBaseMap)
+      }
 
       if (!memberError && memberData) {
         const ownerCountMap = {}
@@ -224,7 +241,9 @@ export default function Dashboard({ session }) {
       }
 
       const elapsed = Date.now() - startTime
-      console.log(`[Dashboard] ✅ Workspace fetch completed in ${elapsed}ms`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard] ✅ Workspace fetch completed in ${elapsed}ms`)
+      }
       lastFetchTimeRef.current = Date.now()
     } catch (err) {
       console.error("[Dashboard] Error fetching workspaces:", err)
@@ -335,13 +354,17 @@ export default function Dashboard({ session }) {
       }
 
       // ===== STEP 0: AUTH CHECK =====
-      console.log("[Dashboard/createWorkspace] Starting workspace creation flow...")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Starting workspace creation flow...")
+      }
       const { data: { user }, error: userError } = await supabase.auth.getUser()
-      console.log("[Dashboard/createWorkspace] Auth check IDs:", {
-        freshAuthUserId: user?.id || null,
-        sessionUserId: session?.user?.id || null,
-        authReadyUserId
-      })
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Auth check IDs:", {
+          freshAuthUserId: user?.id || null,
+          sessionUserId: session?.user?.id || null,
+          authReadyUserId
+        })
+      }
 
       if (userError) {
         console.error("[Dashboard/createWorkspace] Auth error:", userError)
@@ -357,10 +380,14 @@ export default function Dashboard({ session }) {
         return
       }
 
-      console.log(`[Dashboard/createWorkspace] User authenticated: ${user.id}`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard/createWorkspace] User authenticated: ${user.id}`)
+      }
 
       // ===== STEP 1: GENERATE ENCRYPTION KEY =====
-      console.log("[Dashboard/createWorkspace] Step 1: Generating encryption key...")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Step 1: Generating encryption key...")
+      }
       let key, exportedKey
       try {
         key = await generateKey()
@@ -375,7 +402,9 @@ export default function Dashboard({ session }) {
           setCreating(false)
           return
         }
-        console.log("[Dashboard/createWorkspace] ✅ Encryption key generated and validated")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard/createWorkspace] ✅ Encryption key generated and validated")
+        }
       } catch (keyErr) {
         console.error("[Dashboard/createWorkspace] Key generation exception:", keyErr)
         showError(`Failed to generate encryption key: ${keyErr.message}`)
@@ -384,7 +413,9 @@ export default function Dashboard({ session }) {
       }
 
       // ===== STEP 2: INSERT WORKSPACE =====
-      console.log("[Dashboard/createWorkspace] Step 2: Inserting workspace row...")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Step 2: Inserting workspace row...")
+      }
       const generatedWorkspaceId =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
@@ -396,7 +427,9 @@ export default function Dashboard({ session }) {
         created_by: user.id,
         is_public: workspaceIsPublic,
       }
-      console.log("[Dashboard/createWorkspace] Insert payload:", createPayload)
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Insert payload:", createPayload)
+      }
 
       const { error: workspaceError } = await supabase
         .from("workspaces")
@@ -428,15 +461,21 @@ export default function Dashboard({ session }) {
         return
       }
 
-      console.log(`[Dashboard/createWorkspace] ✅ Workspace created: ${workspace.id}`)
-      console.log(`[Dashboard/createWorkspace]   is_public in DB: ${workspace.is_public}`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard/createWorkspace] ✅ Workspace created: ${workspace.id}`)
+        console.log(`[Dashboard/createWorkspace]   is_public in DB: ${workspace.is_public}`)
+      }
 
       // Cache key in localStorage immediately
       localStorage.setItem(`workspace_key_${workspace.id}`, exportedKey)
-      console.log(`[Dashboard/createWorkspace] ✅ Encryption key cached in localStorage`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard/createWorkspace] ✅ Encryption key cached in localStorage`)
+      }
 
       // ===== STEP 3: INSERT OWNER MEMBERSHIP =====
-      console.log(`[Dashboard/createWorkspace] Step 3: Establishing owner membership (workspace: ${workspace.id}, user: ${user.id})...`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard/createWorkspace] Step 3: Establishing owner membership (workspace: ${workspace.id}, user: ${user.id})...`)
+      }
       
       // First, check if membership already exists (might have been created by a trigger)
       const { data: existingMember, error: checkError } = await supabase
@@ -452,10 +491,14 @@ export default function Dashboard({ session }) {
       }
 
       if (existingMember) {
-        console.log(`[Dashboard/createWorkspace] ✅ Membership already exists (role: ${existingMember.role}) - likely created by database trigger`)
+        if (import.meta.env.DEV) {
+          console.log(`[Dashboard/createWorkspace] ✅ Membership already exists (role: ${existingMember.role}) - likely created by database trigger`)
+        }
       } else {
         // Membership doesn't exist, insert it
-        console.log("[Dashboard/createWorkspace]   Membership not found, inserting...")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard/createWorkspace]   Membership not found, inserting...")
+        }
         const { error: memberError } = await supabase
           .from("workspace_members")
           .insert({
@@ -468,7 +511,9 @@ export default function Dashboard({ session }) {
           // Check if it's a duplicate key error (race condition - trigger beat us)
           if (memberError.code === '23505' || memberError.message?.includes('duplicate key')) {
             console.warn("[Dashboard/createWorkspace] ⚠️  Duplicate key error (trigger likely created the row) - this is normal")
-            console.log("[Dashboard/createWorkspace]   Verifying membership was created...")
+            if (import.meta.env.DEV) {
+              console.log("[Dashboard/createWorkspace]   Verifying membership was created...")
+            }
             
             // Verify it was created
             const { data: verifyMember, error: verifyError } = await supabase
@@ -486,7 +531,9 @@ export default function Dashboard({ session }) {
             }
 
             if (verifyMember) {
-              console.log("[Dashboard/createWorkspace] ✅ Membership verified (role: " + verifyMember.role + ")")
+              if (import.meta.env.DEV) {
+                console.log("[Dashboard/createWorkspace] ✅ Membership verified (role: " + verifyMember.role + ")")
+              }
             } else {
               console.error("[Dashboard/createWorkspace] ❌ Membership not found after insert attempt")
               showError("Failed to establish vault ownership")
@@ -504,12 +551,16 @@ export default function Dashboard({ session }) {
             return
           }
         } else {
-          console.log("[Dashboard/createWorkspace] ✅ Owner membership inserted successfully")
+          if (import.meta.env.DEV) {
+            console.log("[Dashboard/createWorkspace] ✅ Owner membership inserted successfully")
+          }
         }
       }
 
       // ===== STEP 4: INSERT WORKSPACE KEY =====
-      console.log("[Dashboard/createWorkspace] Step 4: Storing encryption key in database...")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Step 4: Storing encryption key in database...")
+      }
       
       // Insert member key (user-specific)
       const { error: keyError } = await supabase
@@ -529,12 +580,16 @@ export default function Dashboard({ session }) {
         // Don't fail the whole flow - key is cached in localStorage anyway
         console.warn("[Dashboard/createWorkspace] Continuing despite key storage issue (localStorage backup available)")
       } else {
-        console.log("[Dashboard/createWorkspace] ✅ Member encryption key stored in database")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard/createWorkspace] ✅ Member encryption key stored in database")
+        }
       }
 
       // If public workspace, also insert a public read key (shared, no user_id)
       if (workspaceIsPublic) {
-        console.log("[Dashboard/createWorkspace] Step 4b: Storing public read key for shared access...")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard/createWorkspace] Step 4b: Storing public read key for shared access...")
+        }
         const { error: publicKeyError } = await supabase
           .from("workspace_keys")
           .insert({
@@ -550,12 +605,16 @@ export default function Dashboard({ session }) {
           console.error("[Dashboard/createWorkspace]   Error message:", publicKeyError.message)
           console.warn("[Dashboard/createWorkspace] Continuing - public read key optional")
         } else {
-          console.log("[Dashboard/createWorkspace] ✅ Public read key stored for shared access")
+          if (import.meta.env.DEV) {
+            console.log("[Dashboard/createWorkspace] ✅ Public read key stored for shared access")
+          }
         }
       }
 
       // ===== STEP 5: UPDATE LOCAL STATE AND NAVIGATE =====
-      console.log("[Dashboard/createWorkspace] Step 5: Updating UI and navigating...")
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard/createWorkspace] Step 5: Updating UI and navigating...")
+      }
       
       setWorkspaces((prev) => [workspace, ...prev])
       success(`Vault "${name}" created!`)
@@ -566,7 +625,9 @@ export default function Dashboard({ session }) {
       setCreating(false)
       
       // Navigate to the new workspace
-      console.log(`[Dashboard/createWorkspace] ✅ Navigating to /workspace/${workspace.id}`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard/createWorkspace] ✅ Navigating to /workspace/${workspace.id}`)
+      }
       setTimeout(() => {
         setCurrentWorkspaceStore(workspace)
         setLastOpenedWorkspaceId(workspace.id)
@@ -596,7 +657,9 @@ export default function Dashboard({ session }) {
     return () => {
       if (fetchControllerRef.current) {
         fetchControllerRef.current.abort()
-        console.log("[Dashboard] Cancelled pending fetch on unmount")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard] Cancelled pending fetch on unmount")
+        }
       }
     }
   }, [session, fetchWorkspaces, workspaces?.length])
@@ -637,7 +700,9 @@ export default function Dashboard({ session }) {
       }
 
       const delayMs = Math.max(0, 1000 - timeSinceLastFetch)
-      console.log(`[Dashboard] Membership changed, refetching in ${delayMs}ms`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard] Membership changed, refetching in ${delayMs}ms`)
+      }
 
       membershipChangeTimeoutRef.current = setTimeout(() => {
         fetchWorkspaces({ force: true, silent: true })
@@ -709,12 +774,16 @@ export default function Dashboard({ session }) {
       localStorage.removeItem(`workspace_key_${workspaceId}`)
       success(action === "delete" ? "Vault deleted successfully" : "You've left the vault")
 
-      console.log(`[Dashboard] ${action === "delete" ? "Delete" : "Leave"} operation completed, scheduling refetch in 500ms...`)
+      if (import.meta.env.DEV) {
+        console.log(`[Dashboard] ${action === "delete" ? "Delete" : "Leave"} operation completed, scheduling refetch in 500ms...`)
+      }
 
       // Debounce refetch to avoid auth lock conflicts
       // The workspace has already been removed from UI optimistically, so no rush
       setTimeout(() => {
-        console.log("[Dashboard] Executing debounced refetch after workspace action")
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard] Executing debounced refetch after workspace action")
+        }
         fetchWorkspaces()
       }, 500)
 
@@ -733,7 +802,9 @@ export default function Dashboard({ session }) {
   }, [])
 
   const openRenameWorkspace = useCallback((workspaceId, currentName) => {
-    console.log("[Dashboard] Opening rename modal for workspace:", workspaceId)
+    if (import.meta.env.DEV) {
+      console.log("[Dashboard] Opening rename modal for workspace:", workspaceId)
+    }
     setRenameWorkspaceId(workspaceId)
     setRenameWorkspaceName(currentName || "")
     setShowRenameWorkspaceModal(true)
@@ -779,7 +850,9 @@ export default function Dashboard({ session }) {
       setShowRenameWorkspaceModal(false)
       setRenameWorkspaceId(null)
       setRenameWorkspaceName("")
-      console.log("[Dashboard] Vault renamed successfully:", renamedWorkspace)
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard] Vault renamed successfully:", renamedWorkspace)
+      }
     } catch (err) {
       console.error("[Dashboard] Unexpected error renaming vault:", err)
       showError("Something went wrong")
@@ -793,7 +866,9 @@ export default function Dashboard({ session }) {
   }, [runWorkspaceAction])
 
   const openEditVisibility = useCallback((workspaceId, currentIsPublic) => {
-    console.log("[Dashboard] Opening visibility editor. Current is_public:", currentIsPublic)
+    if (import.meta.env.DEV) {
+      console.log("[Dashboard] Opening visibility editor. Current is_public:", currentIsPublic)
+    }
     setEditVisibilityId(workspaceId)
     setCurrentVisibilityState(currentIsPublic) // Store current state for display
     setEditVisibilityValue(currentIsPublic) // Initialize desired state to current state
@@ -810,16 +885,31 @@ export default function Dashboard({ session }) {
   const handleUpdateVisibility = useCallback(async () => {
     if (!editVisibilityId) return
 
-    console.log("[Dashboard] Starting visibility update...")
-    console.log("[Dashboard] Workspace ID:", editVisibilityId)
-    console.log("[Dashboard] New visibility value:", editVisibilityValue, "type:", typeof editVisibilityValue)
+    if (import.meta.env.DEV) {
+      console.log("[Dashboard] Starting visibility update...")
+      console.log("[Dashboard] Workspace ID:", editVisibilityId)
+      console.log("[Dashboard] New visibility value:", editVisibilityValue, "type:", typeof editVisibilityValue)
+    }
 
     setUpdatingVisibility(true)
     try {
+      const {
+        data: { user },
+        error: authError
+      } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        console.error("[Dashboard] Auth error while updating visibility:", authError)
+        showError("Authentication error")
+        setUpdatingVisibility(false)
+        return
+      }
       // Prepare update payload
       const updatePayload = { is_public: editVisibilityValue }
-      console.log("[Dashboard] Update payload:", updatePayload)
-      console.log("[Dashboard] Executing update query with condition: id = ", editVisibilityId)
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard] Update payload:", updatePayload)
+        console.log("[Dashboard] Executing update query with condition: id = ", editVisibilityId)
+      }
 
       const { data: updatedData, error } = await supabase
         .from("workspaces")
@@ -827,14 +917,18 @@ export default function Dashboard({ session }) {
         .eq("id", editVisibilityId)
         .select("id, is_public, name")
 
-      console.log("[Dashboard] Update response - data:", updatedData, "error:", error)
+      if (import.meta.env.DEV) {
+        console.log("[Dashboard] Update response - data:", updatedData, "error:", error)
+      }
 
       if (error) {
         console.error("[Dashboard] Error updating visibility:", error)
         console.error("[Dashboard] Error details:", error.message, error.code, error.status)
         showError("Failed to update vault visibility")
       } else {
-        console.log("[Dashboard] ✅ Update executed. Response:", updatedData)
+        if (import.meta.env.DEV) {
+          console.log("[Dashboard] ✅ Update executed. Response:", updatedData)
+        }
         
         // Verify the change by querying the workspace directly
         const { data: verifyData } = await supabase
@@ -844,7 +938,9 @@ export default function Dashboard({ session }) {
           .single()
         
         if (verifyData) {
-          console.log("[Dashboard] 🔍 VERIFICATION: Workspace", verifyData.id, "now has is_public =", verifyData.is_public)
+          if (import.meta.env.DEV) {
+            console.log("[Dashboard] 🔍 VERIFICATION: Workspace", verifyData.id, "now has is_public =", verifyData.is_public)
+          }
         }
 
         // Update the workspace in the state
@@ -853,6 +949,75 @@ export default function Dashboard({ session }) {
             ws.id === editVisibilityId ? { ...ws, is_public: editVisibilityValue } : ws
           )
         )
+
+        if (!currentVisibilityState && editVisibilityValue) {
+          if (import.meta.env.DEV) {
+            console.log("[Dashboard] Creating public_read key for public vault")
+          }
+          const { data: memberKeyData, error: memberKeyError } = await supabase
+            .from("workspace_keys")
+            .select("encrypted_key")
+            .eq("workspace_id", editVisibilityId)
+            .eq("user_id", user.id)
+            .eq("key_scope", "member")
+            .maybeSingle()
+
+          if (memberKeyError || !memberKeyData?.encrypted_key) {
+            console.error("[Dashboard] Failed to fetch member key for public_read:", memberKeyError)
+            showError("Warning: Could not create public read key")
+          } else {
+            await supabase
+              .from("workspace_keys")
+              .delete()
+              .eq("workspace_id", editVisibilityId)
+              .is("user_id", null)
+              .eq("key_scope", "public_read")
+
+            const { error: publicKeyError } = await supabase
+              .from("workspace_keys")
+              .insert({
+                workspace_id: editVisibilityId,
+                user_id: null,
+                encrypted_key: memberKeyData.encrypted_key,
+                key_scope: "public_read"
+              })
+
+            if (publicKeyError) {
+              console.error("[Dashboard] Failed to create public_read key:", publicKeyError)
+              showError("Warning: Could not create public read key")
+            }
+          }
+        }
+
+        if (currentVisibilityState && !editVisibilityValue) {
+          if (import.meta.env.DEV) {
+            console.log("[Dashboard] Deleting public_read key for private vault")
+          }
+          const { error: deleteError } = await supabase
+            .from("workspace_keys")
+            .delete()
+            .eq("workspace_id", editVisibilityId)
+            .is("user_id", null)
+            .eq("key_scope", "public_read")
+
+          if (deleteError) {
+            console.error("[Dashboard] Failed to delete public_read key:", deleteError)
+          } else {
+            sessionStorage.removeItem(`workspace_public_key_${editVisibilityId}`)
+          }
+        }
+
+        setPublicWorkspaces((prev) => {
+          if (editVisibilityValue) {
+            if (prev.some((ws) => ws.id === editVisibilityId)) {
+              return prev.map((ws) => (ws.id === editVisibilityId ? { ...ws, is_public: true } : ws))
+            }
+            const updated = workspaces.find((ws) => ws.id === editVisibilityId)
+            return updated ? [{ ...updated, is_public: true }, ...prev] : prev
+          }
+
+          return prev.filter((ws) => ws.id !== editVisibilityId)
+        })
         success(editVisibilityValue ? "Vault is now public" : "Vault is now private")
         setEditVisibilityId(null)
         setCurrentVisibilityState(false)
@@ -1149,7 +1314,9 @@ export default function Dashboard({ session }) {
           setWorkspaceDeleteTarget(null)
         }}
         onCancel={() => {
-          console.log("[Dashboard] Workspace delete cancelled by user")
+          if (import.meta.env.DEV) {
+            console.log("[Dashboard] Workspace delete cancelled by user")
+          }
           setWorkspaceDeleteTarget(null)
         }}
       />
@@ -1193,7 +1360,9 @@ export default function Dashboard({ session }) {
               type="button"
               onClick={() => {
                 setEditVisibilityValue((prev) => !prev)
-                console.log("[Dashboard] Visibility toggle changed to:", !editVisibilityValue)
+                if (import.meta.env.DEV) {
+                  console.log("[Dashboard] Visibility toggle changed to:", !editVisibilityValue)
+                }
               }}
               className={`relative inline-flex h-6 w-11 items-center rounded-full border transition-all ${editVisibilityValue ? "border-[#F4B400] bg-[#F4B400]" : "border-[var(--profile-border-strong)] bg-[var(--profile-elev)]"}`}
               aria-label="Toggle vault visibility"

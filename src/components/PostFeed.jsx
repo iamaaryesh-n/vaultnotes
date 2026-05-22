@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react"
 import { useNavigate } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { PostListSkeleton } from "./PostSkeleton"
 import PostCard from "./PostCard"
 
@@ -20,7 +20,8 @@ export default function PostFeed({
   queueNextPageLoad,
   onToggleFollow,
   onOpenPost,
-  authReady
+  authReady,
+  currentUserId = null
 }) {
   const navigate = useNavigate()
   const loadMoreRef = useRef(null)
@@ -64,15 +65,7 @@ export default function PostFeed({
     }
 
     return filtered
-  }, [
-    activeTab, 
-    contextUser?.id, 
-    followedUsers, 
-    posts,
-    // Only re-sort trending when stats change
-    activeTab === "trending" ? likesByPost : null,
-    activeTab === "trending" ? commentsByPost : null
-  ])
+  }, [activeTab, contextUser?.id, followedUsers, posts, likesByPost, commentsByPost])
 
   useEffect(() => {
     if (!loadMoreRef.current) return
@@ -139,22 +132,22 @@ export default function PostFeed({
         </motion.div>
       ) : (
         <div>
-          <AnimatePresence>
-            {filteredPosts.map((post, index) => (
-              <PostCard
-                key={post.id}
-                post={post}
-                likes={likesByPost[post.id] || { count: 0, userLiked: false }}
-                comments={commentsByPost[post.id] || []}
-                isFollowed={followedUsers.includes(post.user_id)}
-                isOwnPost={contextUser?.id === post.user_id}
-                onToggleFollow={onToggleFollow}
-                onOpenPost={onOpenPost}
-                authReady={authReady}
-                index={index}
-              />
-            ))}
-          </AnimatePresence>
+          {filteredPosts.map((post, index) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              likes={likesByPost[post.id] || { count: 0, userLiked: false }}
+              comments={commentsByPost[post.id] || []}
+              isFollowed={followedUsers.includes(post.user_id)}
+              isOwnPost={contextUser?.id === post.user_id}
+              onToggleFollow={onToggleFollow}
+              onOpenPost={onOpenPost}
+              authReady={authReady}
+              index={index}
+              currentUser={contextUser}
+              currentUserId={currentUserId || contextUser?.id}
+            />
+          ))}
 
           <div ref={loadMoreRef} className="h-20 w-full" />
 

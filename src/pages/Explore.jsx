@@ -310,6 +310,7 @@ export default function Explore() {
             onToggleFollow={handleToggleFollow}
             onOpenPost={openPostModal}
             authReady={authReady}
+            currentUserId={currentUserId}
           />
         </div>
       ) : (
