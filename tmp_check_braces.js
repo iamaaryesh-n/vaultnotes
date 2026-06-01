@@ -1,5 +1,0 @@
-const fs=require('fs');const s=fs.readFileSync('d:/Projects/VaultNotes/src/pages/Chat.jsx','utf8');let balP=0,balB=0,balS=0;let maxP={v:0,pos:0},maxB={v:0,pos:0},maxS={v:0,pos:0};for(let i=0;i<s.length;i++){const ch=s[i]; if(ch==='('){balP++; if(balP>maxP.v){maxP.v=balP;maxP.pos=i}} else if(ch===')'){balP--;} if(ch==='{'){balB++; if(balB>maxB.v){maxB.v=balB;maxB.pos=i}} else if(ch==='}'){balB--;} if(ch==='['){balS++; if(balS>maxS.v){maxS.v=balS;maxS.pos=i}} else if(ch===']'){balS--;} }
-function ctx(pos){const lines=s.slice(0,pos).split(/\r?\n/);const lineNo=lines.length;const startLine=Math.max(1,lineNo-5);const excerpt=s.split(/\r?\n/).slice(startLine-1,lineNo+5).map((l,idx)=>`${startLine+idx}: ${l}`).join('\n');return {line:lineNo,excerpt};}
-console.log('paren max',maxP);console.log('paren context line',ctx(maxP.pos).line);console.log(ctx(maxP.pos).excerpt);
-console.log('brace max',maxB);console.log('brace context line',ctx(maxB.pos).line);console.log(ctx(maxB.pos).excerpt);
-console.log('square max',maxS);console.log('square context line',ctx(maxS.pos).line);console.log(ctx(maxS.pos).excerpt);
