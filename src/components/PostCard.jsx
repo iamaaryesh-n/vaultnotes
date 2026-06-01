@@ -131,7 +131,7 @@ const PostCard = React.memo(({
             className="h-auto w-full max-h-[80vh] object-contain"
             decoding="async"
             loading="lazy"
-            fetchpriority="low"
+            fetchPriority="low"
           />
         </div>
       )}
